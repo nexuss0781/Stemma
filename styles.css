@@ -230,13 +230,13 @@ button { color: inherit; font: inherit; }
   --brand-gold-light: #FBF2C8;
   --brand-cream: #F5F2E9;
 }
-html, body { background: var(--brand-cream); }
-body { color: var(--brand-burgundy); }
-.icon-button { color: var(--brand-burgundy); }
+html, body { background: var(--brand-burgundy); }
+body { color: var(--brand-gold); }
+.icon-button { color: var(--brand-gold); }
 .icon-button:hover, .icon-button:focus-visible { background: rgba(251,242,200,.8); color: var(--brand-burgundy-deep); }
-.brand-name.crumb-parent { width: auto; height: auto; border-radius: 0; background: transparent; opacity: 1; color: var(--brand-burgundy); font-size: 17px; font-weight: 750; letter-spacing: -.055em; line-height: 1; }
-.breadcrumb .icon { color: rgba(91,14,20,.55); }
-.crumb-current { background: rgba(91,14,20,.28); }
+.brand-name.crumb-parent { width: auto; height: auto; border-radius: 0; background: transparent; opacity: 1; color: var(--brand-gold); font-size: 17px; font-weight: 750; letter-spacing: -.055em; line-height: 1; }
+.breadcrumb .icon { color: rgba(241,225,148,.68); }
+.crumb-current { background: rgba(241,225,148,.72); }
 .hero-card { border-color: rgba(91,14,20,.2); background: linear-gradient(125deg, rgba(241,225,148,.96), rgba(248,236,180,.94) 52%, rgba(234,217,137,.96)); box-shadow: 0 14px 32px rgba(91,14,20,.1), inset 0 0 0 1px rgba(251,248,239,.58); }
 .hero-card::before { background: radial-gradient(ellipse at 26% 50%, rgba(251,248,239,.64), transparent 38%), radial-gradient(ellipse at 79% 25%, rgba(241,225,148,.48), transparent 42%), radial-gradient(ellipse at 58% 90%, rgba(251,248,239,.42), transparent 44%); }
 .hero-card::after { background: linear-gradient(120deg, rgba(251,248,239,.36), transparent 57%, rgba(251,248,239,.22)); }
@@ -253,7 +253,7 @@ body { color: var(--brand-burgundy); }
 .page-tab .tab-skeleton { background: rgba(91,14,20,.35); }
 .page-tab[aria-selected="true"] .tab-skeleton { background: var(--brand-gold); }
 .page-tab:hover { border-color: var(--brand-burgundy); }
-.section-intro-action { color: rgba(91,14,20,.72); }
+.section-intro-action { color: rgba(241,225,148,.82); }
 .skeleton-card { border-color: rgba(91,14,20,.22); background: linear-gradient(140deg, rgba(241,225,148,.76), rgba(241,225,148,.48)); box-shadow: 0 5px 16px rgba(91,14,20,.07); }
 .skeleton-card::after { background: linear-gradient(120deg, rgba(251,248,239,.44), transparent 60%); }
 .skeleton-card .skeleton-shimmer { background: rgba(91,14,20,.18); }
