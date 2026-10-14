@@ -136,7 +136,7 @@ button { color: inherit; font: inherit; }
 .navigation-drawer { position: fixed; z-index: 30; inset: 0 auto 0 0; width: min(280px, calc(100% - 44px)); padding: 18px 16px; display: flex; flex-direction: column; background: rgba(246,247,243,.97); border-right: 1px solid rgba(255,255,255,.9); box-shadow: 15px 0 42px rgba(40,48,42,.1); transform: translateX(-105%); transition: transform .26s cubic-bezier(.2,.7,.2,1); }
 .navigation-drawer.open { transform: translateX(0); }
 .drawer-top { display: flex; align-items: center; justify-content: space-between; padding: 1px 1px 27px; }
-.drawer-photo-skeleton { width: clamp(84px, 13vh, 104px); height: auto; aspect-ratio: 1; flex: 0 0 auto; margin: 0 0 20px 9px; border: 1px solid transparent; border-radius: 21px; }
+.drawer-photo-skeleton { width: calc(100% + 32px); height: clamp(144px, 18vh, 168px); aspect-ratio: auto; flex: 0 0 auto; margin: 0 -16px 24px; border: 1px solid transparent; border-radius: 18px; }
 .drawer-mark-skeleton { width: 74px; height: 7px; border-radius: 99px; background: #daddd7; }
 .drawer-links { display: grid; gap: 7px; }
 .drawer-link { min-height: 44px; display: flex; align-items: center; gap: 13px; padding: 7px 10px; border: 1px solid transparent; border-radius: 14px; color: #8b968d; background: transparent; cursor: pointer; }
