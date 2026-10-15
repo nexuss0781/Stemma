@@ -12,6 +12,10 @@ Mobile:
 
 ![Stemma mobile preview](mobile-preview.png)
 
+Mobile sidebar:
+
+![Stemma mobile sidebar preview](mobile-sidebar-preview.png)
+
 ## Run locally
 
 From this directory, start a static web server:
