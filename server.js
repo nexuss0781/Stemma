@@ -1,0 +1,563 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import 'dotenv/config';
+import express from 'express';
+import session from 'express-session';
+import RedisStore from 'connect-redis';
+import { createClient } from 'redis';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import {
+  createRemoteJWKSet,
+  importJWK,
+  jwtVerify,
+  SignJWT
+} from 'jose';
+
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const SESSION_COOKIE = 'stemma.sid';
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const TRANSACTION_TTL_MS = 5 * 60 * 1000;
+const MAX_TRANSACTIONS_PER_SESSION = 5;
+const MAX_PROVIDER_RESPONSE_BYTES = 128 * 1024;
+const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
+function trimTrailingSlashes(value) {
+  return value.replace(/\/+$/, '');
+}
+
+function parseOrigin(value, name) {
+  if (!value) return '';
+  const url = new URL(value);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error(`${name} must be an origin URL without a path, query, or fragment.`);
+  }
+  return url.origin;
+}
+
+export function buildConfig(env = process.env) {
+  const issuer = (env.FAYDA_ISSUER || '').trim();
+  const callbackUri = (env.FAYDA_REDIRECT_URI || '').trim();
+  const callbackOrigin = callbackUri ? new URL(callbackUri).origin : '';
+  const scopes = (env.FAYDA_SCOPES || 'openid').trim().split(/\s+/).filter(Boolean);
+  const assertionTtl = Number.parseInt(env.FAYDA_ASSERTION_TTL_SECONDS || '60', 10);
+  const trustProxy = Number.parseInt(env.TRUST_PROXY || '0', 10);
+
+  return {
+    nodeEnv: env.NODE_ENV || 'development',
+    port: Number.parseInt(env.PORT || '3000', 10),
+    sessionSecret: env.SESSION_SECRET || '',
+    sessionCookieSecure: env.SESSION_COOKIE_SECURE === 'true',
+    redisUrl: (env.REDIS_URL || '').trim(),
+    appOrigin: parseOrigin(env.APP_ORIGIN || callbackOrigin, 'APP_ORIGIN'),
+    trustProxy: Number.isInteger(trustProxy) && trustProxy >= 0 ? trustProxy : 0,
+    fayda: {
+      issuer,
+      discoveryUrl: (env.FAYDA_DISCOVERY_URL || (issuer ? `${trimTrailingSlashes(issuer)}/.well-known/openid-configuration` : '')).trim(),
+      clientId: (env.FAYDA_CLIENT_ID || '').trim(),
+      clientKeyId: (env.FAYDA_CLIENT_KEY_ID || '').trim(),
+      privateJwkJson: env.FAYDA_CLIENT_PRIVATE_JWK || '',
+      privateJwkPath: (env.FAYDA_CLIENT_PRIVATE_JWK_PATH || '').trim(),
+      redirectUri: callbackUri,
+      scopes,
+      acrValues: (env.FAYDA_ACR_VALUES || '').trim(),
+      uiLocales: (env.FAYDA_UI_LOCALES || '').trim(),
+      assertionTtlSeconds: Number.isInteger(assertionTtl) && assertionTtl >= 30 && assertionTtl <= 300 ? assertionTtl : 60
+    }
+  };
+}
+
+function validateHttpsUrl(value, label, nodeEnv) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} must be an absolute URL.`);
+  }
+  const testLoopbackHttp = nodeEnv === 'test' && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+  if ((!testLoopbackHttp && url.protocol !== 'https:') || url.username || url.password || url.hash) {
+    throw new Error(`${label} must use HTTPS and must not contain credentials or a fragment.`);
+  }
+  return url;
+}
+
+function isFaydaConfigured(config) {
+  const provider = config.fayda;
+  return Boolean(
+    provider.issuer && provider.discoveryUrl && provider.clientId &&
+    (provider.privateJwkJson || provider.privateJwkPath) && provider.redirectUri
+  );
+}
+
+function validateConfig(config) {
+  if (typeof config.sessionSecret !== 'string' || Buffer.byteLength(config.sessionSecret, 'utf8') < 32) {
+    throw new Error('SESSION_SECRET must be set to a random value of at least 32 bytes.');
+  }
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
+    throw new Error('PORT must be a valid TCP port.');
+  }
+  if (config.nodeEnv === 'production') {
+    if (!config.appOrigin || !config.appOrigin.startsWith('https://')) {
+      throw new Error('APP_ORIGIN must be an HTTPS origin in production.');
+    }
+    if (!config.redisUrl) {
+      throw new Error('REDIS_URL is required in production; process-memory sessions are development-only.');
+    }
+    if (config.fayda.redirectUri && !config.fayda.redirectUri.startsWith('https://')) {
+      throw new Error('FAYDA_REDIRECT_URI must use HTTPS in production.');
+    }
+  }
+  if (config.fayda.scopes.length === 0 || !config.fayda.scopes.includes('openid') || config.fayda.scopes.some(scope => !/^[A-Za-z0-9:_-]+$/.test(scope))) {
+    throw new Error('FAYDA_SCOPES must contain openid and valid scope names.');
+  }
+  if (isFaydaConfigured(config)) {
+    const issuer = validateHttpsUrl(config.fayda.issuer, 'FAYDA_ISSUER', config.nodeEnv);
+    const discovery = validateHttpsUrl(config.fayda.discoveryUrl, 'FAYDA_DISCOVERY_URL', config.nodeEnv);
+    const redirect = validateHttpsUrl(config.fayda.redirectUri, 'FAYDA_REDIRECT_URI', config.nodeEnv);
+    if (redirect.search || redirect.hash || redirect.origin !== config.appOrigin) {
+      throw new Error('FAYDA_REDIRECT_URI must be a query-free callback URL on APP_ORIGIN.');
+    }
+    if (issuer.search || issuer.hash || discovery.search || discovery.hash || !config.fayda.clientId || config.fayda.clientId.length > 512) {
+      throw new Error('Fayda configuration contains an invalid issuer, discovery URL, or client ID.');
+    }
+  }
+}
+
+function setNoStore(res) {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  res.set('Pragma', 'no-cache');
+  res.set('Referrer-Policy', 'no-referrer');
+}
+
+function asyncRoute(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+function sessionOperation(req, operation) {
+  return new Promise((resolve, reject) => {
+    req.session[operation](error => error ? reject(error) : resolve());
+  });
+}
+
+async function readLimitedBody(response, maxBytes = MAX_PROVIDER_RESPONSE_BYTES) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Error('Provider response exceeded the allowed size.');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function fetchText(fetchImpl, url, options = {}, maxBytes = MAX_PROVIDER_RESPONSE_BYTES) {
+  const response = await fetchImpl(url, {
+    ...options,
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000)
+  });
+  const text = await readLimitedBody(response, maxBytes);
+  return { response, text };
+}
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Provider returned an invalid JSON document.');
+  }
+}
+
+function validateProviderMetadata(metadata, config) {
+  const provider = config.fayda;
+  if (!metadata || metadata.issuer !== provider.issuer) {
+    throw new Error('Provider discovery issuer did not match the configured issuer.');
+  }
+  if (!Array.isArray(metadata.response_types_supported) || !metadata.response_types_supported.includes('code')) {
+    throw new Error('Provider does not advertise authorization-code responses.');
+  }
+  if (Array.isArray(metadata.token_endpoint_auth_methods_supported) && !metadata.token_endpoint_auth_methods_supported.includes('private_key_jwt')) {
+    throw new Error('Provider metadata does not advertise private_key_jwt client authentication.');
+  }
+  if (Array.isArray(metadata.id_token_signing_alg_values_supported) && !metadata.id_token_signing_alg_values_supported.includes('RS256')) {
+    throw new Error('Provider metadata does not advertise RS256 ID-token signatures.');
+  }
+  const endpoints = {};
+  for (const [key, label] of [
+    ['authorization_endpoint', 'authorization endpoint'],
+    ['token_endpoint', 'token endpoint'],
+    ['userinfo_endpoint', 'UserInfo endpoint'],
+    ['jwks_uri', 'JWKS URI']
+  ]) {
+    if (typeof metadata[key] !== 'string') throw new Error(`Provider is missing its ${label}.`);
+    endpoints[key] = validateHttpsUrl(metadata[key], label, config.nodeEnv);
+  }
+  return { ...metadata, ...Object.fromEntries(Object.entries(endpoints).map(([key, url]) => [key, url.href])) };
+}
+
+async function readPrivateJwk(provider) {
+  let raw = provider.privateJwkJson;
+  if (!raw && provider.privateJwkPath) {
+    const keyPath = path.resolve(provider.privateJwkPath);
+    const stat = await fs.stat(keyPath);
+    if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+      throw new Error('Private JWK file permissions are too broad; use mode 0600.');
+    }
+    raw = await fs.readFile(keyPath, 'utf8');
+  }
+  let jwk;
+  try {
+    jwk = JSON.parse(raw);
+  } catch {
+    throw new Error('The configured private JWK is not valid JSON.');
+  }
+  if (!jwk || jwk.kty !== 'RSA' || typeof jwk.d !== 'string' || typeof jwk.n !== 'string' || typeof jwk.e !== 'string' || (jwk.alg && jwk.alg !== 'RS256') || (jwk.use && jwk.use !== 'sig')) {
+    throw new Error('The configured private JWK must be an RSA signing key for RS256.');
+  }
+  return { signingKey: await importJWK(jwk, 'RS256'), keyId: provider.clientKeyId || (typeof jwk.kid === 'string' ? jwk.kid : '') };
+}
+
+async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  if (keyId) header.kid = keyId;
+  return new SignJWT({})
+    .setProtectedHeader(header)
+    .setIssuer(provider.clientId)
+    .setSubject(provider.clientId)
+    .setAudience(tokenEndpoint)
+    .setIssuedAt(now)
+    .setExpirationTime(now + provider.assertionTtlSeconds)
+    .setJti(crypto.randomUUID())
+    .sign(key);
+}
+
+export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+  validateConfig(config);
+  const app = express();
+  app.disable('x-powered-by');
+  app.set('trust proxy', config.trustProxy);
+
+  const cspDirectives = {
+    defaultSrc: ["'self'"],
+    baseUri: ["'self'"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+    formAction: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:'],
+    connectSrc: ["'self'"]
+  };
+  if (config.nodeEnv === 'production') cspDirectives.upgradeInsecureRequests = [];
+  app.use(helmet({
+    contentSecurityPolicy: { directives: cspDirectives },
+    referrerPolicy: { policy: 'no-referrer' },
+    crossOriginResourcePolicy: { policy: 'same-origin' }
+  }));
+  app.use(session({
+    name: SESSION_COOKIE,
+    secret: config.sessionSecret,
+    store: sessionStore,
+    resave: false,
+    saveUninitialized: false,
+    rolling: true,
+    cookie: {
+      httpOnly: true,
+      secure: config.nodeEnv === 'production' || config.sessionCookieSecure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: SESSION_TTL_MS
+    }
+  }));
+
+  const discoveryCache = { value: null, expiresAt: 0, pending: null };
+  let remoteJwks = null;
+  let signingKeyPromise = null;
+
+  async function getProviderMetadata() {
+    if (!isFaydaConfigured(config)) throw new Error('Fayda sign-in is not configured.');
+    if (discoveryCache.value && Date.now() < discoveryCache.expiresAt) return discoveryCache.value;
+    if (discoveryCache.pending) return discoveryCache.pending;
+    discoveryCache.pending = (async () => {
+      const discoveryUrl = validateHttpsUrl(config.fayda.discoveryUrl, 'FAYDA_DISCOVERY_URL', config.nodeEnv);
+      const { response, text } = await fetchText(fetchImpl, discoveryUrl, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('Provider discovery request failed.');
+      const metadata = validateProviderMetadata(parseJson(text), config);
+      discoveryCache.value = metadata;
+      discoveryCache.expiresAt = Date.now() + 15 * 60 * 1000;
+      return metadata;
+    })();
+    try {
+      return await discoveryCache.pending;
+    } finally {
+      discoveryCache.pending = null;
+    }
+  }
+
+  function getJwks(metadata) {
+    if (!remoteJwks) remoteJwks = jwksFactory(new URL(metadata.jwks_uri), {
+      timeoutDuration: 5_000,
+      cooldownDuration: 30_000,
+      cacheMaxAge: 10 * 60 * 1000
+    });
+    return remoteJwks;
+  }
+
+  async function getClientSigningKey() {
+    if (!signingKeyPromise) signingKeyPromise = readPrivateJwk(config.fayda);
+    return signingKeyPromise;
+  }
+
+  const authLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      setNoStore(res);
+      res.status(429).json({ error: 'Too many sign-in attempts. Please wait and try again.' });
+    }
+  });
+
+  app.get('/healthz', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ status: 'ok', faydaConfigured: isFaydaConfigured(config) });
+  });
+
+  app.get('/auth/session', (req, res) => {
+    setNoStore(res);
+    res.json({
+      authenticated: Boolean(req.session?.stemmaUser),
+      providerConfigured: isFaydaConfigured(config)
+    });
+  });
+
+  app.get('/auth/fayda/start', authLimiter, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    if (!isFaydaConfigured(config)) return res.redirect(303, '/?auth=unavailable');
+
+    let metadata;
+    try {
+      metadata = await getProviderMetadata();
+    } catch {
+      return res.redirect(303, '/?auth=unavailable');
+    }
+
+    const state = crypto.randomBytes(32).toString('base64url');
+    const nonce = crypto.randomBytes(32).toString('base64url');
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    const now = Date.now();
+    const transactions = req.session.oidcTransactions || {};
+    for (const [key, transaction] of Object.entries(transactions)) {
+      if (!transaction || transaction.expiresAt <= now) delete transactions[key];
+    }
+    const ordered = Object.entries(transactions).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    while (ordered.length >= MAX_TRANSACTIONS_PER_SESSION) {
+      const [oldestState] = ordered.shift();
+      delete transactions[oldestState];
+    }
+    transactions[state] = { nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    req.session.oidcTransactions = transactions;
+    await sessionOperation(req, 'save');
+
+    const authorizationUrl = new URL(metadata.authorization_endpoint);
+    authorizationUrl.searchParams.set('client_id', config.fayda.clientId);
+    authorizationUrl.searchParams.set('redirect_uri', config.fayda.redirectUri);
+    authorizationUrl.searchParams.set('response_type', 'code');
+    authorizationUrl.searchParams.set('response_mode', 'query');
+    authorizationUrl.searchParams.set('scope', config.fayda.scopes.join(' '));
+    authorizationUrl.searchParams.set('state', state);
+    authorizationUrl.searchParams.set('nonce', nonce);
+    authorizationUrl.searchParams.set('code_challenge', codeChallenge);
+    authorizationUrl.searchParams.set('code_challenge_method', 'S256');
+    if (config.fayda.acrValues) authorizationUrl.searchParams.set('acr_values', config.fayda.acrValues);
+    if (config.fayda.uiLocales) authorizationUrl.searchParams.set('ui_locales', config.fayda.uiLocales);
+    return res.redirect(303, authorizationUrl.href);
+  }));
+
+  app.get('/auth/fayda/callback', authLimiter, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !req.session) return res.redirect(303, '/?auth=failed');
+
+    const transactions = req.session.oidcTransactions || {};
+    const transaction = transactions[state];
+    if (!transaction || transaction.expiresAt <= Date.now()) return res.redirect(303, '/?auth=failed');
+
+    // Consume and persist the one-time transaction before inspecting provider errors or exchanging code.
+    delete transactions[state];
+    req.session.oidcTransactions = transactions;
+    await sessionOperation(req, 'save');
+
+    if (typeof req.query.error === 'string' || typeof req.query.code !== 'string' || req.query.code.length < 1 || req.query.code.length > 2048) {
+      return res.redirect(303, '/?auth=failed');
+    }
+
+    try {
+      const metadata = await getProviderMetadata();
+      const tokenEndpoint = metadata.token_endpoint;
+      const key = await getClientSigningKey();
+      const clientAssertion = await createClientAssertion(config.fayda, tokenEndpoint, key.signingKey, key.keyId);
+      const tokenForm = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: req.query.code,
+        redirect_uri: config.fayda.redirectUri,
+        client_id: config.fayda.clientId,
+        code_verifier: transaction.codeVerifier,
+        client_assertion_type: ASSERTION_TYPE,
+        client_assertion: clientAssertion
+      });
+      const tokenResult = await fetchText(fetchImpl, tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenForm
+      });
+      if (!tokenResult.response.ok) throw new Error('Token exchange failed.');
+      const tokenData = parseJson(tokenResult.text);
+      if (!tokenData || typeof tokenData.id_token !== 'string' || typeof tokenData.access_token !== 'string') {
+        throw new Error('Token response did not include required tokens.');
+      }
+
+      const jwks = getJwks(metadata);
+      const { payload: idToken } = await jwtVerify(tokenData.id_token, jwks, {
+        issuer: config.fayda.issuer,
+        audience: config.fayda.clientId,
+        algorithms: ['RS256'],
+        clockTolerance: 60
+      });
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (typeof idToken.sub !== 'string' || !idToken.sub || idToken.nonce !== transaction.nonce ||
+          !Number.isInteger(idToken.iat) || idToken.iat > nowSeconds + 60 || idToken.iat < nowSeconds - 900) {
+        throw new Error('ID token claims failed validation.');
+      }
+
+      const userInfoResult = await fetchText(fetchImpl, metadata.userinfo_endpoint, {
+        headers: {
+          Accept: 'application/jwt',
+          Authorization: `Bearer ${tokenData.access_token}`
+        }
+      });
+      if (!userInfoResult.response.ok) throw new Error('UserInfo request failed.');
+      const userInfoJwt = userInfoResult.text.trim();
+      if (!userInfoJwt || userInfoJwt.split('.').length !== 3) throw new Error('UserInfo was not a signed JWT.');
+      const { payload: userInfo } = await jwtVerify(userInfoJwt, jwks, {
+        issuer: config.fayda.issuer,
+        audience: config.fayda.clientId,
+        algorithms: ['RS256'],
+        clockTolerance: 60
+      });
+      if (typeof userInfo.sub !== 'string' || userInfo.sub !== idToken.sub) {
+        throw new Error('UserInfo subject did not match the ID token.');
+      }
+
+      // Store only the verified external key and the time of authentication; discard all provider tokens and claims.
+      await sessionOperation(req, 'regenerate');
+      req.session.stemmaUser = {
+        issuer: config.fayda.issuer,
+        subject: idToken.sub,
+        authenticatedAt: nowSeconds
+      };
+      await sessionOperation(req, 'save');
+      return res.redirect(303, '/?auth=success');
+    } catch {
+      // Never return or log provider error text, tokens, assertions, or identity claims.
+      return res.redirect(303, '/?auth=failed');
+    }
+  }));
+
+  app.post('/auth/logout', asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const requestOrigin = req.get('origin');
+    const expectedOrigin = config.appOrigin || `${req.protocol}://${req.get('host')}`;
+    if (!requestOrigin || requestOrigin !== expectedOrigin) {
+      return res.status(403).json({ error: 'This request could not be verified.' });
+    }
+    if (!req.session) return res.status(204).end();
+    await sessionOperation(req, 'destroy');
+    res.clearCookie(SESSION_COOKIE, {
+      path: '/',
+      httpOnly: true,
+      secure: config.nodeEnv === 'production' || config.sessionCookieSecure,
+      sameSite: 'lax'
+    });
+    return res.status(204).end();
+  }));
+
+  app.get(['/', '/index.html'], (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.join(ROOT, 'index.html'));
+  });
+  app.get('/app.js', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type('application/javascript').sendFile(path.join(ROOT, 'app.js'));
+  });
+  app.get('/styles.css', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type('text/css').sendFile(path.join(ROOT, 'styles.css'));
+  });
+  app.use('/assets', express.static(path.join(ROOT, 'assets'), {
+    dotfiles: 'deny',
+    index: false,
+    fallthrough: true,
+    maxAge: '1d',
+    immutable: false
+  }));
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Not found.' });
+  });
+  app.use((error, _req, res, _next) => {
+    if (res.headersSent) return;
+    setNoStore(res);
+    res.status(500).json({ error: 'The request could not be completed.' });
+  });
+
+  return app;
+}
+
+async function startServer() {
+  const config = buildConfig();
+  validateConfig(config);
+  let redisClient;
+  let sessionStore;
+  if (config.redisUrl) {
+    redisClient = createClient({ url: config.redisUrl });
+    redisClient.on('error', () => {});
+    await redisClient.connect();
+    sessionStore = new RedisStore({ client: redisClient, prefix: 'stemma:sessions:', ttl: Math.floor(SESSION_TTL_MS / 1000) });
+  }
+  const app = createApp({ config, sessionStore });
+  const server = app.listen(config.port, '0.0.0.0', () => {
+    process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}.\n`);
+  });
+  const shutdown = async () => {
+    server.close(async () => {
+      if (redisClient?.isOpen) await redisClient.quit().catch(() => {});
+      process.exit(0);
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  startServer().catch(() => {
+    process.stderr.write('Stemma could not start. Check the server configuration and session-store availability.\n');
+    process.exitCode = 1;
+  });
+}
