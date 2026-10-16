@@ -452,13 +452,17 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
 
   app.get('/auth/session', (req, res) => {
     setNoStore(res);
-    const googleUser = req.session?.stemmaUser?.provider === 'google' ? req.session.stemmaUser : null;
+    const stemmaUser = req.session?.stemmaUser ?? null;
+    const googleUser = stemmaUser?.provider === 'google' ? stemmaUser : null;
+    const googleProfile = googleUser?.profile;
+    const hasGoogleProfile = Boolean(googleProfile && (googleProfile.name || googleProfile.email || googleProfile.avatarUrl));
     res.json({
-      authenticated: Boolean(req.session?.stemmaUser),
+      authenticated: Boolean(stemmaUser),
+      authProvider: stemmaUser?.provider ?? null,
       faydaConfigured: isFaydaConfigured(config),
       providerConfigured: isFaydaConfigured(config),
       googleConfigured: isGoogleConfigured(config),
-      googleProfile: googleUser ? { ...googleUser.profile } : null
+      googleProfile: hasGoogleProfile ? { ...googleProfile } : null
     });
   });
 
