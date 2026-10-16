@@ -555,7 +555,7 @@ body { color: var(--brand-burgundy); }
 .google-button { width: min(100%, 440px); min-height: 52px; display: flex; align-items: center; justify-content: center; gap: 11px; margin: 0 auto; border: 1px solid rgba(75,13,19,.18); border-radius: 13px; color: #292929; background: #fff; box-shadow: 0 6px 16px rgba(48,38,31,.08); font-size: 14px; font-weight: 650; }
 .google-button:hover, .google-button:focus-visible { outline: none; transform: translateY(-1px); border-color: rgba(75,13,19,.3); background: #fff; box-shadow: 0 9px 20px rgba(48,38,31,.12); }
 .google-button:disabled, .fayda-button:disabled { cursor: wait; opacity: .65; transform: none; }
-.google-mark { color: #4285f4; font-family: Arial, sans-serif; font-size: 18px; font-weight: 800; }
+.google-mark { display: block; width: 22px; height: 22px; flex: 0 0 auto; object-fit: contain; }
 .fayda-art::before { content: ""; position: absolute; z-index: 0; inset: -3%; transform: scale(1.06); background: url("assets/tafari-makonnen-historic-building.jpg") center 30% / cover no-repeat; filter: grayscale(1) contrast(1.08); }
 .fayda-art::after { content: ""; position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(145deg, rgba(236,241,246,.22) 0%, rgba(155,166,178,.11) 36%, rgba(31,42,53,.22) 100%), rgba(58,70,82,.51); box-shadow: inset 0 1px 0 rgba(245,248,251,.3), inset 0 -28px 60px rgba(24,34,45,.24); -webkit-backdrop-filter: blur(1.8px) saturate(.96); backdrop-filter: blur(1.8px) saturate(.96); }
 .fayda-art .phone-pattern { display: none; }
