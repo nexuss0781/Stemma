@@ -549,8 +549,8 @@ body { color: var(--brand-burgundy); }
 .fayda-button:hover, .fayda-button:focus-visible { outline: none; transform: translateY(-1px); background: var(--brand-burgundy-deep); box-shadow: 0 10px 22px rgba(75,13,19,.21); }
 .fayda-button .icon { position: absolute; right: 18px; width: 18px; height: 18px; color: var(--brand-gold-light); }
 .fayda-feedback { min-height: 16px; margin: 8px 0 0; color: rgba(104,27,29,.68); font-size: 11px; text-align: center; }
-.fayda-art::before { content: ""; position: absolute; z-index: 0; inset: -3%; transform: scale(1.06); opacity: .94; background: linear-gradient(rgba(44,48,52,.5), rgba(44,48,52,.5)), url("assets/tafari-makonnen-gate.jpeg") center 30% / cover no-repeat; }
-.fayda-art::after { content: ""; position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(223,229,235,.12) 0%, rgba(125,133,141,.06) 48%, rgba(31,36,42,.1) 100%); -webkit-backdrop-filter: blur(1.2px) saturate(.88); backdrop-filter: blur(1.2px) saturate(.88); }
+.fayda-art::before { content: ""; position: absolute; z-index: 0; inset: -3%; transform: scale(1.06); background: url("assets/tafari-makonnen-gate.jpeg") center 30% / cover no-repeat; filter: saturate(.9) contrast(.98); }
+.fayda-art::after { content: ""; position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(145deg, rgba(236,241,246,.22) 0%, rgba(155,166,178,.11) 36%, rgba(31,42,53,.22) 100%), rgba(58,70,82,.51); box-shadow: inset 0 1px 0 rgba(245,248,251,.3), inset 0 -28px 60px rgba(24,34,45,.24); -webkit-backdrop-filter: blur(1.8px) saturate(.96); backdrop-filter: blur(1.8px) saturate(.96); }
 .fayda-art .phone-pattern { display: none; }
 .fayda-slide #fayda-title::after { content: ""; display: block; width: 48px; height: 3px; margin: 11px 0 0; border-radius: 999px; background: linear-gradient(90deg, var(--onboard-sand), rgba(216,191,117,.18)); }
 .onboarding-footer { position: absolute; z-index: 12; right: clamp(20px, 5vw, 62px); bottom: max(19px, env(safe-area-inset-bottom)); left: clamp(20px, 5vw, 62px); width: auto; pointer-events: none; }
