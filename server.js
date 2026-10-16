@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
-import RedisStore from 'connect-redis';
-import { createClient } from 'redis';
+import connectPgSimple from 'connect-pg-simple';
+import pg from 'pg';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import {
@@ -17,6 +17,7 @@ import {
 } from 'jose';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const { Pool } = pg;
 const SESSION_COOKIE = 'stemma.sid';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const TRANSACTION_TTL_MS = 5 * 60 * 1000;
@@ -51,7 +52,13 @@ export function buildConfig(env = process.env) {
     port: Number.parseInt(env.PORT || '3000', 10),
     sessionSecret: env.SESSION_SECRET || '',
     sessionCookieSecure: env.SESSION_COOKIE_SECURE === 'true',
-    redisUrl: (env.REDIS_URL || '').trim(),
+    postgres: {
+      host: (env.DB_HOST || '').trim(),
+      port: Number.parseInt(env.DB_PORT || '0', 10),
+      database: (env.DB_NAME || '').trim(),
+      username: (env.DB_USERNAME || '').trim(),
+      password: env.DB_PASSWORD || ''
+    },
     appOrigin: parseOrigin(env.APP_ORIGIN || callbackOrigin, 'APP_ORIGIN'),
     trustProxy: Number.isInteger(trustProxy) && trustProxy >= 0 ? trustProxy : 0,
     fayda: {
@@ -103,8 +110,10 @@ function validateConfig(config) {
     if (!config.appOrigin || !config.appOrigin.startsWith('https://')) {
       throw new Error('APP_ORIGIN must be an HTTPS origin in production.');
     }
-    if (!config.redisUrl) {
-      throw new Error('REDIS_URL is required in production; process-memory sessions are development-only.');
+    const database = config.postgres;
+    if (!database.host || !Number.isInteger(database.port) || database.port < 1 || database.port > 65535 ||
+        !database.database || !database.username || !database.password) {
+      throw new Error('DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, and DB_PASSWORD are required for PostgreSQL-backed production sessions.');
     }
     if (config.fayda.redirectUri && !config.fayda.redirectUri.startsWith('https://')) {
       throw new Error('FAYDA_REDIRECT_URI must use HTTPS in production.');
@@ -244,6 +253,9 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
 
 export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
+  if (config.nodeEnv === 'production' && !sessionStore) {
+    throw new Error('A persistent PostgreSQL session store is required in production.');
+  }
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -533,13 +545,27 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
 async function startServer() {
   const config = buildConfig();
   validateConfig(config);
-  let redisClient;
+  let postgresPool;
   let sessionStore;
-  if (config.redisUrl) {
-    redisClient = createClient({ url: config.redisUrl });
-    redisClient.on('error', () => {});
-    await redisClient.connect();
-    sessionStore = new RedisStore({ client: redisClient, prefix: 'stemma:sessions:', ttl: Math.floor(SESSION_TTL_MS / 1000) });
+  if (config.postgres.host) {
+    postgresPool = new Pool({
+      host: config.postgres.host,
+      port: config.postgres.port,
+      database: config.postgres.database,
+      user: config.postgres.username,
+      password: config.postgres.password,
+      ssl: { rejectUnauthorized: false },
+      max: 5,
+      connectionTimeoutMillis: 10_000
+    });
+    await postgresPool.query('SELECT 1');
+    const PgStore = connectPgSimple(session);
+    sessionStore = new PgStore({
+      pool: postgresPool,
+      tableName: 'stemma_sessions',
+      createTableIfMissing: true,
+      ttl: Math.floor(SESSION_TTL_MS / 1000)
+    });
   }
   const app = createApp({ config, sessionStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
@@ -547,7 +573,7 @@ async function startServer() {
   });
   const shutdown = async () => {
     server.close(async () => {
-      if (redisClient?.isOpen) await redisClient.quit().catch(() => {});
+      if (postgresPool) await postgresPool.end().catch(() => {});
       process.exit(0);
     });
   };
