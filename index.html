@@ -7,7 +7,7 @@
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
   <link rel="stylesheet" href="styles.css" />
-  <script src="app.js" defer></script>
+  <script src="app.js?v=2" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -32,20 +32,16 @@
       </div>
       <div class="onboarding-header-actions">
         <span class="step-count" aria-live="polite"><span id="active-step">01</span><span class="step-count-divider">/ 02</span></span>
-        <button class="skip-button" id="skip-onboarding" type="button">Skip <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <button class="skip-button" id="skip-onboarding" type="button">Skip</button>
       </div>
     </header>
 
-    <div class="onboarding-stage" id="onboarding-stage" tabindex="0" aria-label="Onboarding screens. Scroll horizontally or use the Continue button to move between screens.">
+    <div class="onboarding-stage" id="onboarding-stage" tabindex="0" aria-label="Onboarding screens. Swipe or scroll horizontally, or use the left and right arrow keys, to move between screens.">
       <section class="onboarding-slide welcome-slide" id="welcome-slide" aria-labelledby="welcome-title">
         <div class="onboarding-copy">
           <p class="onboarding-kicker"><span class="kicker-spark" aria-hidden="true"></span> A calmer kind of wallet</p>
           <h1 id="welcome-title">Welcome</h1>
           <p class="onboarding-description">A clearer view of the things you care about.</p>
-          <div class="onboarding-actions">
-            <button class="onboarding-next" id="welcome-continue" type="button">Continue <span class="next-icon"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></span></button>
-            <span class="swipe-hint"><span class="swipe-line" aria-hidden="true"></span> Swipe to explore</span>
-          </div>
         </div>
         <div class="onboarding-art welcome-art" aria-hidden="true">
           <div class="art-glow art-glow-one"></div>
@@ -86,7 +82,7 @@
           <h1 id="fayda-title">Sign in</h1>
           <p class="onboarding-description">Continue with Fayda to get started with Stemma.</p>
           <div class="onboarding-actions fayda-actions">
-            <button class="fayda-button" id="fayda-continue" type="button">Continue with Fayda <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+            <button class="fayda-button" id="fayda-continue" type="button">Continue with Fayda</button>
             <p class="fayda-feedback" id="fayda-feedback" role="status" aria-live="polite"></p>
           </div>
         </div>

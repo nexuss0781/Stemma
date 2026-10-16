@@ -188,7 +188,6 @@ function enterDashboard() {
   window.requestAnimationFrame(updateNavIndicator);
 }
 
-document.getElementById('welcome-continue').addEventListener('click', () => goToOnboardingSlide(1));
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
 document.getElementById('fayda-continue').addEventListener('click', () => {
   document.getElementById('fayda-feedback').textContent = 'Fayda sign-in is a visual preview and is not connected yet.';
