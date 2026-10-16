@@ -58,9 +58,9 @@ The backend discovers the provider endpoints, enforces the configured issuer, an
 
 ## Session storage and deployment
 
-The default in-memory session store is for local development and automated tests only. It is not suitable for a production or multi-instance deployment. Production startup requires `REDIS_URL`, an HTTPS `APP_ORIGIN`, a strong `SESSION_SECRET`, and an HTTPS Fayda callback when Fayda is configured. Use a private Redis deployment with transport protection, restrict access to the session namespace, and configure only trusted reverse proxies through `TRUST_PROXY`.
+The default in-memory session store is for local development and automated tests only. It is not suitable for a production or multi-instance deployment. Production startup requires PostgreSQL connection variables (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD`), an HTTPS `APP_ORIGIN`, and a strong `SESSION_SECRET`. The PostgreSQL session table is created automatically; database connections use TLS. Wasmer's managed PostgreSQL database injects the required `DB_*` variables when enabled in `app.yaml`.
 
-Serve the app over HTTPS in production. Keep sandbox and production clients, keys, issuers, callback URIs, and secrets separate. Configure the exact callback URI with Fayda before attempting a live sandbox round trip. The code has not been tested with Stemma's real partner client because those credentials have not been supplied. Confirm PKCE support, client-assertion expiry, locale/ACR values, and signed UserInfo claims with Fayda; the public discovery and partner materials contain open discrepancies. This is eSignet sign-in, not e-KYC or financial identity verification.
+Serve the app over HTTPS in production. Keep sandbox and production clients, keys, issuers, callback URIs, and secrets separate. Fayda sign-in remains unavailable until Stemma's own client ID, signing key, issuer, and registered callback are configured; no demo credentials are used. Configure the exact callback URI with Fayda before attempting a live sandbox round trip. Confirm PKCE support, client-assertion expiry, locale/ACR values, and signed UserInfo claims with Fayda; the public discovery and partner materials contain open discrepancies. This is eSignet sign-in, not e-KYC or financial identity verification.
 
 ## Tests and checks
 

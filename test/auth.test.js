@@ -213,7 +213,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
   }
 });
 
-test('production startup rejects weak session secrets and missing Redis session storage', () => {
+test('production startup rejects weak session secrets and missing PostgreSQL session storage', () => {
   const base = {
     NODE_ENV: 'production',
     APP_ORIGIN: 'https://stemma.example',
@@ -222,10 +222,25 @@ test('production startup rejects weak session secrets and missing Redis session 
   const weakSecret = buildConfig({ ...base, SESSION_SECRET: 'too-short' });
   assert.throws(() => createApp({ config: weakSecret }), /SESSION_SECRET/);
 
-  const noRedis = buildConfig({
+  const noPostgres = buildConfig({
     ...base,
     SESSION_SECRET: 'production-test-secret-that-is-at-least-32-bytes-long',
-    REDIS_URL: ''
+    DB_HOST: '',
+    DB_PORT: '',
+    DB_NAME: '',
+    DB_USERNAME: '',
+    DB_PASSWORD: ''
   });
-  assert.throws(() => createApp({ config: noRedis }), /REDIS_URL/);
+  assert.throws(() => createApp({ config: noPostgres }), /DB_HOST/);
+
+  const postgresConfigured = buildConfig({
+    ...base,
+    SESSION_SECRET: 'production-test-secret-that-is-at-least-32-bytes-long',
+    DB_HOST: 'db.example',
+    DB_PORT: '5432',
+    DB_NAME: 'stemma',
+    DB_USERNAME: 'stemma',
+    DB_PASSWORD: 'test-only-database-password'
+  });
+  assert.throws(() => createApp({ config: postgresConfigured }), /persistent PostgreSQL session store/);
 });

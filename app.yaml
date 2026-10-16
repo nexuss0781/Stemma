@@ -1,0 +1,33 @@
+kind: wasmer.io/App.v0
+name: stemma
+owner: tadi0781
+package: .
+env:
+  NODE_ENV: production
+  PORT: '3000'
+  APP_ORIGIN: "https://stemma.wasmer.app"
+capabilities:
+  database:
+    engine: postgres
+app_id: da_Ra7IetdUk6qO
+annotations:
+  anybuild.run/config:
+    commands:
+      start: node server.js
+    edgejs_enable: true
+    edgejs_precompile: true
+    name: out
+    node_install_inputs:
+    - package.json
+    node_package_manager: npm
+    node_package_name: stemma-wallet-dashboard
+    node_remove_native_binaries: true
+    node_server: express
+    npm_version: '11'
+    services:
+    - engine: postgres
+      name: database
+  anybuild.run/provider: node
+  anybuild.run/version: 0.33.0
+  wasmer.io/version: 7.5.0
+enableDatabase: true
