@@ -268,6 +268,25 @@ function validateGoogleMetadata(metadata, config) {
   return { ...metadata, ...endpoints };
 }
 
+function normalizeGoogleProfile(claims) {
+  let avatarUrl = '';
+  if (typeof claims.picture === 'string' && claims.picture.length <= 2048) {
+    try {
+      const picture = new URL(claims.picture);
+      const host = picture.hostname.toLowerCase();
+      if (picture.protocol === 'https:' && !picture.username && !picture.password && !picture.port &&
+          (host === 'googleusercontent.com' || host.endsWith('.googleusercontent.com'))) {
+        avatarUrl = picture.href;
+      }
+    } catch {}
+  }
+  return {
+    name: typeof claims.name === 'string' ? claims.name.trim().slice(0, 256) : '',
+    email: claims.email_verified === true && typeof claims.email === 'string' ? claims.email.trim().slice(0, 320) : '',
+    avatarUrl
+  };
+}
+
 async function readPrivateJwk(provider) {
   let raw = provider.privateJwkJson;
   if (!raw && provider.privateJwkPath) {
@@ -322,7 +341,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
     formAction: ["'self'"],
     scriptSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", 'data:'],
+    imgSrc: ["'self'", 'data:', 'https://*.googleusercontent.com'],
     connectSrc: ["'self'"]
   };
   if (config.nodeEnv === 'production') cspDirectives.upgradeInsecureRequests = [];
@@ -433,11 +452,13 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
 
   app.get('/auth/session', (req, res) => {
     setNoStore(res);
+    const googleUser = req.session?.stemmaUser?.provider === 'google' ? req.session.stemmaUser : null;
     res.json({
       authenticated: Boolean(req.session?.stemmaUser),
       faydaConfigured: isFaydaConfigured(config),
       providerConfigured: isFaydaConfigured(config),
-      googleConfigured: isGoogleConfigured(config)
+      googleConfigured: isGoogleConfigured(config),
+      googleProfile: googleUser ? { ...googleUser.profile } : null
     });
   });
 
@@ -612,7 +633,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
     authorizationUrl.searchParams.set('client_id', config.google.clientId);
     authorizationUrl.searchParams.set('redirect_uri', config.google.redirectUri);
     authorizationUrl.searchParams.set('response_type', 'code');
-    authorizationUrl.searchParams.set('scope', 'openid');
+    authorizationUrl.searchParams.set('scope', 'openid email profile');
     authorizationUrl.searchParams.set('state', state);
     authorizationUrl.searchParams.set('nonce', nonce);
     authorizationUrl.searchParams.set('code_challenge', codeChallenge);
@@ -674,12 +695,14 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
         throw new Error('Google ID-token claims failed validation.');
       }
 
+      const profile = normalizeGoogleProfile(idToken);
       await sessionOperation(req, 'regenerate');
       req.session.stemmaUser = {
         provider: 'google',
         issuer: GOOGLE_ISSUER,
         subject: idToken.sub,
-        authenticatedAt: nowSeconds
+        authenticatedAt: nowSeconds,
+        profile
       };
       await sessionOperation(req, 'save');
       return res.redirect(303, '/?auth=success');
