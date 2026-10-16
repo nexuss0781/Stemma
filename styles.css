@@ -549,6 +549,8 @@ body { color: var(--brand-burgundy); }
 .fayda-button:hover, .fayda-button:focus-visible { outline: none; transform: translateY(-1px); background: var(--brand-burgundy-deep); box-shadow: 0 10px 22px rgba(75,13,19,.21); }
 .fayda-button .icon { position: absolute; right: 18px; width: 18px; height: 18px; color: var(--brand-gold-light); }
 .fayda-feedback { min-height: 16px; margin: 8px 0 0; color: rgba(104,27,29,.68); font-size: 11px; text-align: center; }
+.fayda-gate-photo { position: absolute; z-index: 2; top: clamp(58px, 8vh, 76px); left: 50%; width: min(82vw, 410px); aspect-ratio: 1.92; transform: translateX(-50%); object-fit: cover; object-position: center 53%; border: 1px solid rgba(216,191,117,.78); border-radius: 17px; box-shadow: 0 12px 26px rgba(35,9,12,.2); filter: saturate(.92); }
+.fayda-slide #fayda-title::after { content: ""; display: block; width: 48px; height: 3px; margin: 11px 0 0; border-radius: 999px; background: linear-gradient(90deg, var(--onboard-sand), rgba(216,191,117,.18)); }
 .onboarding-footer { position: absolute; z-index: 12; right: clamp(20px, 5vw, 62px); bottom: max(19px, env(safe-area-inset-bottom)); left: clamp(20px, 5vw, 62px); width: auto; pointer-events: none; }
 .onboarding-progress { gap: 6px; }
 .progress-dot { background: rgba(104,27,29,.28); }
