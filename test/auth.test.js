@@ -180,7 +180,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
 
     const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await sessionResponse.json(), { authenticated: true, providerConfigured: true });
+    assert.deepEqual(await sessionResponse.json(), { authenticated: true, faydaConfigured: true, providerConfigured: true, googleConfigured: false });
 
     const replay = await fetch(`${appOrigin}/auth/fayda/callback?code=test-auth-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
       headers: { cookie: authenticatedCookie },
@@ -195,7 +195,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     const logout = await fetch(`${appOrigin}/auth/logout`, { method: 'POST', headers: { cookie: authenticatedCookie, origin: appOrigin } });
     assert.equal(logout.status, 204);
     const afterLogout = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await afterLogout.json(), { authenticated: false, providerConfigured: true });
+    assert.deepEqual(await afterLogout.json(), { authenticated: false, faydaConfigured: true, providerConfigured: true, googleConfigured: false });
 
     const cancellationBegin = await fetch(`${appOrigin}/auth/fayda/start`, { redirect: 'manual' });
     const cancellationCookie = cookieFrom(cancellationBegin);
@@ -210,6 +210,139 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
   } finally {
     await closeServer(appServer);
     await closeServer(provider);
+  }
+});
+
+test('Google OIDC authorization code flow uses PKCE, verifies identity, and consumes state once', async () => {
+  const providerKeys = await generateKeyPair('RS256', { modulusLength: 2048 });
+  const providerPublicJwk = await exportJWK(providerKeys.publicKey);
+  providerPublicJwk.kid = 'google-test-signing-key';
+  providerPublicJwk.alg = 'RS256';
+  providerPublicJwk.use = 'sig';
+
+  const appPort = await getFreePort();
+  const appOrigin = `http://127.0.0.1:${appPort}`;
+  const clientId = 'stemma-google-test.apps.googleusercontent.com';
+  const clientSecret = 'google-test-client-secret';
+  const redirectUri = `${appOrigin}/auth/google/callback`;
+  const config = buildConfig({
+    NODE_ENV: 'test',
+    PORT: String(appPort),
+    SESSION_SECRET: 'test-only-session-secret-with-more-than-32-bytes',
+    APP_ORIGIN: appOrigin,
+    GOOGLE_CLIENT_ID: clientId,
+    GOOGLE_CLIENT_SECRET: clientSecret
+  });
+  let authRequest;
+  let tokenExchanges = 0;
+  const metadata = {
+    issuer: 'https://accounts.google.com',
+    authorization_endpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token_endpoint: 'https://oauth2.googleapis.com/token',
+    jwks_uri: 'https://www.googleapis.com/oauth2/v3/certs',
+    response_types_supported: ['code', 'id_token'],
+    code_challenge_methods_supported: ['plain', 'S256'],
+    id_token_signing_alg_values_supported: ['RS256']
+  };
+  const fetchImpl = async (url, options = {}) => {
+    if (url === 'https://accounts.google.com/.well-known/openid-configuration') {
+      return new Response(JSON.stringify(metadata), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url === 'https://oauth2.googleapis.com/token') {
+      tokenExchanges += 1;
+      const form = new URLSearchParams(options.body);
+      assert.equal(form.get('grant_type'), 'authorization_code');
+      assert.equal(form.get('client_id'), clientId);
+      assert.equal(form.get('client_secret'), clientSecret);
+      assert.equal(form.get('redirect_uri'), redirectUri);
+      assert.equal(form.get('code'), 'google-test-code');
+      const verifier = form.get('code_verifier');
+      const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))).toString('base64url');
+      assert.equal(challenge, authRequest.searchParams.get('code_challenge'));
+      const idToken = await new SignJWT({ nonce: authRequest.searchParams.get('nonce') })
+        .setProtectedHeader({ alg: 'RS256', kid: providerPublicJwk.kid })
+        .setIssuer('https://accounts.google.com')
+        .setAudience(clientId)
+        .setSubject('google-stable-subject-123')
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(providerKeys.privateKey);
+      return new Response(JSON.stringify({ access_token: 'unused-test-access-token', id_token: idToken }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    throw new Error(`Unexpected Google test fetch: ${url}`);
+  };
+  const app = createApp({
+    config,
+    fetchImpl,
+    jwksFactory: () => async () => providerKeys.publicKey
+  });
+  const appServer = app.listen(appPort, '127.0.0.1');
+  await once(appServer, 'listening');
+
+  try {
+    const begin = await fetch(`${appOrigin}/auth/google/start`, { redirect: 'manual' });
+    assert.equal(begin.status, 303);
+    const initialCookie = cookieFrom(begin);
+    authRequest = new URL(begin.headers.get('location'));
+    assert.equal(authRequest.origin, 'https://accounts.google.com');
+    assert.equal(authRequest.searchParams.get('response_type'), 'code');
+    assert.equal(authRequest.searchParams.get('scope'), 'openid');
+    assert.equal(authRequest.searchParams.get('redirect_uri'), redirectUri);
+    assert.match(authRequest.searchParams.get('state'), /^[A-Za-z0-9_-]{43}$/);
+    assert.match(authRequest.searchParams.get('nonce'), /^[A-Za-z0-9_-]{43}$/);
+    assert.match(authRequest.searchParams.get('code_challenge'), /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(authRequest.searchParams.get('code_challenge_method'), 'S256');
+    assert.equal(authRequest.searchParams.get('scope').includes('email'), false);
+
+    const invalid = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${'A'.repeat(43)}`, {
+      headers: { cookie: initialCookie },
+      redirect: 'manual'
+    });
+    assert.equal(invalid.status, 303);
+    assert.equal(invalid.headers.get('location'), '/?auth=failed');
+    assert.equal(tokenExchanges, 0, 'state mismatch must not exchange the code');
+
+    const callback = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
+      headers: { cookie: initialCookie },
+      redirect: 'manual'
+    });
+    assert.equal(callback.status, 303);
+    assert.equal(callback.headers.get('location'), '/?auth=success');
+    assert.equal(tokenExchanges, 1);
+    const authenticatedCookie = cookieFrom(callback);
+    assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
+
+    const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
+    assert.deepEqual(await sessionResponse.json(), {
+      authenticated: true,
+      faydaConfigured: false,
+      providerConfigured: false,
+      googleConfigured: true
+    });
+
+    const replay = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
+      headers: { cookie: authenticatedCookie },
+      redirect: 'manual'
+    });
+    assert.equal(replay.status, 303);
+    assert.equal(replay.headers.get('location'), '/?auth=failed');
+    assert.equal(tokenExchanges, 1, 'a consumed callback must not be exchanged again');
+
+    const cancellationBegin = await fetch(`${appOrigin}/auth/google/start`, { redirect: 'manual' });
+    const cancellationCookie = cookieFrom(cancellationBegin);
+    const cancellationState = new URL(cancellationBegin.headers.get('location')).searchParams.get('state');
+    const cancellation = await fetch(`${appOrigin}/auth/google/callback?error=access_denied&state=${encodeURIComponent(cancellationState)}`, {
+      headers: { cookie: cancellationCookie },
+      redirect: 'manual'
+    });
+    assert.equal(cancellation.status, 303);
+    assert.equal(cancellation.headers.get('location'), '/?auth=failed');
+    assert.equal(tokenExchanges, 1, 'provider cancellation must never trigger a token exchange');
+  } finally {
+    await closeServer(appServer);
   }
 });
 

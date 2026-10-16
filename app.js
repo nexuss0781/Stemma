@@ -190,6 +190,7 @@ function enterDashboard() {
 
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
 const faydaContinue = document.getElementById('fayda-continue');
+const googleContinue = document.getElementById('google-continue');
 const faydaFeedback = document.getElementById('fayda-feedback');
 faydaContinue.addEventListener('click', async () => {
   faydaContinue.disabled = true;
@@ -198,7 +199,7 @@ faydaContinue.addEventListener('click', async () => {
     const response = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('Authentication service is unavailable.');
     const status = await response.json();
-    if (!status.providerConfigured) {
+    if (!(status.faydaConfigured || status.providerConfigured)) {
       faydaFeedback.textContent = 'Fayda sign-in is not configured on this server yet. You can still use Skip to continue as a guest.';
       faydaContinue.disabled = false;
       return;
@@ -207,6 +208,25 @@ faydaContinue.addEventListener('click', async () => {
   } catch {
     faydaFeedback.textContent = 'Fayda sign-in is unavailable right now. You can still use Skip to continue as a guest.';
     faydaContinue.disabled = false;
+  }
+});
+
+googleContinue.addEventListener('click', async () => {
+  googleContinue.disabled = true;
+  faydaFeedback.textContent = 'Checking Google sign-in availability…';
+  try {
+    const response = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('Authentication service is unavailable.');
+    const status = await response.json();
+    if (!status.googleConfigured) {
+      faydaFeedback.textContent = 'Google sign-in is not configured on this server yet. You can still use Skip to continue as a guest.';
+      googleContinue.disabled = false;
+      return;
+    }
+    window.location.assign('/auth/google/start');
+  } catch {
+    faydaFeedback.textContent = 'Google sign-in is unavailable right now. You can still use Skip to continue as a guest.';
+    googleContinue.disabled = false;
   }
 });
 
@@ -220,17 +240,17 @@ async function restoreAuthenticationState() {
       if (status.authenticated) {
         enterDashboard();
       } else if (authReturn === 'failed') {
-        faydaFeedback.textContent = 'Fayda sign-in could not be completed. Please try again or use Skip as a guest.';
+        faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
       } else if (authReturn === 'unavailable') {
-        faydaFeedback.textContent = 'Fayda sign-in is not configured or is temporarily unavailable. You can still use Skip as a guest.';
+        faydaFeedback.textContent = 'Sign-in is not configured or is temporarily unavailable. You can still use Skip as a guest.';
       } else if (authReturn === 'success') {
         faydaFeedback.textContent = 'Your sign-in could not be confirmed. Please start again or use Skip as a guest.';
       }
     } else if (authReturn) {
-      faydaFeedback.textContent = 'Fayda sign-in could not be confirmed. Please try again or use Skip as a guest.';
+      faydaFeedback.textContent = 'Sign-in could not be confirmed. Please try again or use Skip as a guest.';
     }
   } catch {
-    if (authReturn) faydaFeedback.textContent = 'Fayda sign-in could not be confirmed. Please try again or use Skip as a guest.';
+    if (authReturn) faydaFeedback.textContent = 'Sign-in could not be confirmed. Please try again or use Skip as a guest.';
   } finally {
     if (authReturn) window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
   }

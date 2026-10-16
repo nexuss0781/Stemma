@@ -25,6 +25,8 @@ const MAX_TRANSACTIONS_PER_SESSION = 5;
 const MAX_PROVIDER_RESPONSE_BYTES = 128 * 1024;
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const GOOGLE_ISSUER = 'https://accounts.google.com';
+const GOOGLE_DISCOVERY_URL = `${GOOGLE_ISSUER}/.well-known/openid-configuration`;
 
 function trimTrailingSlashes(value) {
   return value.replace(/\/+$/, '');
@@ -46,6 +48,7 @@ export function buildConfig(env = process.env) {
   const scopes = (env.FAYDA_SCOPES || 'openid').trim().split(/\s+/).filter(Boolean);
   const assertionTtl = Number.parseInt(env.FAYDA_ASSERTION_TTL_SECONDS || '60', 10);
   const trustProxy = Number.parseInt(env.TRUST_PROXY || '0', 10);
+  const appOrigin = parseOrigin(env.APP_ORIGIN || callbackOrigin, 'APP_ORIGIN');
 
   return {
     nodeEnv: env.NODE_ENV || 'development',
@@ -59,7 +62,7 @@ export function buildConfig(env = process.env) {
       username: (env.DB_USERNAME || '').trim(),
       password: env.DB_PASSWORD || ''
     },
-    appOrigin: parseOrigin(env.APP_ORIGIN || callbackOrigin, 'APP_ORIGIN'),
+    appOrigin,
     trustProxy: Number.isInteger(trustProxy) && trustProxy >= 0 ? trustProxy : 0,
     fayda: {
       issuer,
@@ -73,6 +76,11 @@ export function buildConfig(env = process.env) {
       acrValues: (env.FAYDA_ACR_VALUES || '').trim(),
       uiLocales: (env.FAYDA_UI_LOCALES || '').trim(),
       assertionTtlSeconds: Number.isInteger(assertionTtl) && assertionTtl >= 30 && assertionTtl <= 300 ? assertionTtl : 60
+    },
+    google: {
+      clientId: (env.GOOGLE_CLIENT_ID || '').trim(),
+      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+      redirectUri: (env.GOOGLE_REDIRECT_URI || (appOrigin ? `${appOrigin}/auth/google/callback` : '')).trim()
     }
   };
 }
@@ -99,6 +107,10 @@ function isFaydaConfigured(config) {
   );
 }
 
+function isGoogleConfigured(config) {
+  return Boolean(config.google.clientId && config.google.clientSecret && config.google.redirectUri);
+}
+
 function validateConfig(config) {
   if (typeof config.sessionSecret !== 'string' || Buffer.byteLength(config.sessionSecret, 'utf8') < 32) {
     throw new Error('SESSION_SECRET must be set to a random value of at least 32 bytes.');
@@ -118,6 +130,9 @@ function validateConfig(config) {
     if (config.fayda.redirectUri && !config.fayda.redirectUri.startsWith('https://')) {
       throw new Error('FAYDA_REDIRECT_URI must use HTTPS in production.');
     }
+    if (config.google.redirectUri && !config.google.redirectUri.startsWith('https://')) {
+      throw new Error('GOOGLE_REDIRECT_URI must use HTTPS in production.');
+    }
   }
   if (config.fayda.scopes.length === 0 || !config.fayda.scopes.includes('openid') || config.fayda.scopes.some(scope => !/^[A-Za-z0-9:_-]+$/.test(scope))) {
     throw new Error('FAYDA_SCOPES must contain openid and valid scope names.');
@@ -131,6 +146,18 @@ function validateConfig(config) {
     }
     if (issuer.search || issuer.hash || discovery.search || discovery.hash || !config.fayda.clientId || config.fayda.clientId.length > 512) {
       throw new Error('Fayda configuration contains an invalid issuer, discovery URL, or client ID.');
+    }
+  }
+  if (Boolean(config.google.clientId) !== Boolean(config.google.clientSecret)) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured together.');
+  }
+  if (config.google.clientId || config.google.clientSecret) {
+    if (!config.google.clientId || config.google.clientId.length > 512 || !config.google.clientSecret) {
+      throw new Error('GOOGLE_CLIENT_ID must be set and valid when Google sign-in is configured.');
+    }
+    const redirect = validateHttpsUrl(config.google.redirectUri, 'GOOGLE_REDIRECT_URI', config.nodeEnv);
+    if (redirect.search || redirect.hash || redirect.origin !== config.appOrigin) {
+      throw new Error('GOOGLE_REDIRECT_URI must be a query-free callback URL on APP_ORIGIN.');
     }
   }
 }
@@ -214,6 +241,33 @@ function validateProviderMetadata(metadata, config) {
   return { ...metadata, ...Object.fromEntries(Object.entries(endpoints).map(([key, url]) => [key, url.href])) };
 }
 
+function validateGoogleMetadata(metadata, config) {
+  if (!metadata || metadata.issuer !== GOOGLE_ISSUER) {
+    throw new Error('Google discovery issuer did not match the expected issuer.');
+  }
+  if (!Array.isArray(metadata.response_types_supported) || !metadata.response_types_supported.includes('code')) {
+    throw new Error('Google does not advertise authorization-code responses.');
+  }
+  if (!Array.isArray(metadata.code_challenge_methods_supported) || !metadata.code_challenge_methods_supported.includes('S256')) {
+    throw new Error('Google does not advertise S256 PKCE support.');
+  }
+  if (Array.isArray(metadata.id_token_signing_alg_values_supported) && !metadata.id_token_signing_alg_values_supported.includes('RS256')) {
+    throw new Error('Google metadata does not advertise RS256 ID-token signatures.');
+  }
+  const endpoints = {};
+  for (const [key, host] of [
+    ['authorization_endpoint', 'accounts.google.com'],
+    ['token_endpoint', 'oauth2.googleapis.com'],
+    ['jwks_uri', 'www.googleapis.com']
+  ]) {
+    if (typeof metadata[key] !== 'string') throw new Error('Google discovery is missing a required endpoint.');
+    const endpoint = validateHttpsUrl(metadata[key], `Google ${key}`, config.nodeEnv);
+    if (endpoint.hostname !== host) throw new Error('Google discovery returned an unexpected endpoint host.');
+    endpoints[key] = endpoint.href;
+  }
+  return { ...metadata, ...endpoints };
+}
+
 async function readPrivateJwk(provider) {
   let raw = provider.privateJwkJson;
   if (!raw && provider.privateJwkPath) {
@@ -294,7 +348,9 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
   }));
 
   const discoveryCache = { value: null, expiresAt: 0, pending: null };
+  const googleDiscoveryCache = { value: null, expiresAt: 0, pending: null };
   let remoteJwks = null;
+  let googleRemoteJwks = null;
   let signingKeyPromise = null;
 
   async function getProviderMetadata() {
@@ -317,6 +373,25 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
     }
   }
 
+  async function getGoogleMetadata() {
+    if (!isGoogleConfigured(config)) throw new Error('Google sign-in is not configured.');
+    if (googleDiscoveryCache.value && Date.now() < googleDiscoveryCache.expiresAt) return googleDiscoveryCache.value;
+    if (googleDiscoveryCache.pending) return googleDiscoveryCache.pending;
+    googleDiscoveryCache.pending = (async () => {
+      const { response, text } = await fetchText(fetchImpl, GOOGLE_DISCOVERY_URL, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('Google discovery request failed.');
+      const metadata = validateGoogleMetadata(parseJson(text), config);
+      googleDiscoveryCache.value = metadata;
+      googleDiscoveryCache.expiresAt = Date.now() + 15 * 60 * 1000;
+      return metadata;
+    })();
+    try {
+      return await googleDiscoveryCache.pending;
+    } finally {
+      googleDiscoveryCache.pending = null;
+    }
+  }
+
   function getJwks(metadata) {
     if (!remoteJwks) remoteJwks = jwksFactory(new URL(metadata.jwks_uri), {
       timeoutDuration: 5_000,
@@ -324,6 +399,15 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       cacheMaxAge: 10 * 60 * 1000
     });
     return remoteJwks;
+  }
+
+  function getGoogleJwks(metadata) {
+    if (!googleRemoteJwks) googleRemoteJwks = jwksFactory(new URL(metadata.jwks_uri), {
+      timeoutDuration: 5_000,
+      cooldownDuration: 30_000,
+      cacheMaxAge: 10 * 60 * 1000
+    });
+    return googleRemoteJwks;
   }
 
   async function getClientSigningKey() {
@@ -344,14 +428,16 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
 
   app.get('/healthz', (_req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ status: 'ok', faydaConfigured: isFaydaConfigured(config) });
+    res.json({ status: 'ok', faydaConfigured: isFaydaConfigured(config), googleConfigured: isGoogleConfigured(config) });
   });
 
   app.get('/auth/session', (req, res) => {
     setNoStore(res);
     res.json({
       authenticated: Boolean(req.session?.stemmaUser),
-      providerConfigured: isFaydaConfigured(config)
+      faydaConfigured: isFaydaConfigured(config),
+      providerConfigured: isFaydaConfigured(config),
+      googleConfigured: isGoogleConfigured(config)
     });
   });
 
@@ -380,7 +466,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       const [oldestState] = ordered.shift();
       delete transactions[oldestState];
     }
-    transactions[state] = { nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    transactions[state] = { provider: 'fayda', nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
     req.session.oidcTransactions = transactions;
     await sessionOperation(req, 'save');
 
@@ -406,7 +492,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
 
     const transactions = req.session.oidcTransactions || {};
     const transaction = transactions[state];
-    if (!transaction || transaction.expiresAt <= Date.now()) return res.redirect(303, '/?auth=failed');
+    if (!transaction || transaction.provider !== 'fayda' || transaction.expiresAt <= Date.now()) return res.redirect(303, '/?auth=failed');
 
     // Consume and persist the one-time transaction before inspecting provider errors or exchanging code.
     delete transactions[state];
@@ -480,6 +566,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       // Store only the verified external key and the time of authentication; discard all provider tokens and claims.
       await sessionOperation(req, 'regenerate');
       req.session.stemmaUser = {
+        provider: 'fayda',
         issuer: config.fayda.issuer,
         subject: idToken.sub,
         authenticatedAt: nowSeconds
@@ -488,6 +575,115 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       return res.redirect(303, '/?auth=success');
     } catch {
       // Never return or log provider error text, tokens, assertions, or identity claims.
+      return res.redirect(303, '/?auth=failed');
+    }
+  }));
+
+  app.get('/auth/google/start', authLimiter, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    if (!isGoogleConfigured(config)) return res.redirect(303, '/?auth=unavailable');
+
+    let metadata;
+    try {
+      metadata = await getGoogleMetadata();
+    } catch {
+      return res.redirect(303, '/?auth=unavailable');
+    }
+
+    const state = crypto.randomBytes(32).toString('base64url');
+    const nonce = crypto.randomBytes(32).toString('base64url');
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    const now = Date.now();
+    const transactions = req.session.oidcTransactions || {};
+    for (const [key, transaction] of Object.entries(transactions)) {
+      if (!transaction || transaction.expiresAt <= now) delete transactions[key];
+    }
+    const ordered = Object.entries(transactions).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    while (ordered.length >= MAX_TRANSACTIONS_PER_SESSION) {
+      const [oldestState] = ordered.shift();
+      delete transactions[oldestState];
+    }
+    transactions[state] = { provider: 'google', nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    req.session.oidcTransactions = transactions;
+    await sessionOperation(req, 'save');
+
+    const authorizationUrl = new URL(metadata.authorization_endpoint);
+    authorizationUrl.searchParams.set('client_id', config.google.clientId);
+    authorizationUrl.searchParams.set('redirect_uri', config.google.redirectUri);
+    authorizationUrl.searchParams.set('response_type', 'code');
+    authorizationUrl.searchParams.set('scope', 'openid');
+    authorizationUrl.searchParams.set('state', state);
+    authorizationUrl.searchParams.set('nonce', nonce);
+    authorizationUrl.searchParams.set('code_challenge', codeChallenge);
+    authorizationUrl.searchParams.set('code_challenge_method', 'S256');
+    return res.redirect(303, authorizationUrl.href);
+  }));
+
+  app.get('/auth/google/callback', authLimiter, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !req.session) return res.redirect(303, '/?auth=failed');
+
+    const transactions = req.session.oidcTransactions || {};
+    const transaction = transactions[state];
+    if (!transaction || transaction.provider !== 'google' || transaction.expiresAt <= Date.now()) {
+      return res.redirect(303, '/?auth=failed');
+    }
+
+    delete transactions[state];
+    req.session.oidcTransactions = transactions;
+    await sessionOperation(req, 'save');
+
+    if (typeof req.query.error === 'string' || typeof req.query.code !== 'string' || req.query.code.length < 1 || req.query.code.length > 2048) {
+      return res.redirect(303, '/?auth=failed');
+    }
+
+    try {
+      const metadata = await getGoogleMetadata();
+      const tokenForm = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: req.query.code,
+        redirect_uri: config.google.redirectUri,
+        client_id: config.google.clientId,
+        client_secret: config.google.clientSecret,
+        code_verifier: transaction.codeVerifier
+      });
+      const tokenResult = await fetchText(fetchImpl, metadata.token_endpoint, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenForm
+      });
+      if (!tokenResult.response.ok) throw new Error('Google token exchange failed.');
+      const tokenData = parseJson(tokenResult.text);
+      if (!tokenData || typeof tokenData.id_token !== 'string') throw new Error('Google token response did not include an ID token.');
+
+      const { payload: idToken } = await jwtVerify(tokenData.id_token, getGoogleJwks(metadata), {
+        issuer: [GOOGLE_ISSUER, 'accounts.google.com'],
+        audience: config.google.clientId,
+        algorithms: ['RS256'],
+        clockTolerance: 60
+      });
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (typeof idToken.sub !== 'string' || !idToken.sub || idToken.nonce !== transaction.nonce ||
+          (idToken.azp !== undefined && idToken.azp !== config.google.clientId) ||
+          !Number.isInteger(idToken.iat) || idToken.iat > nowSeconds + 60 || idToken.iat < nowSeconds - 900) {
+        throw new Error('Google ID-token claims failed validation.');
+      }
+
+      await sessionOperation(req, 'regenerate');
+      req.session.stemmaUser = {
+        provider: 'google',
+        issuer: GOOGLE_ISSUER,
+        subject: idToken.sub,
+        authenticatedAt: nowSeconds
+      };
+      await sessionOperation(req, 'save');
+      return res.redirect(303, '/?auth=success');
+    } catch {
       return res.redirect(303, '/?auth=failed');
     }
   }));
@@ -569,7 +765,7 @@ async function startServer() {
   }
   const app = createApp({ config, sessionStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
-    process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}.\n`);
+    process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });
   const shutdown = async () => {
     server.close(async () => {
