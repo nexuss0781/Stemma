@@ -346,6 +346,60 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
   }
 });
 
+test('Google OAuth sets a secure session cookie behind the configured HTTPS proxy', async () => {
+  const appPort = await getFreePort();
+  const appOrigin = `http://127.0.0.1:${appPort}`;
+  const config = buildConfig({
+    NODE_ENV: 'test',
+    PORT: String(appPort),
+    SESSION_SECRET: 'test-only-session-secret-with-more-than-32-bytes',
+    APP_ORIGIN: appOrigin,
+    SESSION_COOKIE_SECURE: 'true',
+    TRUST_PROXY: '1',
+    GOOGLE_CLIENT_ID: 'stemma-proxy-test.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: 'google-test-client-secret'
+  });
+  const googleMetadata = {
+    issuer: 'https://accounts.google.com',
+    authorization_endpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token_endpoint: 'https://oauth2.googleapis.com/token',
+    jwks_uri: 'https://www.googleapis.com/oauth2/v3/certs',
+    response_types_supported: ['code'],
+    code_challenge_methods_supported: ['S256'],
+    id_token_signing_alg_values_supported: ['RS256']
+  };
+  const app = createApp({
+    config,
+    fetchImpl: async url => {
+      assert.equal(String(url), 'https://accounts.google.com/.well-known/openid-configuration');
+      return new Response(JSON.stringify(googleMetadata), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  const appServer = app.listen(appPort, '127.0.0.1');
+  await once(appServer, 'listening');
+
+  try {
+    const begin = await fetch(`${appOrigin}/auth/google/start`, {
+      headers: { 'x-forwarded-proto': 'https' },
+      redirect: 'manual'
+    });
+    assert.equal(begin.status, 303);
+    const setCookie = begin.headers.get('set-cookie');
+    assert.ok(setCookie, 'proxy-aware OAuth start must set the transaction session cookie');
+    assert.match(setCookie, /; Secure(?:;|$)/i);
+    assert.match(setCookie, /; HttpOnly(?:;|$)/i);
+    assert.match(setCookie, /; SameSite=Lax(?:;|$)/i);
+    const authorizationUrl = new URL(begin.headers.get('location'));
+    assert.equal(authorizationUrl.searchParams.get('redirect_uri'), `${appOrigin}/auth/google/callback`);
+    assert.match(authorizationUrl.searchParams.get('state'), /^[A-Za-z0-9_-]{43}$/);
+  } finally {
+    await closeServer(appServer);
+  }
+});
+
 test('production startup rejects weak session secrets and missing PostgreSQL session storage', () => {
   const base = {
     NODE_ENV: 'production',

@@ -6,6 +6,7 @@ env:
   NODE_ENV: production
   PORT: '3000'
   APP_ORIGIN: "https://stemma.wasmer.app"
+  TRUST_PROXY: '1'
 capabilities:
   database:
     engine: postgres
