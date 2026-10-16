@@ -285,7 +285,15 @@ async function restoreAuthenticationState() {
     const response = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (response.ok) {
       const status = await response.json();
-      if (status.authenticated) {
+      if (status.authenticated && status.authProvider === 'google' && !status.googleProfile) {
+        renderGoogleProfile(null);
+        goToOnboardingSlide(1);
+        if (authReturn === 'failed' || authReturn === 'unavailable' || !status.googleConfigured) {
+          faydaFeedback.textContent = 'Google sign-in could not be completed. Please try again or use Skip as a guest.';
+        } else {
+          faydaFeedback.textContent = 'Please continue with Google again to grant profile access and load your name, email, and photo.';
+        }
+      } else if (status.authenticated) {
         renderGoogleProfile(status.googleProfile);
         enterDashboard();
       } else if (authReturn === 'failed') {

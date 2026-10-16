@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { test } from 'node:test';
+import session from 'express-session';
 import {
   exportJWK,
   generateKeyPair,
@@ -180,7 +181,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
 
     const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await sessionResponse.json(), { authenticated: true, faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
+    assert.deepEqual(await sessionResponse.json(), { authenticated: true, authProvider: 'fayda', faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
 
     const replay = await fetch(`${appOrigin}/auth/fayda/callback?code=test-auth-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
       headers: { cookie: authenticatedCookie },
@@ -195,7 +196,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     const logout = await fetch(`${appOrigin}/auth/logout`, { method: 'POST', headers: { cookie: authenticatedCookie, origin: appOrigin } });
     assert.equal(logout.status, 204);
     const afterLogout = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await afterLogout.json(), { authenticated: false, faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
+    assert.deepEqual(await afterLogout.json(), { authenticated: false, authProvider: null, faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
 
     const cancellationBegin = await fetch(`${appOrigin}/auth/fayda/start`, { redirect: 'manual' });
     const cancellationCookie = cookieFrom(cancellationBegin);
@@ -280,8 +281,10 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
     }
     throw new Error(`Unexpected Google test fetch: ${url}`);
   };
+  const sessionStore = new session.MemoryStore();
   const app = createApp({
     config,
+    sessionStore,
     fetchImpl,
     jwksFactory: () => async () => providerKeys.publicKey
   });
@@ -323,6 +326,7 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
     const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
     assert.deepEqual(await sessionResponse.json(), {
       authenticated: true,
+      authProvider: 'google',
       faydaConfigured: false,
       providerConfigured: false,
       googleConfigured: true,
@@ -331,6 +335,27 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
         email: 'person@gmail.com',
         avatarUrl: 'https://lh3.googleusercontent.com/a/example-avatar'
       }
+    });
+
+    const encodedSessionValue = authenticatedCookie.split('=', 2)[1];
+    const legacySessionId = decodeURIComponent(encodedSessionValue).match(/^s:([^.]+)\./)?.[1];
+    assert.ok(legacySessionId);
+    const legacySession = await new Promise((resolve, reject) => {
+      sessionStore.get(legacySessionId, (error, value) => error ? reject(error) : resolve(value));
+    });
+    assert.ok(legacySession?.stemmaUser);
+    delete legacySession.stemmaUser.profile;
+    await new Promise((resolve, reject) => {
+      sessionStore.set(legacySessionId, legacySession, error => error ? reject(error) : resolve());
+    });
+    const legacySessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
+    assert.deepEqual(await legacySessionResponse.json(), {
+      authenticated: true,
+      authProvider: 'google',
+      faydaConfigured: false,
+      providerConfigured: false,
+      googleConfigured: true,
+      googleProfile: null
     });
 
     const replay = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
