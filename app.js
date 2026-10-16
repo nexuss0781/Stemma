@@ -207,7 +207,7 @@ function renderGoogleProfile(profile) {
   nameElement.textContent = displayName;
   emailElement.textContent = email;
   emailElement.hidden = !email;
-  fallback.textContent = displayName.slice(0, 1).toUpperCase();
+  fallback.textContent = [...displayName][0].toLocaleUpperCase();
 
   let avatarUrl = '';
   try {
@@ -234,6 +234,22 @@ function renderGoogleProfile(profile) {
 document.getElementById('drawer-profile-avatar').addEventListener('error', () => {
   document.getElementById('drawer-profile-avatar').hidden = true;
   document.getElementById('drawer-profile-avatar-fallback').hidden = false;
+});
+
+document.getElementById('drawer-sign-out').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await fetch('/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error('Sign-out request failed.');
+    window.location.assign('/');
+  } catch {
+    button.disabled = false;
+  }
 });
 
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
