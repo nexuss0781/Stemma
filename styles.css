@@ -376,6 +376,7 @@ body { color: var(--brand-burgundy); }
 .fayda-actions { display: block; }
 .fayda-button { min-height: 54px; min-width: min(100%, 290px); display: inline-flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 19px 0 23px; border: 1px solid var(--onboard-burgundy); border-radius: 15px; color: var(--onboard-soft); background: var(--onboard-burgundy); font-size: 14px; font-weight: 680; cursor: pointer; box-shadow: 0 9px 20px rgba(104,27,29,.17); transition: transform .18s ease, background .18s ease, box-shadow .18s ease; }
 .fayda-button:hover, .fayda-button:focus-visible { outline: none; transform: translateY(-2px); background: var(--onboard-deep); box-shadow: 0 12px 23px rgba(104,27,29,.22); }
+.fayda-button:disabled { cursor: wait; opacity: .72; transform: none; }
 .fayda-button .icon { width: 18px; height: 18px; color: var(--onboard-soft); }
 .fayda-feedback { min-height: 16px; margin: 10px 0 0 2px; color: rgba(104,27,29,.68); font-size: 11px; line-height: 1.45; }
 .onboarding-footer { width: min(100%, 1440px); justify-self: center; display: flex; align-items: center; justify-content: space-between; }
