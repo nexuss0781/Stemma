@@ -282,9 +282,21 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
     throw new Error(`Unexpected Google test fetch: ${url}`);
   };
   const sessionStore = new session.MemoryStore();
+  const persistedIdentities = new Map();
+  const identityWrites = [];
+  const googleIdentityStore = {
+    async upsertGoogleIdentity(identity) {
+      identityWrites.push({ ...identity });
+      persistedIdentities.set(identity.subject, { ...identity });
+    },
+    async getGoogleIdentity(subject) {
+      return persistedIdentities.get(subject) ?? null;
+    }
+  };
   const app = createApp({
     config,
     sessionStore,
+    googleIdentityStore,
     fetchImpl,
     jwksFactory: () => async () => providerKeys.publicKey
   });
@@ -320,6 +332,11 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
     assert.equal(callback.status, 303);
     assert.equal(callback.headers.get('location'), '/?auth=success');
     assert.equal(tokenExchanges, 1);
+    assert.deepEqual(identityWrites, [{
+      subject: 'google-stable-subject-123',
+      verifiedEmail: 'person@gmail.com'
+    }]);
+    assert.deepEqual(Object.keys(identityWrites[0]).sort(), ['subject', 'verifiedEmail']);
     const authenticatedCookie = cookieFrom(callback);
     assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
 
@@ -344,7 +361,17 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
       sessionStore.get(legacySessionId, (error, value) => error ? reject(error) : resolve(value));
     });
     assert.ok(legacySession?.stemmaUser);
-    delete legacySession.stemmaUser.profile;
+    assert.deepEqual(legacySession.stemmaUser.profile, {
+      name: 'Google Account Name',
+      email: 'person@gmail.com',
+      avatarUrl: 'https://lh3.googleusercontent.com/a/example-avatar'
+    }, 'display values stay in the authenticated session');
+
+    legacySession.stemmaUser.profile = {
+      name: 'Legacy Google Account',
+      email: 'legacy@example.com',
+      avatarUrl: 'https://lh3.googleusercontent.com/a/legacy-avatar'
+    };
     await new Promise((resolve, reject) => {
       sessionStore.set(legacySessionId, legacySession, error => error ? reject(error) : resolve());
     });
@@ -355,8 +382,31 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
       faydaConfigured: false,
       providerConfigured: false,
       googleConfigured: true,
-      googleProfile: null
+      googleProfile: {
+        name: 'Legacy Google Account',
+        email: 'legacy@example.com',
+        avatarUrl: 'https://lh3.googleusercontent.com/a/legacy-avatar'
+      }
     });
+    const migratedSession = await new Promise((resolve, reject) => {
+      sessionStore.get(legacySessionId, (error, value) => error ? reject(error) : resolve(value));
+    });
+    assert.deepEqual(migratedSession.stemmaUser.profile, {
+      name: 'Legacy Google Account',
+      email: 'legacy@example.com',
+      avatarUrl: 'https://lh3.googleusercontent.com/a/legacy-avatar'
+    }, 'name and avatar remain session-only');
+    assert.equal(identityWrites.length, 2, 'a changed verified email is synchronized to durable identity storage');
+
+    const logout = await fetch(`${appOrigin}/auth/logout`, {
+      method: 'POST',
+      headers: { cookie: authenticatedCookie, origin: appOrigin }
+    });
+    assert.equal(logout.status, 204);
+    assert.deepEqual(await googleIdentityStore.getGoogleIdentity('google-stable-subject-123'), {
+      subject: 'google-stable-subject-123',
+      verifiedEmail: 'legacy@example.com'
+    }, 'only the authentication identity should remain in durable storage after session logout');
 
     const replay = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
       headers: { cookie: authenticatedCookie },
@@ -465,4 +515,16 @@ test('production startup rejects weak session secrets and missing PostgreSQL ses
     DB_PASSWORD: 'test-only-database-password'
   });
   assert.throws(() => createApp({ config: postgresConfigured }), /persistent PostgreSQL session store/);
+  const googlePostgresConfigured = buildConfig({
+    ...base,
+    SESSION_SECRET: 'production-test-secret-that-is-at-least-32-bytes-long',
+    DB_HOST: 'db.example',
+    DB_PORT: '5432',
+    DB_NAME: 'stemma',
+    DB_USERNAME: 'stemma',
+    DB_PASSWORD: 'test-only-database-password',
+    GOOGLE_CLIENT_ID: 'stemma-test.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: 'test-only-google-client-secret'
+  });
+  assert.throws(() => createApp({ config: googlePostgresConfigured, sessionStore: new session.MemoryStore() }), /persistent PostgreSQL Google identity store/);
 });
