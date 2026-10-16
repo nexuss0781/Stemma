@@ -188,6 +188,54 @@ function enterDashboard() {
   window.requestAnimationFrame(updateNavIndicator);
 }
 
+function renderGoogleProfile(profile) {
+  const placeholder = document.getElementById('drawer-profile-placeholder');
+  const footer = document.getElementById('drawer-profile');
+  if (!profile) {
+    footer.hidden = true;
+    placeholder.hidden = false;
+    return;
+  }
+
+  const name = typeof profile.name === 'string' ? profile.name.trim() : '';
+  const email = typeof profile.email === 'string' ? profile.email.trim() : '';
+  const displayName = name || (email ? email.split('@')[0] : 'Google account');
+  const nameElement = document.getElementById('drawer-profile-name');
+  const emailElement = document.getElementById('drawer-profile-email');
+  const avatar = document.getElementById('drawer-profile-avatar');
+  const fallback = document.getElementById('drawer-profile-avatar-fallback');
+  nameElement.textContent = displayName;
+  emailElement.textContent = email;
+  emailElement.hidden = !email;
+  fallback.textContent = displayName.slice(0, 1).toUpperCase();
+
+  let avatarUrl = '';
+  try {
+    const candidate = new URL(profile.avatarUrl, window.location.origin);
+    const host = candidate.hostname.toLowerCase();
+    if (candidate.protocol === 'https:' && (host === 'googleusercontent.com' || host.endsWith('.googleusercontent.com'))) {
+      avatarUrl = candidate.href;
+    }
+  } catch {}
+
+  if (avatarUrl) {
+    avatar.hidden = false;
+    fallback.hidden = true;
+    avatar.src = avatarUrl;
+  } else {
+    avatar.removeAttribute('src');
+    avatar.hidden = true;
+    fallback.hidden = false;
+  }
+  footer.hidden = false;
+  placeholder.hidden = true;
+}
+
+document.getElementById('drawer-profile-avatar').addEventListener('error', () => {
+  document.getElementById('drawer-profile-avatar').hidden = true;
+  document.getElementById('drawer-profile-avatar-fallback').hidden = false;
+});
+
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
 const faydaContinue = document.getElementById('fayda-continue');
 const googleContinue = document.getElementById('google-continue');
@@ -238,6 +286,7 @@ async function restoreAuthenticationState() {
     if (response.ok) {
       const status = await response.json();
       if (status.authenticated) {
+        renderGoogleProfile(status.googleProfile);
         enterDashboard();
       } else if (authReturn === 'failed') {
         faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';

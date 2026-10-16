@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=14" />
-  <script src="app.js?v=4" defer></script>
+  <link rel="stylesheet" href="styles.css?v=16" />
+  <script src="app.js?v=5" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -180,7 +180,12 @@
     <div class="drawer-photo-skeleton skeleton-shimmer" aria-hidden="true"></div>
     <div class="drawer-divider" role="separator" aria-orientation="horizontal"></div>
     <nav class="drawer-links" id="drawer-links" aria-label="Sections"></nav>
-    <div class="drawer-foot" aria-hidden="true"><span class="drawer-avatar-skeleton"></span><span class="drawer-foot-line skeleton-shimmer"></span></div>
+    <div class="drawer-foot" id="drawer-profile-placeholder" aria-hidden="true"><span class="drawer-avatar-skeleton"></span><span class="drawer-foot-line skeleton-shimmer"></span></div>
+    <div class="drawer-foot drawer-profile" id="drawer-profile" hidden>
+      <img class="drawer-profile-avatar" id="drawer-profile-avatar" alt="" hidden />
+      <span class="drawer-profile-avatar-fallback" id="drawer-profile-avatar-fallback" aria-hidden="true" hidden></span>
+      <span class="drawer-profile-copy"><span class="drawer-profile-name" id="drawer-profile-name"></span><span class="drawer-profile-email" id="drawer-profile-email"></span></span>
+    </div>
   </aside>
 </body>
 </html>

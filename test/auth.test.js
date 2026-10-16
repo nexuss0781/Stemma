@@ -180,7 +180,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
 
     const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await sessionResponse.json(), { authenticated: true, faydaConfigured: true, providerConfigured: true, googleConfigured: false });
+    assert.deepEqual(await sessionResponse.json(), { authenticated: true, faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
 
     const replay = await fetch(`${appOrigin}/auth/fayda/callback?code=test-auth-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
       headers: { cookie: authenticatedCookie },
@@ -195,7 +195,7 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     const logout = await fetch(`${appOrigin}/auth/logout`, { method: 'POST', headers: { cookie: authenticatedCookie, origin: appOrigin } });
     assert.equal(logout.status, 204);
     const afterLogout = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
-    assert.deepEqual(await afterLogout.json(), { authenticated: false, faydaConfigured: true, providerConfigured: true, googleConfigured: false });
+    assert.deepEqual(await afterLogout.json(), { authenticated: false, faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
 
     const cancellationBegin = await fetch(`${appOrigin}/auth/fayda/start`, { redirect: 'manual' });
     const cancellationCookie = cookieFrom(cancellationBegin);
@@ -259,7 +259,13 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
       const verifier = form.get('code_verifier');
       const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))).toString('base64url');
       assert.equal(challenge, authRequest.searchParams.get('code_challenge'));
-      const idToken = await new SignJWT({ nonce: authRequest.searchParams.get('nonce') })
+      const idToken = await new SignJWT({
+        nonce: authRequest.searchParams.get('nonce'),
+        name: 'Google Account Name',
+        email: 'person@gmail.com',
+        email_verified: true,
+        picture: 'https://lh3.googleusercontent.com/a/example-avatar'
+      })
         .setProtectedHeader({ alg: 'RS256', kid: providerPublicJwk.kid })
         .setIssuer('https://accounts.google.com')
         .setAudience(clientId)
@@ -289,13 +295,12 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
     authRequest = new URL(begin.headers.get('location'));
     assert.equal(authRequest.origin, 'https://accounts.google.com');
     assert.equal(authRequest.searchParams.get('response_type'), 'code');
-    assert.equal(authRequest.searchParams.get('scope'), 'openid');
+    assert.equal(authRequest.searchParams.get('scope'), 'openid email profile');
     assert.equal(authRequest.searchParams.get('redirect_uri'), redirectUri);
     assert.match(authRequest.searchParams.get('state'), /^[A-Za-z0-9_-]{43}$/);
     assert.match(authRequest.searchParams.get('nonce'), /^[A-Za-z0-9_-]{43}$/);
     assert.match(authRequest.searchParams.get('code_challenge'), /^[A-Za-z0-9_-]{43}$/);
     assert.equal(authRequest.searchParams.get('code_challenge_method'), 'S256');
-    assert.equal(authRequest.searchParams.get('scope').includes('email'), false);
 
     const invalid = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${'A'.repeat(43)}`, {
       headers: { cookie: initialCookie },
@@ -320,7 +325,12 @@ test('Google OIDC authorization code flow uses PKCE, verifies identity, and cons
       authenticated: true,
       faydaConfigured: false,
       providerConfigured: false,
-      googleConfigured: true
+      googleConfigured: true,
+      googleProfile: {
+        name: 'Google Account Name',
+        email: 'person@gmail.com',
+        avatarUrl: 'https://lh3.googleusercontent.com/a/example-avatar'
+      }
     });
 
     const replay = await fetch(`${appOrigin}/auth/google/callback?code=google-test-code&state=${encodeURIComponent(authRequest.searchParams.get('state'))}`, {
