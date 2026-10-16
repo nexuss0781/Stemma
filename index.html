@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=12" />
-  <script src="app.js?v=3" defer></script>
+  <link rel="stylesheet" href="styles.css?v=13" />
+  <script src="app.js?v=4" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -81,9 +81,11 @@
         <div class="onboarding-copy">
           <p class="onboarding-kicker"><span class="kicker-spark" aria-hidden="true"></span> Your next step</p>
           <h1 id="fayda-title">Sign in</h1>
-          <p class="onboarding-description">Continue with Fayda to get started with Stemma.</p>
+          <p class="onboarding-description">Continue with Fayda or Google to get started with Stemma.</p>
           <div class="onboarding-actions fayda-actions">
             <button class="fayda-button" id="fayda-continue" type="button">Continue with Fayda</button>
+            <div class="auth-divider" aria-hidden="true"><span>or</span></div>
+            <button class="google-button" id="google-continue" type="button"><span class="google-mark" aria-hidden="true">G</span>Continue with Google</button>
             <p class="fayda-feedback" id="fayda-feedback" role="status" aria-live="polite"></p>
           </div>
         </div>
