@@ -18,6 +18,7 @@ let activeRoute = 'overview';
 const activeTabs = Object.fromEntries(sections.map(({ id }) => [id, 0]));
 let routeDirection = 0;
 let navIndicatorReady = false;
+let onboardingScrollFrame = 0;
 
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
@@ -161,6 +162,51 @@ document.addEventListener('click', event => {
     renderTabs();
   }
 });
+
+const onboardingStage = document.getElementById('onboarding-stage');
+const onboardingSlides = [...onboardingStage.querySelectorAll('.onboarding-slide')];
+
+function setOnboardingProgress() {
+  const currentIndex = Math.max(0, Math.min(onboardingSlides.length - 1, Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth))));
+  document.getElementById('active-step').textContent = `0${currentIndex + 1}`;
+  document.getElementById('progress-dot-one').classList.toggle('is-active', currentIndex === 0);
+  document.getElementById('progress-dot-two').classList.toggle('is-active', currentIndex === 1);
+}
+
+function goToOnboardingSlide(index) {
+  const target = Math.max(0, Math.min(onboardingSlides.length - 1, index));
+  onboardingStage.scrollTo({
+    left: target * onboardingStage.clientWidth,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+  });
+}
+
+function enterDashboard() {
+  document.getElementById('onboarding-screen').hidden = true;
+  document.getElementById('app-shell').hidden = false;
+  document.getElementById('app-main').focus({ preventScroll: true });
+  window.requestAnimationFrame(updateNavIndicator);
+}
+
+document.getElementById('welcome-continue').addEventListener('click', () => goToOnboardingSlide(1));
+document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
+document.getElementById('fayda-continue').addEventListener('click', () => {
+  document.getElementById('fayda-feedback').textContent = 'Fayda sign-in is a visual preview and is not connected yet.';
+});
+onboardingStage.addEventListener('scroll', () => {
+  if (onboardingScrollFrame) window.cancelAnimationFrame(onboardingScrollFrame);
+  onboardingScrollFrame = window.requestAnimationFrame(() => {
+    setOnboardingProgress();
+    onboardingScrollFrame = 0;
+  });
+}, { passive: true });
+onboardingStage.addEventListener('keydown', event => {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+  event.preventDefault();
+  const currentIndex = Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth));
+  goToOnboardingSlide(currentIndex + (event.key === 'ArrowRight' ? 1 : -1));
+});
+window.addEventListener('resize', setOnboardingProgress);
 
 document.getElementById('menu-trigger').addEventListener('click', openDrawer);
 document.getElementById('drawer-close').addEventListener('click', closeDrawer);
