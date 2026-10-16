@@ -178,6 +178,37 @@ function sessionOperation(req, operation) {
   });
 }
 
+export function createGoogleIdentityStore(pool) {
+  return {
+    async migrate() {
+      const migration = await fs.readFile(path.join(ROOT, 'migrations', '001_google_identities.sql'), 'utf8');
+      await pool.query(migration);
+    },
+    async upsertGoogleIdentity({ subject, verifiedEmail }) {
+      const result = await pool.query(
+        `INSERT INTO stemma_google_identities (google_subject, verified_email)
+         VALUES ($1, $2)
+         ON CONFLICT (google_subject) DO UPDATE SET
+           verified_email = EXCLUDED.verified_email,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING google_subject AS subject, verified_email AS "verifiedEmail"`,
+        [subject, verifiedEmail]
+      );
+      return result.rows[0] ?? null;
+    },
+    async getGoogleIdentity(subject) {
+      const result = await pool.query(
+        `SELECT google_subject AS subject, verified_email AS "verifiedEmail"
+         FROM stemma_google_identities
+         WHERE google_subject = $1
+         LIMIT 1`,
+        [subject]
+      );
+      return result.rows[0] ?? null;
+    }
+  };
+}
+
 async function readLimitedBody(response, maxBytes = MAX_PROVIDER_RESPONSE_BYTES) {
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -324,10 +355,13 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
+  }
+  if (config.nodeEnv === 'production' && isGoogleConfigured(config) && !googleIdentityStore) {
+    throw new Error('A persistent PostgreSQL Google identity store is required when Google sign-in is configured.');
   }
   const app = express();
   app.disable('x-powered-by');
@@ -450,11 +484,18 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
     res.json({ status: 'ok', faydaConfigured: isFaydaConfigured(config), googleConfigured: isGoogleConfigured(config) });
   });
 
-  app.get('/auth/session', (req, res) => {
+  app.get('/auth/session', asyncRoute(async (req, res) => {
     setNoStore(res);
     const stemmaUser = req.session?.stemmaUser ?? null;
     const googleUser = stemmaUser?.provider === 'google' ? stemmaUser : null;
     const googleProfile = googleUser?.profile;
+    if (googleUser && googleIdentityStore) {
+      const verifiedEmail = typeof googleProfile?.email === 'string' ? googleProfile.email : '';
+      const storedIdentity = await googleIdentityStore.getGoogleIdentity(googleUser.subject);
+      if (!storedIdentity || (verifiedEmail && storedIdentity.verifiedEmail !== verifiedEmail)) {
+        await googleIdentityStore.upsertGoogleIdentity({ subject: googleUser.subject, verifiedEmail });
+      }
+    }
     const hasGoogleProfile = Boolean(googleProfile && (googleProfile.name || googleProfile.email || googleProfile.avatarUrl));
     res.json({
       authenticated: Boolean(stemmaUser),
@@ -464,7 +505,7 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       googleConfigured: isGoogleConfigured(config),
       googleProfile: hasGoogleProfile ? { ...googleProfile } : null
     });
-  });
+  }));
 
   app.get('/auth/fayda/start', authLimiter, asyncRoute(async (req, res) => {
     setNoStore(res);
@@ -700,6 +741,9 @@ export function createApp({ config = buildConfig(), sessionStore, fetchImpl = fe
       }
 
       const profile = normalizeGoogleProfile(idToken);
+      if (googleIdentityStore) {
+        await googleIdentityStore.upsertGoogleIdentity({ subject: idToken.sub, verifiedEmail: profile.email });
+      }
       await sessionOperation(req, 'regenerate');
       req.session.stemmaUser = {
         provider: 'google',
@@ -770,6 +814,7 @@ async function startServer() {
   validateConfig(config);
   let postgresPool;
   let sessionStore;
+  let googleIdentityStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -782,6 +827,8 @@ async function startServer() {
       connectionTimeoutMillis: 10_000
     });
     await postgresPool.query('SELECT 1');
+    googleIdentityStore = createGoogleIdentityStore(postgresPool);
+    await googleIdentityStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,
@@ -790,7 +837,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });
