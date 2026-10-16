@@ -464,3 +464,135 @@ body { color: var(--brand-burgundy); }
 @media (prefers-reduced-motion: reduce) {
   .onboarding-screen *, .onboarding-screen *::before, .onboarding-screen *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Reference-inspired organic welcome and sign-in screens */
+.onboarding-screen {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--brand-cream);
+}
+.onboarding-header {
+  position: fixed;
+  z-index: 12;
+  top: max(17px, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-inline: clamp(20px, 5vw, 62px);
+  justify-self: stretch;
+  color: var(--brand-gold-light);
+}
+.onboarding-wordmark { color: var(--brand-gold-light); font-size: 19px; }
+.wordmark-mark { border-color: rgba(251,241,200,.3); background: rgba(251,241,200,.11); box-shadow: none; }
+.wordmark-mark .icon { color: var(--brand-gold-light); }
+.onboarding-header-actions { gap: clamp(13px, 2.8vw, 30px); }
+.step-count { color: var(--brand-gold-light); }
+.step-count-divider { color: rgba(251,241,200,.65); }
+.skip-button { color: rgba(251,241,200,.85); }
+.skip-button:hover, .skip-button:focus-visible { color: #fff9e6; background: rgba(251,241,200,.12); }
+.onboarding-stage { position: absolute; inset: 0; width: 100%; height: 100%; }
+.onboarding-slide { position: relative; display: block; flex: 0 0 100%; width: 100%; min-width: 100%; height: 100%; padding: 0; overflow: hidden; background: var(--brand-cream); }
+.onboarding-art {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 62%;
+  min-height: 0;
+  display: block;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(140deg, #7B282B 0%, #681B1D 53%, #4B0D13 100%);
+}
+.fayda-art { background: linear-gradient(145deg, #713034 0%, #681B1D 48%, #4B0D13 100%); }
+.onboarding-art .art-glow, .onboarding-art .art-caption { display: none; }
+.phone-shell { position: absolute; inset: 0; z-index: 1; width: auto; height: auto; max-height: none; min-height: 0; aspect-ratio: auto; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
+.fayda-art .phone-shell { transform: none; }
+.phone-screen { position: absolute; inset: 0; width: auto; height: auto; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
+.phone-notch, .phone-status, .phone-card-label, .phone-wave-panel, .phone-home-bar { display: none; }
+.phone-pattern { position: absolute; inset: 0; opacity: .96; }
+.phone-pattern::after { background: radial-gradient(circle at 25% 24%, rgba(241,223,155,.3), transparent 30%), radial-gradient(circle at 78% 52%, rgba(180,110,66,.24), transparent 39%), linear-gradient(135deg, rgba(251,241,200,.08), transparent 56%); }
+.phone-pattern svg { width: 100%; height: 100%; fill: none; stroke: rgba(251,241,200,.31); stroke-width: 1.15; }
+.onboarding-wave { position: absolute; z-index: 3; right: 0; bottom: -1px; left: 0; width: 100%; height: clamp(58px, 15vh, 132px); fill: var(--brand-cream); pointer-events: none; }
+.onboarding-copy {
+  position: absolute;
+  z-index: 5;
+  top: 48%;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: min(100%, 520px);
+  height: auto;
+  display: block;
+  justify-self: auto;
+  margin: 0 auto;
+  padding: clamp(48px, 7vh, 76px) clamp(26px, 5vw, 48px) 120px;
+  transform: none;
+}
+.onboarding-kicker { display: none; }
+.onboarding-copy h1 { max-width: none; margin: 0; color: var(--brand-burgundy); font-size: clamp(36px, 4.2vw, 54px); font-weight: 720; letter-spacing: -.06em; line-height: 1.03; }
+.onboarding-copy h1 em { color: inherit; font-family: inherit; font-weight: inherit; letter-spacing: inherit; }
+.onboarding-description { max-width: 430px; margin: 14px 0 0; color: rgba(75,13,19,.68); font-size: 14px; line-height: 1.6; }
+.onboarding-actions { position: absolute; right: 26px; bottom: max(68px, calc(env(safe-area-inset-bottom) + 66px)); min-height: 48px; display: flex; align-items: center; gap: 12px; margin: 0; }
+.onboarding-next { min-height: 48px; display: inline-flex; align-items: center; gap: 12px; padding: 0; border: 0; border-radius: 0; color: var(--brand-burgundy); background: transparent; box-shadow: none; font-size: 13px; font-weight: 700; }
+.onboarding-next:hover, .onboarding-next:focus-visible { outline: none; transform: none; color: var(--brand-burgundy-deep); background: transparent; box-shadow: none; }
+.next-icon { width: 46px; height: 46px; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 4px 12px rgba(75,13,19,.2); }
+.onboarding-next:hover .next-icon { background: var(--brand-burgundy-deep); }
+.next-icon .icon { width: 18px; height: 18px; }
+.swipe-hint { display: none; }
+.fayda-actions { right: 26px; left: 26px; bottom: max(65px, calc(env(safe-area-inset-bottom) + 64px)); min-height: 0; display: block; }
+.fayda-button { position: relative; width: min(100%, 440px); min-height: 54px; display: flex; align-items: center; justify-content: center; margin: 0 auto; padding: 0 52px 0 20px; border: 1px solid var(--brand-burgundy); border-radius: 13px; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 8px 18px rgba(75,13,19,.16); font-size: 14px; font-weight: 700; }
+.fayda-button:hover, .fayda-button:focus-visible { outline: none; transform: translateY(-1px); background: var(--brand-burgundy-deep); box-shadow: 0 10px 22px rgba(75,13,19,.21); }
+.fayda-button .icon { position: absolute; right: 18px; width: 18px; height: 18px; color: var(--brand-gold-light); }
+.fayda-feedback { min-height: 16px; margin: 8px 0 0; color: rgba(104,27,29,.68); font-size: 11px; text-align: center; }
+.onboarding-footer { position: absolute; z-index: 12; right: clamp(20px, 5vw, 62px); bottom: max(19px, env(safe-area-inset-bottom)); left: clamp(20px, 5vw, 62px); width: auto; pointer-events: none; }
+.onboarding-progress { gap: 6px; }
+.progress-dot { background: rgba(104,27,29,.28); }
+.progress-dot.is-active { background: var(--brand-burgundy); }
+.footer-note { display: none; }
+@media (min-width: 761px) {
+  .onboarding-art { height: 61%; }
+  .onboarding-copy { top: 47%; padding-top: clamp(60px, 8vh, 84px); }
+  .onboarding-copy h1 { font-size: clamp(46px, 4.2vw, 58px); }
+  .onboarding-description { font-size: 15px; }
+}
+@media (max-width: 760px) {
+  .onboarding-header { top: max(14px, env(safe-area-inset-top)); right: 0; left: 0; padding-inline: 19px; }
+  .onboarding-wordmark { font-size: 18px; }
+  .wordmark-mark { width: 30px; height: 30px; }
+  .onboarding-header-actions { gap: 14px; }
+  .step-count { font-size: 10px; }
+  .skip-button { padding: 7px 2px 7px 8px; font-size: 11px; }
+  .skip-button .icon { width: 13px; height: 13px; }
+  .onboarding-art { height: 61%; }
+  .onboarding-copy { top: 47%; width: 100%; padding: clamp(46px, 7vh, 70px) 27px 112px; }
+  .onboarding-copy h1 { font-size: clamp(34px, 9vw, 46px); }
+  .onboarding-description { max-width: 360px; margin-top: 12px; font-size: 13px; line-height: 1.55; }
+  .onboarding-actions { right: 23px; bottom: max(63px, calc(env(safe-area-inset-bottom) + 62px)); }
+  .next-icon { width: 44px; height: 44px; }
+  .fayda-actions { right: 25px; left: 25px; bottom: max(61px, calc(env(safe-area-inset-bottom) + 60px)); }
+  .fayda-button { min-height: 52px; font-size: 13px; }
+  .onboarding-footer { right: 20px; bottom: max(16px, env(safe-area-inset-bottom)); left: 20px; }
+}
+@media (max-width: 390px) {
+  .onboarding-header { right: 0; left: 0; padding-inline: 15px; }
+  .onboarding-copy { padding-right: 24px; padding-left: 24px; }
+  .onboarding-copy h1 { font-size: clamp(32px, 9vw, 38px); }
+  .onboarding-description { font-size: 12px; }
+  .fayda-actions { right: 22px; left: 22px; }
+}
+@media (max-height: 650px) and (max-width: 760px) {
+  .onboarding-art { height: 58%; }
+  .onboarding-copy { top: 44%; padding-top: 48px; padding-bottom: 104px; }
+  .onboarding-copy h1 { font-size: clamp(31px, 7.5vw, 40px); }
+  .onboarding-description { margin-top: 9px; font-size: 11px; line-height: 1.4; }
+  .onboarding-actions { bottom: max(57px, calc(env(safe-area-inset-bottom) + 54px)); }
+  .fayda-actions { bottom: max(55px, calc(env(safe-area-inset-bottom) + 52px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-stage { scroll-behavior: auto !important; }
+}
