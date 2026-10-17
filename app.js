@@ -242,6 +242,20 @@ dashboardGrid.addEventListener('keydown', event => {
 
 const onboardingStage = document.getElementById('onboarding-stage');
 const onboardingSlides = [...onboardingStage.querySelectorAll('.onboarding-slide')];
+let onboardingIndex = 0;
+let googleAuthenticated = false;
+let dashboardEntered = false;
+let profileSaving = false;
+let profileLoadFailed = false;
+const studentFieldNames = ['firstName', 'middleName', 'lastName', 'studentId', 'department'];
+
+function updateOnboardingAccess() {
+  onboardingSlides.forEach((slide, index) => {
+    slide.inert = index !== onboardingIndex;
+    slide.setAttribute('aria-hidden', String(index !== onboardingIndex));
+  });
+}
+updateOnboardingAccess();
 
 function setOnboardingProgress() {
   const currentIndex = Math.max(0, Math.min(onboardingSlides.length - 1, Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth))));
@@ -252,7 +266,10 @@ function setOnboardingProgress() {
 }
 
 function goToOnboardingSlide(index) {
-  const target = Math.max(0, Math.min(onboardingSlides.length - 1, index));
+  if (dashboardEntered) return;
+  const target = Math.max(0, Math.min(googleAuthenticated ? 2 : 1, index));
+  onboardingIndex = target;
+  updateOnboardingAccess();
   onboardingStage.scrollTo({
     left: target * onboardingStage.clientWidth,
     behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
@@ -260,6 +277,7 @@ function goToOnboardingSlide(index) {
 }
 
 function enterDashboard() {
+  dashboardEntered = true;
   document.getElementById('onboarding-screen').hidden = true;
   document.getElementById('app-shell').hidden = false;
   document.getElementById('app-main').focus({ preventScroll: true });
@@ -334,9 +352,25 @@ document.getElementById('drawer-sign-out').addEventListener('click', async event
 });
 
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
-document.getElementById('student-details-link').addEventListener('click', () => goToOnboardingSlide(2));
 const studentForm = document.getElementById('student-details-form');
 const studentFeedback = document.getElementById('student-form-feedback');
+const studentSubmit = studentForm.querySelector('[type="submit"]');
+function isStudentProfileComplete(profile) {
+  return studentFieldNames.every(name => typeof profile?.[name] === 'string' && profile[name].trim());
+}
+function updateStudentSubmit() {
+  const complete = studentFieldNames.every(name => {
+    const input = studentForm.elements.namedItem(name);
+    return input.value.trim() && input.validity.valid;
+  });
+  studentSubmit.disabled = !googleAuthenticated || !complete || profileSaving || profileLoadFailed;
+  studentSubmit.classList.toggle('is-ready', !studentSubmit.disabled);
+  studentSubmit.querySelector('.finish-label').textContent = profileSaving ? 'Saving…' : 'Finish';
+}
+studentForm.addEventListener('input', updateStudentSubmit);
+studentForm.addEventListener('change', updateStudentSubmit);
+studentForm.addEventListener('reset', () => queueMicrotask(updateStudentSubmit));
+updateStudentSubmit();
 function showStudentFeedback(message) {
   studentFeedback.textContent = message;
   studentFeedback.hidden = !message;
@@ -348,18 +382,20 @@ async function loadStudentProfile() {
   if (!response.ok) throw new Error('Profile could not be loaded.');
   const { profile } = await response.json();
   if (profile) {
-    for (const name of ['firstName', 'middleName', 'lastName', 'studentId', 'department']) {
+    for (const name of studentFieldNames) {
       studentForm.elements.namedItem(name).value = typeof profile[name] === 'string' ? profile[name] : '';
     }
   }
+  updateStudentSubmit();
   return profile;
 }
 studentForm.addEventListener('submit', async event => {
   event.preventDefault();
   const button = studentForm.querySelector('[type="submit"]');
+  updateStudentSubmit();
   if (button.disabled || !studentForm.reportValidity()) return;
-  button.disabled = true;
-  button.textContent = 'Saving…';
+  profileSaving = true;
+  updateStudentSubmit();
   studentForm.setAttribute('aria-busy', 'true');
   showStudentFeedback('');
   try {
@@ -384,8 +420,8 @@ studentForm.addEventListener('submit', async event => {
   } catch {
     showStudentFeedback('Your profile could not be confirmed as saved. Please try Finish again.');
   } finally {
-    button.disabled = false;
-    button.textContent = 'Finish';
+    profileSaving = false;
+    updateStudentSubmit();
     studentForm.removeAttribute('aria-busy');
   }
 });
@@ -437,6 +473,9 @@ async function restoreAuthenticationState() {
     const response = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (response.ok) {
       const status = await response.json();
+      if (dashboardEntered) return;
+      googleAuthenticated = Boolean(status.authenticated && status.authProvider === 'google' && status.googleProfile);
+      updateStudentSubmit();
       if (status.authenticated && status.authProvider === 'google' && !status.googleProfile) {
         renderGoogleProfile(null);
         goToOnboardingSlide(1);
@@ -450,14 +489,18 @@ async function restoreAuthenticationState() {
         if (status.authProvider === 'google') {
           try {
             const profile = await loadStudentProfile();
-            if (!profile) goToOnboardingSlide(2);
+            if (!isStudentProfileComplete(profile)) goToOnboardingSlide(2);
             else enterDashboard();
           } catch {
+            profileLoadFailed = true;
+            updateStudentSubmit();
             goToOnboardingSlide(2);
             showStudentFeedback('Your saved profile could not be loaded. Please refresh before making changes.');
           }
-        } else if (authReturn === 'success') goToOnboardingSlide(2);
-        else enterDashboard();
+        } else {
+          goToOnboardingSlide(1);
+          faydaFeedback.textContent = 'Continue with Google to set up your student profile, or use Skip as a guest.';
+        }
       } else if (authReturn === 'failed') {
         faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
       } else if (authReturn === 'unavailable') {
@@ -487,10 +530,33 @@ onboardingStage.addEventListener('keydown', event => {
   if (event.target.closest('input, textarea, select')) return;
   if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
   event.preventDefault();
-  const currentIndex = Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth));
-  goToOnboardingSlide(currentIndex + (event.key === 'ArrowRight' ? 1 : -1));
+  // Only Welcome and Sign in support manual navigation; authentication unlocks the form.
+  if (onboardingIndex === 2) return;
+  goToOnboardingSlide(Math.min(1, onboardingIndex + (event.key === 'ArrowRight' ? 1 : -1)));
 });
-window.addEventListener('resize', setOnboardingProgress);
+let onboardingTouch = null;
+onboardingStage.addEventListener('touchstart', event => {
+  onboardingTouch = event.touches.length === 1 && onboardingIndex < 2
+    ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
+}, { passive: true });
+onboardingStage.addEventListener('touchend', event => {
+  if (!onboardingTouch || !event.changedTouches.length) return;
+  const dx = event.changedTouches[0].clientX - onboardingTouch.x;
+  const dy = event.changedTouches[0].clientY - onboardingTouch.y;
+  onboardingTouch = null;
+  if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+    goToOnboardingSlide(Math.min(1, onboardingIndex + (dx < 0 ? 1 : -1)));
+  }
+}, { passive: true });
+onboardingStage.addEventListener('touchcancel', () => { onboardingTouch = null; }, { passive: true });
+onboardingStage.addEventListener('wheel', event => {
+  if (onboardingIndex === 2 || Math.abs(event.deltaX) <= Math.abs(event.deltaY) || Math.abs(event.deltaX) < 20) return;
+  goToOnboardingSlide(event.deltaX > 0 ? 1 : 0);
+}, { passive: true });
+window.addEventListener('resize', () => {
+  onboardingStage.scrollTo({ left: onboardingIndex * onboardingStage.clientWidth, behavior: 'instant' });
+  setOnboardingProgress();
+});
 
 document.getElementById('menu-trigger').addEventListener('click', openDrawer);
 document.getElementById('drawer-close').addEventListener('click', closeDrawer);
