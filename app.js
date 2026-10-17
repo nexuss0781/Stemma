@@ -245,9 +245,10 @@ const onboardingSlides = [...onboardingStage.querySelectorAll('.onboarding-slide
 
 function setOnboardingProgress() {
   const currentIndex = Math.max(0, Math.min(onboardingSlides.length - 1, Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth))));
-  document.getElementById('active-step').textContent = `0${currentIndex + 1}`;
+  document.getElementById('active-step').textContent = String(currentIndex + 1).padStart(2, '0');
   document.getElementById('progress-dot-one').classList.toggle('is-active', currentIndex === 0);
   document.getElementById('progress-dot-two').classList.toggle('is-active', currentIndex === 1);
+  document.getElementById('progress-dot-three').classList.toggle('is-active', currentIndex === 2);
 }
 
 function goToOnboardingSlide(index) {
@@ -333,6 +334,13 @@ document.getElementById('drawer-sign-out').addEventListener('click', async event
 });
 
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
+document.getElementById('student-details-link').addEventListener('click', () => goToOnboardingSlide(2));
+document.getElementById('student-back').addEventListener('click', () => goToOnboardingSlide(1));
+document.getElementById('student-details-form').addEventListener('submit', event => {
+  event.preventDefault();
+  event.currentTarget.reset();
+  enterDashboard();
+});
 const faydaContinue = document.getElementById('fayda-continue');
 const googleContinue = document.getElementById('google-continue');
 const faydaFeedback = document.getElementById('fayda-feedback');
@@ -391,7 +399,8 @@ async function restoreAuthenticationState() {
         }
       } else if (status.authenticated) {
         renderGoogleProfile(status.googleProfile);
-        enterDashboard();
+        if (authReturn === 'success') goToOnboardingSlide(2);
+        else enterDashboard();
       } else if (authReturn === 'failed') {
         faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
       } else if (authReturn === 'unavailable') {

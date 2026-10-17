@@ -666,6 +666,138 @@ body { color: var(--brand-burgundy); }
   .fayda-slide .fayda-actions { position: relative; inset: auto; min-height: 0; margin-top: 12px; }
 }
 
+.student-details-link {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 7px auto 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(104,27,29,.82);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 680;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.student-details-link:hover, .student-details-link:focus-visible { outline: none; color: var(--brand-burgundy); background: rgba(104,27,29,.07); }
+.student-details-link .icon { width: 15px; height: 15px; }
+.student-slide { isolation: isolate; background: var(--brand-cream); }
+.student-hero {
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 43%;
+  height: 100%;
+  overflow: hidden;
+  padding: clamp(115px, 16vh, 170px) clamp(30px, 6vw, 92px) 90px;
+  color: var(--brand-gold-light);
+  background: linear-gradient(145deg, #74272b 0%, #5c171b 50%, #3e0a10 100%);
+}
+.student-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 12% 78%, rgba(213,177,106,.24), transparent 40%), linear-gradient(115deg, transparent 35%, rgba(255,255,255,.035) 66%, transparent 83%);
+}
+.student-hero-orbit { position: absolute; display: block; border: 1px solid rgba(251,241,200,.16); border-radius: 50%; pointer-events: none; }
+.student-hero-orbit-one { width: 330px; height: 330px; right: -112px; bottom: 7%; box-shadow: 0 0 0 24px rgba(251,241,200,.025), 0 0 0 52px rgba(251,241,200,.02); }
+.student-hero-orbit-two { width: 160px; height: 160px; right: 7%; bottom: 20%; border-color: rgba(251,241,200,.23); }
+.student-hero-brand { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; color: rgba(251,241,200,.76); font-size: 9px; font-weight: 760; letter-spacing: .16em; }
+.student-hero-mark { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(251,241,200,.3); border-radius: 12px; background: rgba(251,241,200,.08); }
+.student-hero-mark .icon { width: 25px; height: 25px; stroke-width: 1.5; }
+.student-hero-word { position: relative; z-index: 1; margin: clamp(30px, 6vh, 66px) 0 0; color: #fff7dd; font-size: clamp(42px, 5.6vw, 76px); font-weight: 680; letter-spacing: -.075em; line-height: .98; }
+.student-hero-word em { color: #e4c985; font-family: Georgia, "Times New Roman", serif; font-weight: 500; }
+.student-hero-caption { position: absolute; z-index: 1; right: 30px; bottom: 36px; left: clamp(30px, 6vw, 92px); color: rgba(251,241,200,.58); font-size: 8px; font-weight: 690; letter-spacing: .18em; }
+.student-form-card {
+  position: absolute;
+  z-index: 4;
+  top: clamp(96px, 14vh, 138px);
+  right: clamp(30px, 7vw, 100px);
+  bottom: max(34px, calc(env(safe-area-inset-bottom) + 30px));
+  width: min(660px, 58vw);
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(24px, 3vw, 40px);
+  border: 1px solid rgba(255,255,255,.88);
+  border-radius: 28px;
+  background: rgba(255,253,247,.96);
+  box-shadow: 0 24px 64px rgba(62,10,16,.14), 0 3px 10px rgba(62,10,16,.05), inset 0 1px 0 rgba(255,255,255,.8);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(104,27,29,.2) transparent;
+}
+.student-form-step { display: inline-flex; align-items: center; gap: 8px; color: rgba(104,27,29,.52); font-size: 10px; font-weight: 760; letter-spacing: .12em; }
+.student-form-step i { width: 20px; height: 1px; background: rgba(104,27,29,.3); }
+.student-form-eyebrow { margin: 11px 0 7px; color: #9b7444; font-size: 9px; font-weight: 770; letter-spacing: .16em; }
+.student-form-heading h1 { margin: 0; color: var(--brand-burgundy); font-size: clamp(25px, 2.5vw, 34px); font-weight: 740; letter-spacing: -.06em; line-height: 1.05; }
+.student-form-intro { margin: 8px 0 0; color: rgba(75,13,19,.62); font-size: 12px; line-height: 1.5; }
+.student-form { margin-top: clamp(16px, 2.6vh, 24px); }
+.student-fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 13px 12px; }
+.student-field { min-width: 0; display: grid; gap: 6px; }
+.student-field-wide { grid-column: 1 / -1; }
+.student-field label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #5d2527; font-size: 11px; font-weight: 700; }
+.student-field label span { color: rgba(104,27,29,.46); font-size: 8px; font-weight: 760; letter-spacing: .1em; }
+.student-field input { width: 100%; height: 44px; min-width: 0; padding: 0 12px; border: 1px solid rgba(104,27,29,.14); border-radius: 12px; outline: 0; color: #4b0d13; background: rgba(255,255,255,.76); box-shadow: inset 0 1px 2px rgba(75,13,19,.025); font: inherit; font-size: 12px; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.student-field input::placeholder { color: rgba(75,13,19,.38); }
+.student-field input:hover { border-color: rgba(104,27,29,.27); }
+.student-field input:focus { border-color: rgba(104,27,29,.58); background: #fff; box-shadow: 0 0 0 3px rgba(104,27,29,.09); }
+.student-privacy-note { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; padding: 9px 11px; border: 1px solid rgba(174,131,56,.14); border-radius: 11px; color: rgba(75,13,19,.62); background: rgba(239,226,188,.28); font-size: 10px; line-height: 1.4; }
+.student-privacy-note span { color: #a17a3b; font-size: 12px; }
+.student-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.student-back-button { min-height: 42px; padding: 0 11px; border: 0; border-radius: 10px; color: rgba(104,27,29,.72); background: transparent; font-size: 12px; font-weight: 680; cursor: pointer; }
+.student-back-button:hover, .student-back-button:focus-visible { outline: none; background: rgba(104,27,29,.06); }
+.student-submit-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 18px; padding: 0 14px 0 18px; border: 1px solid var(--brand-burgundy); border-radius: 12px; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 7px 16px rgba(75,13,19,.14); font-size: 12px; font-weight: 720; cursor: pointer; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.student-submit-button:hover, .student-submit-button:focus-visible { outline: none; transform: translateY(-1px); background: var(--brand-burgundy-deep); box-shadow: 0 10px 19px rgba(75,13,19,.19); }
+.student-submit-button .icon { width: 15px; height: 15px; }
+
+@media (max-width: 760px) {
+  .student-hero { inset: 0 0 auto; width: 100%; height: 37%; padding: max(75px, calc(env(safe-area-inset-top) + 65px)) 27px 0; }
+  .student-hero-brand { font-size: 8px; }
+  .student-hero-mark { width: 30px; height: 30px; }
+  .student-hero-word { margin-top: 21px; font-size: clamp(31px, 8vw, 43px); }
+  .student-hero-caption { display: none; }
+  .student-hero-orbit-one { right: -115px; bottom: -68px; width: 260px; height: 260px; }
+  .student-hero-orbit-two { right: 20px; bottom: -25px; width: 136px; height: 136px; }
+  .student-hero-caption { right: 22px; bottom: 17%; left: auto; font-size: 7px; writing-mode: vertical-rl; }
+  .student-form-card { top: 27%; right: 14px; bottom: max(40px, calc(env(safe-area-inset-bottom) + 32px)); left: 14px; width: auto; max-width: none; padding: 20px 20px 16px; border-radius: 23px; }
+  .student-form-eyebrow { margin-top: 8px; font-size: 8px; }
+  .student-form-heading h1 { font-size: clamp(24px, 6.6vw, 30px); }
+  .student-form-intro { margin-top: 6px; font-size: 11px; }
+  .student-form { margin-top: 15px; }
+  .student-fields { gap: 11px 9px; }
+  .student-field { gap: 5px; }
+  .student-field label { font-size: 10px; }
+  .student-field input { height: 42px; padding-inline: 10px; font-size: 11px; }
+  .student-privacy-note { margin-top: 12px; padding: 8px 9px; font-size: 9px; }
+  .student-form-actions { margin-top: 12px; }
+  .student-submit-button { min-height: 42px; }
+}
+@media (max-width: 390px) {
+  .student-form-card { right: 11px; left: 11px; padding: 18px 16px 14px; }
+  .student-fields { gap: 10px 8px; }
+  .student-field input { height: 40px; padding-inline: 9px; font-size: 10px; }
+  .student-form-step { font-size: 9px; }
+  .student-form-intro { font-size: 10px; }
+}
+@media (max-height: 650px) and (max-width: 760px) {
+  .student-hero { height: 31%; }
+  .student-hero-word { margin-top: 14px; font-size: clamp(27px, 7vw, 37px); }
+  .student-form-card { top: 23%; bottom: max(31px, calc(env(safe-area-inset-bottom) + 27px)); padding-top: 15px; }
+  .student-form { margin-top: 11px; }
+  .student-fields { gap: 8px; }
+  .student-field input { height: 36px; }
+  .student-privacy-note { margin-top: 9px; padding-block: 6px; }
+  .student-form-actions { margin-top: 8px; }
+  .student-submit-button, .student-back-button { min-height: 37px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-details-link, .student-field input, .student-submit-button { transition: none; }
+}
+
 /* Payment is the only route with a visible page title and named tabs. */
 .app-main.payment-view { grid-template-rows: 36px 42px 32px minmax(0,1fr); }
 .page-title { margin: 0; align-self: center; color: var(--brand-burgundy); font-size: clamp(28px, 3.6vw, 36px); font-weight: 760; letter-spacing: -.065em; line-height: 1; }
