@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=18" />
-  <script src="app.js?v=8" defer></script>
+  <link rel="stylesheet" href="styles.css?v=19" />
+  <script src="app.js?v=9" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -161,9 +161,13 @@
       </section>
       <h1 class="page-title" id="page-title" hidden>Payment</h1>
       <nav class="page-tabs" id="page-tabs" role="tablist" aria-label="Page tabs"></nav>
-      <div class="section-intro" aria-hidden="true">
-        <div class="section-intro-lines"><span class="intro-line intro-primary skeleton-shimmer"></span><span class="intro-line intro-secondary skeleton-shimmer"></span></div>
-        <div class="section-intro-action"><span class="intro-action-line skeleton-shimmer"></span><svg class="icon"><use href="#i-arrow-up-right"/></svg></div>
+      <div class="section-intro" id="section-intro">
+        <div class="section-intro-lines" aria-hidden="true"><span class="intro-line intro-primary skeleton-shimmer"></span><span class="intro-line intro-secondary skeleton-shimmer"></span></div>
+        <div class="section-intro-action" aria-hidden="true"><span class="intro-action-line skeleton-shimmer"></span><svg class="icon"><use href="#i-arrow-up-right"/></svg></div>
+        <div class="payment-carousel-meta" id="payment-carousel-meta" hidden>
+          <span class="payment-slide-label" id="payment-slide-label" aria-live="polite">For you</span>
+          <div class="onboarding-progress payment-progress" id="payment-progress" role="img" aria-label="For you, 1 of 2"><span class="progress-dot is-active"></span><span class="progress-dot"></span></div>
+        </div>
       </div>
       <section class="dashboard-grid" id="dashboard-grid" aria-label="Content placeholders"></section>
     </main>
