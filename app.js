@@ -335,11 +335,59 @@ document.getElementById('drawer-sign-out').addEventListener('click', async event
 
 document.getElementById('skip-onboarding').addEventListener('click', enterDashboard);
 document.getElementById('student-details-link').addEventListener('click', () => goToOnboardingSlide(2));
-document.getElementById('student-back').addEventListener('click', () => goToOnboardingSlide(1));
-document.getElementById('student-details-form').addEventListener('submit', event => {
+const studentForm = document.getElementById('student-details-form');
+const studentFeedback = document.getElementById('student-form-feedback');
+function showStudentFeedback(message) {
+  studentFeedback.textContent = message;
+  studentFeedback.hidden = !message;
+}
+async function loadStudentProfile() {
+  const response = await fetch('/api/student-profile', {
+    credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' }
+  });
+  if (!response.ok) throw new Error('Profile could not be loaded.');
+  const { profile } = await response.json();
+  if (profile) {
+    for (const name of ['firstName', 'middleName', 'lastName', 'studentId', 'department']) {
+      studentForm.elements.namedItem(name).value = typeof profile[name] === 'string' ? profile[name] : '';
+    }
+  }
+  return profile;
+}
+studentForm.addEventListener('submit', async event => {
   event.preventDefault();
-  event.currentTarget.reset();
-  enterDashboard();
+  const button = studentForm.querySelector('[type="submit"]');
+  if (button.disabled || !studentForm.reportValidity()) return;
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  studentForm.setAttribute('aria-busy', 'true');
+  showStudentFeedback('');
+  try {
+    const response = await fetch('/api/student-profile', {
+      method: 'PUT', credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.fromEntries(new FormData(studentForm)))
+    });
+    if (!response.ok) {
+      const message = response.status === 401 || response.status === 403
+        ? 'Please sign in with Google before finishing. Your details have not been saved.'
+        : response.status === 400 || response.status === 422
+          ? 'Please check your details. Required fields cannot be blank.'
+          : 'Your profile could not be saved. Please try Finish again.';
+      showStudentFeedback(message);
+      return;
+    }
+    const result = await response.json();
+    if (!result.profile) throw new Error('Save was not confirmed.');
+    studentForm.reset();
+    enterDashboard();
+  } catch {
+    showStudentFeedback('Your profile could not be confirmed as saved. Please try Finish again.');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Finish';
+    studentForm.removeAttribute('aria-busy');
+  }
 });
 const faydaContinue = document.getElementById('fayda-continue');
 const googleContinue = document.getElementById('google-continue');
@@ -399,7 +447,16 @@ async function restoreAuthenticationState() {
         }
       } else if (status.authenticated) {
         renderGoogleProfile(status.googleProfile);
-        if (authReturn === 'success') goToOnboardingSlide(2);
+        if (status.authProvider === 'google') {
+          try {
+            const profile = await loadStudentProfile();
+            if (!profile) goToOnboardingSlide(2);
+            else enterDashboard();
+          } catch {
+            goToOnboardingSlide(2);
+            showStudentFeedback('Your saved profile could not be loaded. Please refresh before making changes.');
+          }
+        } else if (authReturn === 'success') goToOnboardingSlide(2);
         else enterDashboard();
       } else if (authReturn === 'failed') {
         faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
@@ -427,6 +484,7 @@ onboardingStage.addEventListener('scroll', () => {
   });
 }, { passive: true });
 onboardingStage.addEventListener('keydown', event => {
+  if (event.target.closest('input, textarea, select')) return;
   if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
   event.preventDefault();
   const currentIndex = Math.round(onboardingStage.scrollLeft / Math.max(1, onboardingStage.clientWidth));
