@@ -106,6 +106,31 @@ function renderSkeletonCards() {
       </div>
     </article>`).join('');
 }
+function renderForYou() {
+  return `<div class="fee-for-you">
+    <article class="fee-month-card" aria-labelledby="fee-month-title">
+      <h2 id="fee-month-title">This Month</h2>
+      <div class="fee-amount" role="img" aria-label="Fee amount placeholder">
+        <span class="fee-amount-placeholder skeleton-shimmer" aria-hidden="true"></span>
+      </div>
+      <button class="fee-continue" type="button" data-fee-preview aria-describedby="fee-preview-note">Continue to Pay ${icon('arrow-up-right')}</button>
+      <p class="fee-preview-note" id="fee-preview-note" role="status" hidden>Design preview only. No payment has been started.</p>
+      <div class="fee-deadline"><span>Payment deadline</span><span class="fee-date-placeholder skeleton-shimmer" role="img" aria-label="Deadline date placeholder"></span></div>
+    </article>
+    <button class="fee-friends-card" type="button" data-payment-slide="1" aria-label="Pay for your friends. Open For friend slide">
+      <span class="fee-shortcut-top"><span class="fee-friends-symbol" aria-hidden="true">${icon('user')}${icon('user')}</span>${icon('arrow-up-right')}</span>
+      <span class="fee-friends-title">Pay for your<br>friends</span>
+      <span class="fee-friends-hint">Go to For friend <span aria-hidden="true">→</span></span>
+    </button>
+    <article class="fee-history-card" aria-labelledby="fee-history-title">
+      <div class="fee-history-heading"><h3 id="fee-history-title">History</h3><span>Top 5</span></div>
+      <ul class="fee-history-list" aria-label="Five payment history placeholders">
+        ${Array.from({ length: 5 }, (_, index) => `<li aria-label="History item ${index + 1} placeholder"><span class="fee-history-dot skeleton-shimmer" aria-hidden="true"></span><span class="fee-history-line skeleton-shimmer" aria-hidden="true"></span><span class="fee-history-value skeleton-shimmer" aria-hidden="true"></span></li>`).join('')}
+      </ul>
+      <button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history">View all ${icon('arrow-up-right')}</button>
+    </article>
+  </div>`;
+}
 function updatePaymentProgress() {
   const grid = document.getElementById('dashboard-grid');
   if (!grid.classList.contains('payment-carousel') || !grid.clientWidth) return;
@@ -134,7 +159,7 @@ function renderCards() {
     grid.tabIndex = 0;
     grid.innerHTML = paymentSlides.map((label, index) => `
       <section class="payment-slide" role="group" aria-roledescription="slide" aria-label="${index + 1} of ${paymentSlides.length}: ${label}">
-        <div class="payment-slide-grid">${renderSkeletonCards()}</div>
+        ${index === 0 ? renderForYou() : `<div class="payment-slide-grid">${renderSkeletonCards()}</div>`}
       </section>`).join('');
     window.requestAnimationFrame(syncPaymentCarousel);
     return;
@@ -203,6 +228,16 @@ function closeDrawer() {
 }
 
 document.addEventListener('click', event => {
+  const friendShortcut = event.target.closest('[data-payment-slide]');
+  if (friendShortcut) {
+    const grid = document.getElementById('dashboard-grid');
+    grid.scrollTo({ left: Number(friendShortcut.dataset.paymentSlide) * grid.clientWidth, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    return;
+  }
+  if (event.target.closest('[data-fee-preview]')) {
+    document.getElementById('fee-preview-note').hidden = false;
+    return;
+  }
   const routeButton = event.target.closest('[data-route]');
   if (routeButton) {
     event.preventDefault();
