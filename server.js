@@ -260,16 +260,12 @@ function validateStudentProfile(value) {
   const allowed = Object.keys(STUDENT_PROFILE_LIMITS);
   const keys = Object.keys(value);
   if (keys.some(key => !allowed.includes(key)) ||
-      ['firstName', 'lastName', 'studentId', 'department'].some(key => !Object.hasOwn(value, key))) return null;
+      allowed.some(key => !Object.hasOwn(value, key))) return null;
   const profile = {};
   for (const key of allowed) {
-    if (!Object.hasOwn(value, key) && key === 'middleName') {
-      profile[key] = '';
-      continue;
-    }
     if (typeof value[key] !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(value[key])) return null;
     const trimmed = value[key].trim();
-    if ([...trimmed].length > STUDENT_PROFILE_LIMITS[key] || (key !== 'middleName' && !trimmed)) return null;
+    if ([...trimmed].length > STUDENT_PROFILE_LIMITS[key] || !trimmed) return null;
     profile[key] = trimmed;
   }
   return profile;

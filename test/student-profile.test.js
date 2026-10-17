@@ -36,7 +36,7 @@ async function createHarness({ studentProfileStore } = {}) {
 }
 
 function validProfile(overrides = {}) {
-  return { firstName: ' Ada ', lastName: ' Lovelace ', studentId: ' ST-123 ', department: ' Mathematics ', ...overrides };
+  return { firstName: ' Ada ', middleName: ' Byron ', lastName: ' Lovelace ', studentId: ' ST-123 ', department: ' Mathematics ', ...overrides };
 }
 
 test('student profile API enforces Google identity, same-origin, strict input, and subject isolation', async t => {
@@ -87,9 +87,16 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     { ...validProfile(), studentId: 'x'.repeat(65) },
     { ...validProfile(), firstName: 'x'.repeat(81) },
     { ...validProfile(), department: 'x'.repeat(101) },
-    { ...validProfile(), firstName: '   ' },
-    { ...validProfile(), middleName: null },
-    { firstName: 'Ada', lastName: 'Lovelace', department: 'Math' }
+    ...['firstName', 'middleName', 'lastName', 'studentId', 'department'].flatMap(key => [
+      { ...validProfile(), [key]: '' },
+      { ...validProfile(), [key]: '   ' }
+    ]),
+    ...['firstName', 'middleName', 'lastName', 'studentId', 'department'].map(key => {
+      const profile = validProfile();
+      delete profile[key];
+      return profile;
+    }),
+    { ...validProfile(), middleName: null }
   ]) {
     const response = await fetch(endpoint, {
       method: 'PUT', headers: { cookie: googleA, origin: h.origin, 'content-type': 'application/json' }, body: JSON.stringify(invalid)
@@ -113,7 +120,7 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     body: JSON.stringify(validProfile())
   });
   assert.equal(saved.status, 200);
-  const expectedA = { firstName: 'Ada', middleName: '', lastName: 'Lovelace', studentId: 'ST-123', department: 'Mathematics' };
+  const expectedA = { firstName: 'Ada', middleName: 'Byron', lastName: 'Lovelace', studentId: 'ST-123', department: 'Mathematics' };
   assert.deepEqual(await saved.json(), { profile: expectedA });
   assert.deepEqual(writes[0], { subject: 'google-subject-A', profile: expectedA });
   assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedA });
