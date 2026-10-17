@@ -107,15 +107,29 @@ function renderSkeletonCards() {
     </article>`).join('');
 }
 function renderForYou() {
+  // Static visual fixtures only: never sent to an API or saved as payment records.
+  // Calendar dates are anchored to the requested demo date, 17 October 2026.
+  const sampleHistory = [
+    { title: 'Monthly fee', date: '2026-10-15', label: '15 Oct 2026', amount: '1,250' },
+    { title: 'Library', date: '2026-10-12', label: '12 Oct 2026', amount: '150' },
+    { title: 'Lab fee', date: '2026-10-08', label: '08 Oct 2026', amount: '300' },
+    { title: 'Monthly fee', date: '2026-09-25', label: '25 Sep 2026', amount: '1,250' },
+    { title: 'ID card', date: '2026-09-21', label: '21 Sep 2026', amount: '100' }
+  ];
   return `<div class="fee-for-you">
     <article class="fee-month-card" aria-labelledby="fee-month-title">
+      <span class="fee-demo-label">Sample · October 2026</span>
       <h2 id="fee-month-title">This Month</h2>
-      <div class="fee-amount" role="img" aria-label="Fee amount placeholder">
-        <span class="fee-amount-placeholder skeleton-shimmer" aria-hidden="true"></span>
+      <div class="fee-deadline">
+        <span>Payment deadline</span>
+        <time class="fee-calendar" datetime="2026-10-25" aria-label="25 October 2026">
+          <span class="fee-calendar-day" aria-hidden="true">25</span>
+          <span class="fee-calendar-month" aria-hidden="true">October 2026</span>
+        </time>
       </div>
       <button class="fee-continue" type="button" data-fee-preview aria-describedby="fee-preview-note">Continue to Pay ${icon('arrow-up-right')}</button>
       <p class="fee-preview-note" id="fee-preview-note" role="status" hidden>Design preview only. No payment has been started.</p>
-      <div class="fee-deadline"><span>Payment deadline</span><span class="fee-date-placeholder skeleton-shimmer" role="img" aria-label="Deadline date placeholder"></span></div>
+      <p class="fee-demo-caption">Demo only · No payment due</p>
     </article>
     <button class="fee-friends-card" type="button" data-payment-slide="1" aria-label="Pay for your friends. Open For friend slide">
       <span class="fee-shortcut-top"><span class="fee-friends-symbol" aria-hidden="true">${icon('user')}${icon('user')}</span>${icon('arrow-up-right')}</span>
@@ -124,8 +138,9 @@ function renderForYou() {
     </button>
     <article class="fee-history-card" aria-labelledby="fee-history-title">
       <div class="fee-history-heading"><h3 id="fee-history-title">History</h3><span>Top 5</span></div>
-      <ul class="fee-history-list" aria-label="Five payment history placeholders">
-        ${Array.from({ length: 5 }, (_, index) => `<li aria-label="History item ${index + 1} placeholder"><span class="fee-history-dot skeleton-shimmer" aria-hidden="true"></span><span class="fee-history-line skeleton-shimmer" aria-hidden="true"></span><span class="fee-history-value skeleton-shimmer" aria-hidden="true"></span></li>`).join('')}
+      <p class="fee-history-demo">Sample activity · ETB</p>
+      <ul class="fee-history-list" aria-label="Five sample payments. Demo only, not actual transactions.">
+        ${sampleHistory.map(item => `<li><span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>Sample</span></span></li>`).join('')}
       </ul>
       <button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history">View all ${icon('arrow-up-right')}</button>
     </article>
