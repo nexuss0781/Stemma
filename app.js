@@ -21,7 +21,7 @@ let navIndicatorReady = false;
 let onboardingScrollFrame = 0;
 let paymentScrollFrame = 0;
 let paymentSlideIndex = 0;
-const paymentSlides = ['For you', 'For default'];
+const paymentSlides = ['For You', 'For friend'];
 
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
@@ -130,7 +130,7 @@ function renderCards() {
   if (paymentCarousel) {
     grid.setAttribute('role', 'region');
     grid.setAttribute('aria-roledescription', 'carousel');
-    grid.setAttribute('aria-label', 'Pay fee options. Swipe horizontally to move between For you and For default.');
+    grid.setAttribute('aria-label', 'Pay fee options. Swipe horizontally to move between For You and For friend.');
     grid.tabIndex = 0;
     grid.innerHTML = paymentSlides.map((label, index) => `
       <section class="payment-slide" role="group" aria-roledescription="slide" aria-label="${index + 1} of ${paymentSlides.length}: ${label}">
