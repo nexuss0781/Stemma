@@ -1,5 +1,5 @@
 const sections = [
-  { id: 'cards', icon: 'card', label: 'Cards' },
+  { id: 'cards', icon: 'card', label: 'Payment' },
   { id: 'activity', icon: 'activity', label: 'Activity' },
   { id: 'overview', icon: 'grid', label: 'Overview' },
   { id: 'goals', icon: 'target', label: 'Goals' },
@@ -8,13 +8,13 @@ const sections = [
 
 const pageTabs = {
   overview: ['Snapshot', 'Cash flow', 'This month'],
-  cards: ['All cards', 'Virtual', 'Controls'],
+  cards: ['For You', 'Friends', 'History'],
   activity: ['All activity', 'Incoming', 'Outgoing'],
   goals: ['Active goals', 'Completed', 'Create goal'],
   profile: ['Personal', 'Security', 'Preferences']
 };
 
-let activeRoute = 'overview';
+let activeRoute = 'cards';
 const activeTabs = Object.fromEntries(sections.map(({ id }) => [id, 0]));
 let routeDirection = 0;
 let navIndicatorReady = false;
@@ -72,10 +72,11 @@ function updateNavIndicator() {
 function renderTabs() {
   const tabs = pageTabs[activeRoute];
   const tabNav = document.getElementById('page-tabs');
+  const paymentView = activeRoute === 'cards';
   tabNav.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} tabs`);
   tabNav.innerHTML = tabs.map((tab, index) => `
     <button class="page-tab" type="button" role="tab" aria-selected="${index === activeTabs[activeRoute]}" aria-label="${tab}" data-tab="${index}">
-      <span class="tab-skeleton skeleton-shimmer" aria-hidden="true"></span>
+      ${paymentView ? `<span class="tab-label">${tab}</span>` : '<span class="tab-skeleton skeleton-shimmer" aria-hidden="true"></span>'}
     </button>`).join('');
 }
 
@@ -106,13 +107,20 @@ function renderCards() {
 function render() {
   const main = document.getElementById('app-main');
   const overview = activeRoute === 'overview';
+  const paymentView = activeRoute === 'cards';
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
+  main.classList.toggle('payment-view', paymentView);
   main.classList.remove('route-from-left', 'route-from-right');
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
-  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} placeholders`);
-  document.getElementById('breadcrumb-current').dataset.route = activeRoute;
+  main.querySelector('.page-title').hidden = !paymentView;
+  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);
+  const currentCrumb = document.getElementById('breadcrumb-current');
+  currentCrumb.dataset.route = activeRoute;
+  currentCrumb.textContent = paymentView ? 'Payment' : '';
+  currentCrumb.classList.toggle('is-label', paymentView);
+  currentCrumb.setAttribute('aria-hidden', String(!paymentView));
   document.querySelector('.crumb-parent').dataset.route = activeRoute;
   renderTabs();
   renderCards();
