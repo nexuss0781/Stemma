@@ -209,6 +209,72 @@ export function createGoogleIdentityStore(pool) {
   };
 }
 
+export function createStudentProfileStore(pool) {
+  return {
+    async migrate() {
+      const migration = await fs.readFile(path.join(ROOT, 'migrations', '002_student_profiles.sql'), 'utf8');
+      await pool.query(migration);
+    },
+    async upsertStudentProfile(subject, profile) {
+      const result = await pool.query(
+        `INSERT INTO stemma_student_profiles
+           (google_subject, first_name, middle_name, last_name, student_id, department)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (google_subject) DO UPDATE SET
+           first_name = EXCLUDED.first_name,
+           middle_name = EXCLUDED.middle_name,
+           last_name = EXCLUDED.last_name,
+           student_id = EXCLUDED.student_id,
+           department = EXCLUDED.department,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING first_name AS "firstName", middle_name AS "middleName",
+                   last_name AS "lastName", student_id AS "studentId", department`,
+        [subject, profile.firstName, profile.middleName, profile.lastName, profile.studentId, profile.department]
+      );
+      return result.rows[0] ?? null;
+    },
+    async getStudentProfile(subject) {
+      const result = await pool.query(
+        `SELECT first_name AS "firstName", middle_name AS "middleName",
+                last_name AS "lastName", student_id AS "studentId", department
+         FROM stemma_student_profiles
+         WHERE google_subject = $1
+         LIMIT 1`,
+        [subject]
+      );
+      return result.rows[0] ?? null;
+    }
+  };
+}
+
+const STUDENT_PROFILE_LIMITS = Object.freeze({
+  firstName: 80,
+  middleName: 80,
+  lastName: 80,
+  studentId: 64,
+  department: 100
+});
+
+function validateStudentProfile(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const allowed = Object.keys(STUDENT_PROFILE_LIMITS);
+  const keys = Object.keys(value);
+  if (keys.some(key => !allowed.includes(key)) ||
+      ['firstName', 'lastName', 'studentId', 'department'].some(key => !Object.hasOwn(value, key))) return null;
+  const profile = {};
+  for (const key of allowed) {
+    if (!Object.hasOwn(value, key) && key === 'middleName') {
+      profile[key] = '';
+      continue;
+    }
+    if (typeof value[key] !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(value[key])) return null;
+    const trimmed = value[key].trim();
+    if ([...trimmed].length > STUDENT_PROFILE_LIMITS[key] || (key !== 'middleName' && !trimmed)) return null;
+    profile[key] = trimmed;
+  }
+  return profile;
+}
+
 async function readLimitedBody(response, maxBytes = MAX_PROVIDER_RESPONSE_BYTES) {
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -355,7 +421,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -505,6 +571,55 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       googleConfigured: isGoogleConfigured(config),
       googleProfile: hasGoogleProfile ? { ...googleProfile } : null
     });
+  }));
+
+  function requireGoogleSession(req, res, next) {
+    setNoStore(res);
+    const user = req.session?.stemmaUser;
+    if (!user) return res.status(401).json({ error: 'Authentication required.' });
+    if (user.provider !== 'google' || typeof user.subject !== 'string' || !user.subject) {
+      return res.status(403).json({ error: 'This request could not be verified.' });
+    }
+    return next();
+  }
+
+  function requireProfileStore(_req, res, next) {
+    if (!studentProfileStore) return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    return next();
+  }
+
+  app.get('/api/student-profile', requireGoogleSession, requireProfileStore, asyncRoute(async (req, res) => {
+    try {
+      const profile = await studentProfileStore.getStudentProfile(req.session.stemmaUser.subject);
+      return res.json({ profile: profile ?? null });
+    } catch {
+      return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    }
+  }));
+
+  app.put('/api/student-profile', requireGoogleSession, (req, res, next) => {
+    const requestOrigin = req.get('origin');
+    const expectedOrigin = config.appOrigin || `${req.protocol}://${req.get('host')}`;
+    if (!requestOrigin || requestOrigin !== expectedOrigin) {
+      setNoStore(res);
+      return res.status(403).json({ error: 'This request could not be verified.' });
+    }
+    if (!req.is('application/json')) {
+      setNoStore(res);
+      return res.status(415).json({ error: 'A JSON request body is required.' });
+    }
+    return next();
+  }, requireProfileStore, express.json({ limit: '4kb', strict: true }), asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const profile = validateStudentProfile(req.body);
+    if (!profile) return res.status(400).json({ error: 'Student profile data is invalid.' });
+    try {
+      const savedProfile = await studentProfileStore.upsertStudentProfile(req.session.stemmaUser.subject, profile);
+      if (!savedProfile) return res.status(503).json({ error: 'Student profile service is unavailable.' });
+      return res.json({ profile: savedProfile });
+    } catch {
+      return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    }
   }));
 
   app.get('/auth/fayda/start', authLimiter, asyncRoute(async (req, res) => {
@@ -800,9 +915,17 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found.' });
   });
-  app.use((error, _req, res, _next) => {
+  app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
+    if (req.path === '/api/student-profile') {
+      if (error?.status === 413 || error?.type === 'entity.too.large') {
+        return res.status(413).json({ error: 'Student profile request is too large.' });
+      }
+      if (error?.status === 400 || error?.type === 'entity.parse.failed') {
+        return res.status(400).json({ error: 'Student profile data is invalid.' });
+      }
+    }
     res.status(500).json({ error: 'The request could not be completed.' });
   });
 
@@ -815,6 +938,7 @@ async function startServer() {
   let postgresPool;
   let sessionStore;
   let googleIdentityStore;
+  let studentProfileStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -829,6 +953,8 @@ async function startServer() {
     await postgresPool.query('SELECT 1');
     googleIdentityStore = createGoogleIdentityStore(postgresPool);
     await googleIdentityStore.migrate();
+    studentProfileStore = createStudentProfileStore(postgresPool);
+    await studentProfileStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,
@@ -837,7 +963,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });

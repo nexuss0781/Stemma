@@ -718,15 +718,16 @@ body { color: var(--brand-burgundy); }
   z-index: 4;
   top: clamp(96px, 14vh, 138px);
   right: clamp(30px, 7vw, 100px);
-  bottom: max(34px, calc(env(safe-area-inset-bottom) + 30px));
+  bottom: auto;
+  max-height: calc(100% - clamp(96px, 14vh, 138px) - 40px);
   width: min(660px, 58vw);
   min-height: 0;
   overflow-y: auto;
   padding: clamp(24px, 3vw, 40px);
-  border: 1px solid rgba(255,255,255,.88);
+  border: 1px solid rgba(174,131,56,.38);
   border-radius: 28px;
-  background: rgba(255,253,247,.96);
-  box-shadow: 0 24px 64px rgba(62,10,16,.14), 0 3px 10px rgba(62,10,16,.05), inset 0 1px 0 rgba(255,255,255,.8);
+  background: linear-gradient(145deg, #f6e8bf 0%, #ecdbab 100%);
+  box-shadow: 0 28px 60px -14px rgba(62,10,16,.34), 0 8px 20px -8px rgba(104,27,29,.22), inset 0 1px 0 rgba(251,241,200,.95);
   scrollbar-width: thin;
   scrollbar-color: rgba(104,27,29,.2) transparent;
 }
@@ -741,18 +742,17 @@ body { color: var(--brand-burgundy); }
 .student-field-wide { grid-column: 1 / -1; }
 .student-field label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #5d2527; font-size: 11px; font-weight: 700; }
 .student-field label span { color: rgba(104,27,29,.46); font-size: 8px; font-weight: 760; letter-spacing: .1em; }
-.student-field input { width: 100%; height: 44px; min-width: 0; padding: 0 12px; border: 1px solid rgba(104,27,29,.14); border-radius: 12px; outline: 0; color: #4b0d13; background: rgba(255,255,255,.76); box-shadow: inset 0 1px 2px rgba(75,13,19,.025); font: inherit; font-size: 12px; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.student-field input { width: 100%; height: 44px; min-width: 0; padding: 0 12px; border: 1px solid rgba(104,27,29,.14); border-radius: 12px; outline: 0; color: #4b0d13; background: #fbf1c8; box-shadow: inset 0 1px 3px rgba(75,13,19,.06), 0 1px 0 rgba(251,241,200,.8); font: inherit; font-size: 12px; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
 .student-field input::placeholder { color: rgba(75,13,19,.38); }
 .student-field input:hover { border-color: rgba(104,27,29,.27); }
-.student-field input:focus { border-color: rgba(104,27,29,.58); background: #fff; box-shadow: 0 0 0 3px rgba(104,27,29,.09); }
-.student-privacy-note { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; padding: 9px 11px; border: 1px solid rgba(174,131,56,.14); border-radius: 11px; color: rgba(75,13,19,.62); background: rgba(239,226,188,.28); font-size: 10px; line-height: 1.4; }
-.student-privacy-note span { color: #a17a3b; font-size: 12px; }
-.student-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
-.student-back-button { min-height: 42px; padding: 0 11px; border: 0; border-radius: 10px; color: rgba(104,27,29,.72); background: transparent; font-size: 12px; font-weight: 680; cursor: pointer; }
-.student-back-button:hover, .student-back-button:focus-visible { outline: none; background: rgba(104,27,29,.06); }
-.student-submit-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 18px; padding: 0 14px 0 18px; border: 1px solid var(--brand-burgundy); border-radius: 12px; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 7px 16px rgba(75,13,19,.14); font-size: 12px; font-weight: 720; cursor: pointer; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.student-field input:focus { border-color: rgba(104,27,29,.58); background: #fff2cc; box-shadow: 0 0 0 3px rgba(104,27,29,.09); }
+.student-form-feedback { margin: 12px 0 0; padding: 10px 12px; border: 1px solid rgba(104,27,29,.2); border-radius: 10px; color: var(--brand-burgundy); background: rgba(251,241,200,.65); font-size: 12px; line-height: 1.5; }
+.student-form-feedback[hidden] { display: none; }
+.student-form-actions { display: flex; align-items: center; justify-content: flex-end; margin-top: 20px; }
+.student-submit-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 0; min-width: 112px; padding: 0 26px; border: 1px solid var(--brand-burgundy); border-radius: 12px; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 7px 16px rgba(75,13,19,.14); font-size: 12px; font-weight: 720; cursor: pointer; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
 .student-submit-button:hover, .student-submit-button:focus-visible { outline: none; transform: translateY(-1px); background: var(--brand-burgundy-deep); box-shadow: 0 10px 19px rgba(75,13,19,.19); }
-.student-submit-button .icon { width: 15px; height: 15px; }
+.student-submit-button:disabled { cursor: wait; opacity: .7; transform: none; }
+.student-submit-button:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 3px; }
 
 @media (max-width: 760px) {
   .student-hero { inset: 0 0 auto; width: 100%; height: 37%; padding: max(75px, calc(env(safe-area-inset-top) + 65px)) 27px 0; }
@@ -763,7 +763,7 @@ body { color: var(--brand-burgundy); }
   .student-hero-orbit-one { right: -115px; bottom: -68px; width: 260px; height: 260px; }
   .student-hero-orbit-two { right: 20px; bottom: -25px; width: 136px; height: 136px; }
   .student-hero-caption { right: 22px; bottom: 17%; left: auto; font-size: 7px; writing-mode: vertical-rl; }
-  .student-form-card { top: 27%; right: 14px; bottom: max(40px, calc(env(safe-area-inset-bottom) + 32px)); left: 14px; width: auto; max-width: none; padding: 20px 20px 16px; border-radius: 23px; }
+  .student-form-card { top: 27%; right: 14px; bottom: auto; max-height: calc(73% - max(38px, env(safe-area-inset-bottom))); left: 14px; width: auto; max-width: none; padding: 20px 20px 16px; border-radius: 23px; }
   .student-form-eyebrow { margin-top: 8px; font-size: 8px; }
   .student-form-heading h1 { font-size: clamp(24px, 6.6vw, 30px); }
   .student-form-intro { margin-top: 6px; font-size: 11px; }
@@ -771,28 +771,26 @@ body { color: var(--brand-burgundy); }
   .student-fields { gap: 11px 9px; }
   .student-field { gap: 5px; }
   .student-field label { font-size: 10px; }
-  .student-field input { height: 42px; padding-inline: 10px; font-size: 11px; }
-  .student-privacy-note { margin-top: 12px; padding: 8px 9px; font-size: 9px; }
+  .student-field input { height: 44px; padding-inline: 10px; font-size: 16px; }
   .student-form-actions { margin-top: 12px; }
   .student-submit-button { min-height: 42px; }
 }
 @media (max-width: 390px) {
   .student-form-card { right: 11px; left: 11px; padding: 18px 16px 14px; }
   .student-fields { gap: 10px 8px; }
-  .student-field input { height: 40px; padding-inline: 9px; font-size: 10px; }
+  .student-field input { height: 42px; padding-inline: 9px; font-size: 16px; }
   .student-form-step { font-size: 9px; }
   .student-form-intro { font-size: 10px; }
 }
 @media (max-height: 650px) and (max-width: 760px) {
   .student-hero { height: 31%; }
   .student-hero-word { margin-top: 14px; font-size: clamp(27px, 7vw, 37px); }
-  .student-form-card { top: 23%; bottom: max(31px, calc(env(safe-area-inset-bottom) + 27px)); padding-top: 15px; }
+  .student-form-card { top: 23%; bottom: auto; max-height: calc(77% - max(30px, env(safe-area-inset-bottom))); padding-top: 15px; }
   .student-form { margin-top: 11px; }
   .student-fields { gap: 8px; }
   .student-field input { height: 36px; }
-  .student-privacy-note { margin-top: 9px; padding-block: 6px; }
   .student-form-actions { margin-top: 8px; }
-  .student-submit-button, .student-back-button { min-height: 37px; }
+  .student-submit-button { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .student-details-link, .student-field input, .student-submit-button { transition: none; }
