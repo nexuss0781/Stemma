@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=19" />
-  <script src="app.js?v=10" defer></script>
+  <link rel="stylesheet" href="styles.css?v=21" />
+  <script src="app.js?v=11" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -32,7 +32,7 @@
         <span>stemma</span>
       </div>
       <div class="onboarding-header-actions">
-        <span class="step-count" aria-live="polite"><span id="active-step">01</span><span class="step-count-divider">/ 02</span></span>
+        <span class="step-count" aria-live="polite"><span id="active-step">01</span><span class="step-count-divider">/ 03</span></span>
         <button class="skip-button" id="skip-onboarding" type="button">Skip</button>
       </div>
     </header>
@@ -87,6 +87,7 @@
             <button class="fayda-button" id="fayda-continue" type="button">Continue with Fayda</button>
             <div class="auth-divider" aria-hidden="true"><span>or</span></div>
             <button class="google-button" id="google-continue" type="button"><img class="google-mark" src="assets/google-signin-mark.png" alt="" aria-hidden="true" />Continue with Google</button>
+            <button class="student-details-link" id="student-details-link" type="button">Set up your student profile <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
             <p class="fayda-feedback" id="fayda-feedback" role="status" aria-live="polite"></p>
           </div>
         </div>
@@ -122,10 +123,57 @@
           <span class="art-caption">A simple next step.</span>
         </div>
       </section>
+
+      <section class="onboarding-slide student-slide" id="student-slide" aria-labelledby="student-title">
+        <div class="student-hero" aria-hidden="true">
+          <span class="student-hero-orbit student-hero-orbit-one"></span>
+          <span class="student-hero-orbit student-hero-orbit-two"></span>
+          <div class="student-hero-brand"><span class="student-hero-mark"><svg class="icon"><use href="#i-stemma-mark"/></svg></span><span>STEMMA · STUDENT EDITION</span></div>
+          <p class="student-hero-word">A place to<br /><em>belong.</em></p>
+          <span class="student-hero-caption">YOUR NEXT CHAPTER STARTS HERE</span>
+        </div>
+        <div class="student-form-card">
+          <div class="student-form-heading">
+            <span class="student-form-step">03 <i></i> 03</span>
+            <p class="student-form-eyebrow">PERSONALIZE YOUR SPACE</p>
+            <h1 id="student-title">Your student profile</h1>
+            <p class="student-form-intro">A few details help make Stemma feel like yours.</p>
+          </div>
+          <form class="student-form" id="student-details-form" autocomplete="off">
+            <div class="student-fields">
+              <div class="student-field">
+                <label for="student-first-name">First name</label>
+                <input id="student-first-name" name="firstName" type="text" placeholder="Your first name" autocomplete="off" autocapitalize="words" maxlength="80" required />
+              </div>
+              <div class="student-field">
+                <label for="student-middle-name">Middle name <span>OPTIONAL</span></label>
+                <input id="student-middle-name" name="middleName" type="text" placeholder="Your middle name" autocomplete="off" autocapitalize="words" maxlength="80" />
+              </div>
+              <div class="student-field">
+                <label for="student-last-name">Last name</label>
+                <input id="student-last-name" name="lastName" type="text" placeholder="Your last name" autocomplete="off" autocapitalize="words" maxlength="80" required />
+              </div>
+              <div class="student-field">
+                <label for="student-id">Student ID</label>
+                <input id="student-id" name="studentId" type="text" placeholder="Enter your student ID" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" required />
+              </div>
+              <div class="student-field student-field-wide">
+                <label for="student-department">Department</label>
+                <input id="student-department" name="department" type="text" placeholder="Your department or program" autocomplete="off" autocapitalize="words" maxlength="100" required />
+              </div>
+            </div>
+            <p class="student-privacy-note"><span aria-hidden="true">✦</span> UI preview only — these details aren’t saved.</p>
+            <div class="student-form-actions">
+              <button class="student-back-button" id="student-back" type="button">Back</button>
+              <button class="student-submit-button" type="submit">Continue <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+            </div>
+          </form>
+        </div>
+      </section>
     </div>
 
     <footer class="onboarding-footer" aria-hidden="true">
-      <div class="onboarding-progress"><span class="progress-dot is-active" id="progress-dot-one"></span><span class="progress-dot" id="progress-dot-two"></span></div>
+      <div class="onboarding-progress"><span class="progress-dot is-active" id="progress-dot-one"></span><span class="progress-dot" id="progress-dot-two"></span><span class="progress-dot" id="progress-dot-three"></span></div>
       <span class="footer-note">Made for your everyday</span>
     </footer>
   </main>
