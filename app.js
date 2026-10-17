@@ -8,7 +8,7 @@ const sections = [
 
 const pageTabs = {
   overview: ['Snapshot', 'Cash flow', 'This month'],
-  cards: ['For You', 'Friends', 'History'],
+  cards: ['Pay fee', 'Deposit', 'History'],
   activity: ['All activity', 'Incoming', 'Outgoing'],
   goals: ['Active goals', 'Completed', 'Create goal'],
   profile: ['Personal', 'Security', 'Preferences']
@@ -19,6 +19,9 @@ const activeTabs = Object.fromEntries(sections.map(({ id }) => [id, 0]));
 let routeDirection = 0;
 let navIndicatorReady = false;
 let onboardingScrollFrame = 0;
+let paymentScrollFrame = 0;
+let paymentSlideIndex = 0;
+const paymentSlides = ['For you', 'For default'];
 
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
@@ -75,14 +78,14 @@ function renderTabs() {
   const paymentView = activeRoute === 'cards';
   tabNav.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} tabs`);
   tabNav.innerHTML = tabs.map((tab, index) => `
-    <button class="page-tab" type="button" role="tab" aria-selected="${index === activeTabs[activeRoute]}" aria-label="${tab}" data-tab="${index}">
+    <button class="page-tab" type="button" role="tab" aria-selected="${index === activeTabs[activeRoute]}" aria-label="${tab}" aria-controls="dashboard-grid" data-tab="${index}">
       ${paymentView ? `<span class="tab-label">${tab}</span>` : '<span class="tab-skeleton skeleton-shimmer" aria-hidden="true"></span>'}
     </button>`).join('');
 }
 
 const cardTargets = ['activity', 'goals', 'cards', 'profile'];
-function renderCards() {
-  document.getElementById('dashboard-grid').innerHTML = cardTargets.map((route, index) => `
+function renderSkeletonCards() {
+  return cardTargets.map((route, index) => `
     <article class="skeleton-card" aria-label="Placeholder ${index + 1}">
       <div class="skeleton-card-top">
         <span class="card-title-skeleton skeleton-shimmer" aria-hidden="true"></span>
@@ -103,11 +106,51 @@ function renderCards() {
       </div>
     </article>`).join('');
 }
+function updatePaymentProgress() {
+  const grid = document.getElementById('dashboard-grid');
+  if (!grid.classList.contains('payment-carousel') || !grid.clientWidth) return;
+  paymentSlideIndex = Math.max(0, Math.min(paymentSlides.length - 1, Math.round(grid.scrollLeft / grid.clientWidth)));
+  document.getElementById('payment-slide-label').textContent = paymentSlides[paymentSlideIndex];
+  const progress = document.getElementById('payment-progress');
+  progress.setAttribute('aria-label', `${paymentSlides[paymentSlideIndex]}, ${paymentSlideIndex + 1} of ${paymentSlides.length}`);
+  progress.querySelectorAll('.progress-dot').forEach((dot, index) => {
+    dot.classList.toggle('is-active', index === paymentSlideIndex);
+  });
+}
+function syncPaymentCarousel() {
+  const grid = document.getElementById('dashboard-grid');
+  if (!grid.classList.contains('payment-carousel') || !grid.clientWidth) return;
+  grid.scrollLeft = paymentSlideIndex * grid.clientWidth;
+  updatePaymentProgress();
+}
+function renderCards() {
+  const grid = document.getElementById('dashboard-grid');
+  const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0;
+  grid.classList.toggle('payment-carousel', paymentCarousel);
+  if (paymentCarousel) {
+    grid.setAttribute('role', 'region');
+    grid.setAttribute('aria-roledescription', 'carousel');
+    grid.setAttribute('aria-label', 'Pay fee options. Swipe horizontally to move between For you and For default.');
+    grid.tabIndex = 0;
+    grid.innerHTML = paymentSlides.map((label, index) => `
+      <section class="payment-slide" role="group" aria-roledescription="slide" aria-label="${index + 1} of ${paymentSlides.length}: ${label}">
+        <div class="payment-slide-grid">${renderSkeletonCards()}</div>
+      </section>`).join('');
+    window.requestAnimationFrame(syncPaymentCarousel);
+    return;
+  }
+  grid.removeAttribute('role');
+  grid.removeAttribute('aria-roledescription');
+  grid.removeAttribute('tabindex');
+  grid.setAttribute('aria-label', 'Content placeholders');
+  grid.innerHTML = renderSkeletonCards();
+}
 
 function render() {
   const main = document.getElementById('app-main');
   const overview = activeRoute === 'overview';
   const paymentView = activeRoute === 'cards';
+  const paymentCarousel = paymentView && activeTabs.cards === 0;
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
   main.classList.toggle('payment-view', paymentView);
@@ -115,6 +158,8 @@ function render() {
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
   main.querySelector('.page-title').hidden = !paymentView;
+  main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
+  document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
   main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);
   const currentCrumb = document.getElementById('breadcrumb-current');
   currentCrumb.dataset.route = activeRoute;
@@ -167,8 +212,32 @@ document.addEventListener('click', event => {
   const tabButton = event.target.closest('[data-tab]');
   if (tabButton) {
     activeTabs[activeRoute] = Number(tabButton.dataset.tab);
-    renderTabs();
+    if (activeRoute === 'cards') {
+      if (activeTabs.cards === 0) paymentSlideIndex = 0;
+      render();
+    } else {
+      renderTabs();
+    }
   }
+});
+const dashboardGrid = document.getElementById('dashboard-grid');
+dashboardGrid.addEventListener('scroll', () => {
+  if (!dashboardGrid.classList.contains('payment-carousel')) return;
+  if (paymentScrollFrame) window.cancelAnimationFrame(paymentScrollFrame);
+  paymentScrollFrame = window.requestAnimationFrame(() => {
+    updatePaymentProgress();
+    paymentScrollFrame = 0;
+  });
+}, { passive: true });
+dashboardGrid.addEventListener('keydown', event => {
+  if (!dashboardGrid.classList.contains('payment-carousel') || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  event.preventDefault();
+  const direction = event.key === 'ArrowRight' ? 1 : -1;
+  const target = Math.max(0, Math.min(paymentSlides.length - 1, paymentSlideIndex + direction));
+  dashboardGrid.scrollTo({
+    left: target * dashboardGrid.clientWidth,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+  });
 });
 
 const onboardingStage = document.getElementById('onboarding-stage');
@@ -193,7 +262,10 @@ function enterDashboard() {
   document.getElementById('onboarding-screen').hidden = true;
   document.getElementById('app-shell').hidden = false;
   document.getElementById('app-main').focus({ preventScroll: true });
-  window.requestAnimationFrame(updateNavIndicator);
+  window.requestAnimationFrame(() => {
+    updateNavIndicator();
+    syncPaymentCarousel();
+  });
 }
 
 function renderGoogleProfile(profile) {
@@ -363,6 +435,7 @@ document.addEventListener('keydown', event => {
 function bindSwipeNavigation(element) {
   let start = null;
   element.addEventListener('touchstart', event => {
+    if (event.target.closest('.payment-carousel')) { start = null; return; }
     if (event.touches.length !== 1) { start = null; return; }
     start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
   }, { passive: true });
@@ -380,8 +453,10 @@ function bindSwipeNavigation(element) {
 
 bindSwipeNavigation(document.getElementById('app-main'));
 bindSwipeNavigation(document.getElementById('navigation-drawer'));
-window.addEventListener('resize', updateNavIndicator);
-
+window.addEventListener('resize', () => {
+  updateNavIndicator();
+  syncPaymentCarousel();
+});
 const requestedRoute = window.location.hash.slice(1);
 if (pageTabs[requestedRoute]) activeRoute = requestedRoute;
 render();
