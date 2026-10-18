@@ -279,7 +279,7 @@ test('sidebar identity prefers the trimmed saved nickname and keeps it as text',
   assert.equal(name.htmlWrites + username.htmlWrites, 0, 'nickname and username are never interpolated through HTML');
 });
 
-test('drawer puts Overview first without changing the five-item bottom-nav order; existing crest and bundled Fraunces remain local', async () => {
+test('drawer puts Overview first without changing the five-item bottom-nav order; sidebar crest and bundled Fraunces remain local', async () => {
   const sectionsMatch = /^const sections = \[([\s\S]*?)^\];/m.exec(appSource);
   assert.ok(sectionsMatch, 'navigation section definition exists');
   assert.deepEqual([...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id),
@@ -289,7 +289,13 @@ test('drawer puts Overview first without changing the five-item bottom-nav order
   assert.match(bottomNav, /const drawerSections = \[sections\.find\(item => item\.id === 'overview'\), \.\.\.sections\.filter\(item => item\.id !== 'overview'\)\]/);
   assert.match(bottomNav, /drawerSections\.map\(item\s*=>/);
 
-  assert.match(htmlSource, /<img class="drawer-college-crest" src="assets\/tafari-makonnen-college-logo\.png" alt="Tafari Makonnen College crest"\s*\/>/);
+  assert.match(htmlSource, /<img class="drawer-college-crest" src="assets\/tafari-makonnen-sidebar-crest\.png" alt="Tafari Makonnen College crest"\s*\/>/);
+  const crest = await readFile(new URL('../assets/tafari-makonnen-sidebar-crest.png', import.meta.url));
+  assert.equal(crest.subarray(1, 4).toString(), 'PNG');
+  assert.equal(crest[25], 6, 'sidebar crest is a true RGBA PNG with an alpha channel');
+  assert.equal(crest.readUInt32BE(16), 672);
+  assert.equal(crest.readUInt32BE(20), 582);
+  assert.match(htmlSource, /<img class="welcome-college-logo" src="assets\/tafari-makonnen-college-logo\.png"/);
   await readFile(new URL('../assets/tafari-makonnen-college-logo.png', import.meta.url));
   assert.match(cssSource, /@font-face\s*\{[^}]*font-family:\s*'Fraunces Deadline'[^}]*url\('\/assets\/fraunces-deadline\.ttf'\)/s);
   assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*font-family:\s*'Fraunces Deadline'/s);
@@ -310,7 +316,7 @@ test('college/profile card uses warm-gold glass and the selected drawer link use
   assert.match(glass, /background:[^}]*rgba\(251,241,200,\.1\)[^}]*rgba\(104,27,29,\.2\)/s);
   assert.doesNotMatch(glass, /color-mix|background:[^;}]*#[0-9a-f]{3,8}/i, 'glass fill remains translucent rather than opaque');
   assert.match(glass, /\.drawer-college-card::before\s*\{[^}]*pointer-events:\s*none[^}]*linear-gradient\(125deg/s);
-  assert.match(glass, /\.drawer-college-card::after\s*\{[^}]*background:[^;}]*assets\/tafari-makonnen-college-logo\.png[^}]*filter:\s*blur\(16px\)/s);
+  assert.match(glass, /\.drawer-college-card::after\s*\{[^}]*background:[^;}]*assets\/tafari-makonnen-sidebar-crest\.png[^}]*filter:\s*blur\(16px\)/s);
   assert.match(cssSource, /\.drawer-college-crest\s*\{[^}]*object-fit:\s*contain/s);
   assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*color:\s*var\(--brand-gold-light\)/s);
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]::before\s*\{[^}]*background:\s*var\(--brand-gold\)/s);
