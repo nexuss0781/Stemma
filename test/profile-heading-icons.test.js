@@ -15,6 +15,7 @@ test('Profile heading keeps its title and uses two labeled display-only sprite i
     assert.match(html, new RegExp(`<symbol id="i-${symbol}" viewBox="0 0 24 24">`));
   }
   assert.equal((heading.match(/class="profile-heading-icon"/g) || []).length, 2);
+  assert.deepEqual([...heading.matchAll(/class="profile-heading-icon" role="img" aria-label="([^"]+)"/g)].map(match => match[1]), ['Notifications', 'About']);
   assert.doesNotMatch(heading, /<button|<a\b|tabindex|onclick|data-tab|data-route/);
 });
 
@@ -23,5 +24,5 @@ test('icons appear only on Profile and preserve the shared grid on all other pag
   assert.match(css, /\.profile-heading-icons \{ display: none; \}/);
   assert.match(css, /\.app-main\.profile-view \.page-heading \{ display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; \}/);
   assert.match(css, /\.app-main\.profile-view \.profile-heading-icons \{ display: flex; align-items: center; gap: 8px; flex-shrink: 0; \}/);
-  assert.match(css, /\.profile-heading-icon \{[^}]*color: var\(--brand-burgundy\);[^}]*background: rgba\(251,243,214,\.92\)/);
+  assert.match(css, /\.profile-heading-icon \{[^}]*width: 34px; height: 34px;[^}]*border-radius: 12px;[^}]*color: var\(--brand-gold\);[^}]*background: var\(--brand-burgundy\)/);
 });
