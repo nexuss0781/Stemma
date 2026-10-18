@@ -322,10 +322,10 @@ test('sidebar identity overlays above the college lettering without a separate f
   assert.match(glass, /--drawer-crest-height:\s*max\(96px, calc\(clamp\(190px, 27vh, 218px\) - 36\.75px - var\(--drawer-name-line\)\)\)/);
   assert.match(glass, /height:\s*calc\(var\(--drawer-crest-height\) \+ 18px\); min-height:\s*0; padding:\s*8px 0/);
   assert.match(glass, /\.drawer-college-crest\s*\{[^}]*height:\s*var\(--drawer-crest-height\)[^}]*flex:\s*0 0 auto/s);
-  assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.16\)[^}]*margin:\s*0; padding:\s*0; background:\s*none; text-align:\s*left/s);
+  assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.12\)[^}]*margin:\s*0; padding:\s*0; background:\s*none; text-align:\s*left/s);
   assert.match(glass, /\.drawer-student-name, \.drawer-student-username\s*\{[^}]*text-align:\s*left/s);
   for (const selector of ['drawer-student-name', 'drawer-student-username']) {
-    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*-1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 2px 1px #000, 0 0 3px #000`, 's'));
+    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*-1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 0 #000`, 's'));
   }
   assert.match(glass, /overflow:\s*hidden; white-space:\s*nowrap; text-overflow:\s*ellipsis/);
 });
