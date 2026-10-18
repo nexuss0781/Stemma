@@ -189,7 +189,7 @@ function renderForYou({ deadline, today = new Date(), interval = paymentDemoInte
           <span class="fee-calendar-month" aria-hidden="true">${isOpen ? 'Days Left' : deadlineMonth}</span>
         </time>
       </div>
-      <button class="fee-continue" type="button" data-open-bill>Continue to Pay</button>
+      <button class="fee-continue" type="button" ${isOpen ? 'data-open-bill' : 'data-tab="1"'}>${isOpen ? 'Continue to Pay' : 'Deposit Now'}</button>
       <p class="fee-demo-caption">Please pay by the due date to avoid penalties.</p>
     </article>
     <button class="fee-friends-card" type="button" data-payment-slide="1" aria-label="Pay for your friends. Open For friend slide">

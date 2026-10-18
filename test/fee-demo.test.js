@@ -302,6 +302,15 @@ test('rendered payment-open state follows the unchanged deadline heading thresho
     const rendered = renderForYou({ deadline, today: frozenToday });
     assert.match(rendered, new RegExp(`<article class="fee-month-card" data-payment-open="${open}" aria-labelledby="fee-month-title">`), `${days} days: payment-open attribute`);
     assert.match(rendered, new RegExp(`<h2 id="fee-month-title"[^>]*>${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/h2>`), `${days} days: heading`);
+    const cta = rendered.match(/<button class="fee-continue"[^>]*>[\s\S]*?<\/button>/)?.[0];
+    assert.ok(cta, `${days} days: Continue/Deposit CTA exists`);
+    if (open) {
+      assert.match(cta, /type="button" data-open-bill>Continue to Pay<\/button>/, `${days} days: open CTA retains bill preview action`);
+      assert.doesNotMatch(cta, /data-tab="1"/, `${days} days: open CTA does not navigate to Deposit`);
+    } else {
+      assert.match(cta, /type="button" data-tab="1">Deposit Now<\/button>/, `${days} days: pending CTA navigates to Deposit`);
+      assert.doesNotMatch(cta, /data-open-bill/, `${days} days: pending CTA does not open the bill preview`);
+    }
     const block = deadlineBlock(rendered);
     assert.ok(block, `${days} days: deadline block exists`);
     if (open) {
@@ -314,7 +323,7 @@ test('rendered payment-open state follows the unchanged deadline heading thresho
   }
 });
 
-test('closed payment card uses the shared light-gold palette without changing its CTA', () => {
+test('closed payment card uses the shared light-gold palette and pending CTA colors', () => {
   const sharedCard = cssRulesMatching('.fee-month-card, .fee-friends-card, .fee-history-card')
     .find(({ selector }) => selector === '.fee-month-card, .fee-friends-card, .fee-history-card');
   assert.ok(sharedCard, 'shared card rule remains present');
@@ -334,8 +343,14 @@ test('closed payment card uses the shared light-gold palette without changing it
   ]) {
     assert.ok(closedRules.some(({ selector, declarations }) => selector.includes(target) && color.test(declarations)), `closed ${target} typography is burgundy`);
   }
-  assert.doesNotMatch(styles, /\.fee-month-card\[data-payment-open="false"\][^{]*\.fee-continue/,
-    'closed-state selectors do not override the Continue to Pay button');
+  const pendingCta = closedRules.find(({ selector }) => selector.replace(/\s+/g, ' ').trim() === '.fee-month-card[data-payment-open="false"] .fee-continue, .fee-month-card[data-payment-open="false"] .fee-continue:hover');
+  assert.ok(pendingCta, 'pending CTA and hover selectors are grouped and scoped to the closed payment card');
+  assert.deepEqual(pendingCta.selector.split(',').map(selector => selector.trim()), [
+    '.fee-month-card[data-payment-open="false"] .fee-continue',
+    '.fee-month-card[data-payment-open="false"] .fee-continue:hover'
+  ]);
+  assert.match(pendingCta.declarations, /background:\s*var\(--brand-burgundy\)/, 'pending CTA and hover use burgundy background');
+  assert.match(pendingCta.declarations, /color:\s*var\(--brand-gold\)/, 'pending CTA and hover use gold text');
 
   const cta = cssRulesMatching('.fee-continue').find(({ selector }) => selector === '.fee-continue');
   const ctaHover = cssRulesMatching('.fee-continue:hover').find(({ selector }) => selector === '.fee-continue:hover');
@@ -344,4 +359,5 @@ test('closed payment card uses the shared light-gold palette without changing it
   assert.match(cta.declarations, /color:\s*var\(--brand-burgundy\)/);
   assert.ok(ctaHover, 'Continue to Pay hover rule exists');
   assert.match(ctaHover.declarations, /background:\s*var\(--brand-gold\)/);
+  assert.doesNotMatch(ctaHover.declarations, /color:/, 'open CTA keeps its original text color on hover');
 });

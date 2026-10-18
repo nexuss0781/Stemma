@@ -1078,7 +1078,7 @@ body { color: var(--brand-burgundy); }
 .receipt-qr-code { width: clamp(168px, 44vw, 236px); aspect-ratio: 1; padding: 4px; border-radius: 10px; background: #f8f8f8; }
 .receipt-qr-code svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
 
-/* Pending window: only the summary card palette changes; open-state and button rules stay intact. */
+/* Pending window: golden summary card; open-state rules stay intact. */
 .fee-month-card[data-payment-open="false"] { background: linear-gradient(140deg, rgba(251,241,200,.94), rgba(251,241,200,.58)); color: var(--brand-burgundy); }
 .fee-month-card[data-payment-open="false"] h2,
 .fee-month-card[data-payment-open="false"] .fee-calendar,
@@ -1088,3 +1088,7 @@ body { color: var(--brand-burgundy); }
 .fee-month-card[data-payment-open="false"] .fee-demo-label { border-color: rgba(104,27,29,.15); }
 .fee-month-card[data-payment-open="false"] .fee-interval-pill { color: var(--brand-burgundy); }
 .fee-month-card[data-payment-open="false"] .fee-interval-pill:focus-visible { outline-color: var(--brand-burgundy); }
+
+/* Before the payment window opens, offer the existing Deposit tab instead. */
+.fee-month-card[data-payment-open="false"] .fee-continue,
+.fee-month-card[data-payment-open="false"] .fee-continue:hover { background: var(--brand-burgundy); color: var(--brand-gold); }
