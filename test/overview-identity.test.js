@@ -217,7 +217,18 @@ test('hero markup contains nickname and rear reflection before front photo, with
   assert.match(reflectionStyle, /object-fit:\s*cover/);
   const photoFrameStyle = styles.match(/\.avatar-glass\.has-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.ok(photoFrameStyle, 'photo frame has a dedicated profile-photo state');
-  assert.match(photoFrameStyle, /background:/);
+  assert.match(photoFrameStyle, /background:\s*rgba\(236,205,151,\.23\)/);
+  assert.doesNotMatch(photoFrameStyle, /(?:^|;)\s*filter\s*:/, 'glass frame must not grayscale the front layer');
   assert.match(photoFrameStyle, /backdrop-filter:\s*none/);
+  const frontGlassStyle = styles.match(/\.avatar-glass\.has-profile-photo::after\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(frontGlassStyle, /background:\s*linear-gradient\(145deg, rgba\(239,210,161,\.46\), rgba\(215,164,124,\.4\)\)/,
+    'front glass retains the original warm portrait palette');
+  assert.doesNotMatch(frontGlassStyle, /filter\s*:/);
+  const fullColorPhotoStyle = styles.match(/\.avatar-glass\.has-profile-photo \.overview-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(fullColorPhotoStyle, /z-index:\s*1/, 'actual photo is above the warm glass, not tinted by it');
+  for (const rule of styles.matchAll(/[^{}]*\.overview-profile-photo\s*\{([^}]*)\}/g)) {
+    assert.doesNotMatch(rule[1], /(?:^|;)\s*(?:filter|opacity|mix-blend-mode)\s*:/,
+      'actual photo must retain its original full-color appearance');
+  }
   assert.match(styles, /\.hero-card\s*\{[^}]*border-radius\s*:/s, 'existing hero rectangle retains its rounded-card styling');
 });

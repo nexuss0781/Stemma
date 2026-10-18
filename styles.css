@@ -1316,11 +1316,17 @@ body { color: var(--brand-burgundy); }
   .hero-card .overview-profile-photo { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); }
 }
 
-/* The rear photo layer is opaque monochrome, so no warm card tint bleeds through. */
+/* Only the rear reflection is monochrome; the front rectangle retains its warm glass. */
 .hero-card .avatar-glass.has-profile-photo {
-  background: #171717;
+  background: rgba(236,205,151,.23);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+.hero-card .avatar-glass.has-profile-photo::after {
+  background: linear-gradient(145deg, rgba(239,210,161,.46), rgba(215,164,124,.4));
+}
+.hero-card .avatar-glass.has-profile-photo .overview-profile-photo {
+  z-index: 1;
 }
 .hero-card .overview-photo-reflection {
   position: absolute;
