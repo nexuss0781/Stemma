@@ -316,3 +316,15 @@ test('college/profile card uses warm-gold glass and the selected drawer link use
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]::before\s*\{[^}]*background:\s*var\(--brand-gold\)/s);
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]\s*\{[^}]*color:\s*var\(--brand-burgundy\)/s);
 });
+
+test('sidebar identity overlays above the college lettering without a separate footer', () => {
+  const glass = cssSource.slice(cssSource.indexOf('/* Warm frosted glass,'), cssSource.indexOf('/* Keep a 44px touch target'));
+  assert.match(glass, /--drawer-crest-height:\s*max\(96px, calc\(clamp\(190px, 27vh, 218px\) - 36\.75px - var\(--drawer-name-line\)\)\)/);
+  assert.match(glass, /height:\s*calc\(var\(--drawer-crest-height\) \+ 18px\); min-height:\s*0; padding:\s*8px 0/);
+  assert.match(glass, /\.drawer-college-crest\s*\{[^}]*height:\s*var\(--drawer-crest-height\)[^}]*flex:\s*0 0 auto/s);
+  assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.22\)[^}]*margin:\s*0; padding:\s*0; background:\s*none/s);
+  for (const selector of ['drawer-student-name', 'drawer-student-username']) {
+    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*0 2px 3px #000, 0 0 6px #000`, 's'));
+  }
+  assert.match(glass, /overflow:\s*hidden; white-space:\s*nowrap; text-overflow:\s*ellipsis/);
+});
