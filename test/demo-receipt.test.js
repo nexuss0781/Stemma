@@ -4,7 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const root = new URL('../', import.meta.url);
-const demoQrPayload = 'STEMMA-DEMO-RECEIPT-67645-001';
+const demoQrPayload = 'STEMMA-DEMO-RECEIPT-001';
 const [paymentUi, appSource] = await Promise.all([
   readFile(new URL('payment-ui.js', root), 'utf8'),
   readFile(new URL('app.js', root), 'utf8')
@@ -53,53 +53,52 @@ function fireAppClick({ payments, dialog, selector, onRender = () => {} }) {
   clickListener({ target: button });
 }
 
-test('bill Pay is disabled in the visual preview and legacy receipt markup stays clearly illustrative', () => {
+test('enabled visual Pay opens a successful receipt preview with safe illustrative details', () => {
   const { instance } = makeExperience();
   const bill = instance.renderBill();
-  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
-  assert.doesNotMatch(bill, /data-demo-pay/);
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
   assert.match(bill, /Visual preview only · Telebirr is not connected\./);
-  assert.match(bill, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
+  assert.match(bill, /Visual preview only · Telebirr is not connected\. Pay opens a demo receipt; no payment is sent\./);
 
   instance.demoReceiptTime = '2026/10/18 12:34:56';
   const receipt = instance.renderReceipt();
   assert.match(receipt, /<article class="bill-page telebirr-preview demo-receipt"/);
   assert.match(receipt, /<article[^>]*aria-describedby="receipt-no-payment-note"/);
-  assert.match(receipt, /<h1 id="receipt-title">Receipt Preview<\/h1>/);
+  assert.match(receipt, /<h1 id="receipt-title">Successful<\/h1>/);
   assert.match(receipt, /-676\.45 <small>\(ETB\)<\/small>/);
   assert.match(receipt, /Transaction Time:<\/dt><dd>2026\/10\/18 12:34:56<\/dd>/);
   assert.match(receipt, /Transaction To:<\/dt><dd>Ethio telecom<\/dd>/);
   assert.match(receipt, /Transaction Type:<\/dt><dd>Bill Payment<\/dd>/);
-  assert.match(receipt, /Transaction Number:<\/dt><dd class="receipt-reference">RCP-67645-001<\/dd>/);
-  assert.doesNotMatch(receipt, /receipt-reference[^\"]*(?:purple|highlight)|class="[^"]*purple[^"]*receipt-reference/);
+  assert.match(receipt, /Transaction Number:<\/dt><dd class="receipt-reference">DEMO-RCP-001<\/dd>/);
+  assert.doesNotMatch(receipt, /receipt-reference[^\"]*(?:purple|highlight)|class="[^\"]*purple[^\"]*receipt-reference/);
   assert.match(receipt, /<p class="receipt-preview-note" id="receipt-no-payment-note">No payment was sent\.<\/p>/);
-  assert.match(receipt, /class="receipt-qr-code"[^>]*data-demo-qr[^>]*data-qr-payload="STEMMA-DEMO-RECEIPT-67645-001"[^>]*role="img"[^>]*aria-label="Receipt identifier QR code"/);
+  assert.match(receipt, /class="receipt-qr-code"[^>]*data-demo-qr[^>]*data-qr-payload="STEMMA-DEMO-RECEIPT-001"[^>]*role="img"[^>]*aria-label="Receipt identifier QR code"/);
   assert.doesNotMatch(receipt, /(?:qr-placeholder|qr-style placeholder|demo-receipt-squares|<pattern\b|>DEMO<\/span>)/i);
   assert.match(appSource, /payments\.isReceiptOpen \? payments\.renderReceipt\(\) : payments\.renderBill\(\)/);
   assert.match(appSource, /aria-label', payments\.isReceiptOpen \? 'Receipt preview' : 'Bill payment details'/);
 });
 
-test('receipt preview visible text contains no Demo and keeps its non-payment notice accessible', () => {
+test('successful receipt visible text and non-payment notice remain accessible', () => {
   const { instance } = makeExperience();
   const receipt = instance.renderReceipt();
   const visibleText = receipt.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  assert.doesNotMatch(visibleText, /\bdemo\b/i, 'visible receipt text never describes the preview as a demo');
-  assert.match(visibleText, /\bReceipt Preview\b/);
+  assert.match(visibleText, /\bSuccessful\b/);
+  assert.match(visibleText, /DEMO-RCP-001/);
   assert.match(visibleText, /No payment was sent\./);
   assert.match(receipt, /aria-describedby="receipt-no-payment-note"/);
   assert.match(receipt, /<p class="receipt-preview-note" id="receipt-no-payment-note">No payment was sent\.<\/p>/);
 });
 
-test('demo receipt QR is inline, scannable data-only markup with no external or persistent effects', () => {
+test('demo receipt QR is inline, inert static-ID markup with no external or persistent effects', () => {
   const { instance, effects } = makeExperience();
   const before = { ...effects };
   const receipt = instance.renderReceipt();
   const qrMarkup = receipt.match(/<div class="receipt-qr-code"[^>]*>[\s\S]*?<\/div>/)?.[0];
   assert.ok(qrMarkup, 'receipt exposes the accessible data-demo-qr wrapper');
-  assert.equal((receipt.match(/STEMMA-DEMO-RECEIPT-67645-001/g) ?? []).length, 1,
+  assert.equal((receipt.match(/STEMMA-DEMO-RECEIPT-001/g) ?? []).length, 1,
     'the exact payload appears once, in the wrapper data attribute');
   assert.match(qrMarkup, /data-demo-qr\b/);
-  assert.match(qrMarkup, /data-qr-payload="STEMMA-DEMO-RECEIPT-67645-001"/);
+  assert.match(qrMarkup, /data-qr-payload="STEMMA-DEMO-RECEIPT-001"/);
   assert.match(qrMarkup, /role="img"/);
   assert.match(qrMarkup, /aria-label="Receipt identifier QR code"/);
 
@@ -137,23 +136,28 @@ test('openDemoReceipt requires an open bill, closes the sheet, and creates only 
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
 });
 
-test('legacy receipt action is not exposed by the disabled bill Pay markup', () => {
+test('enabled bill Pay opens only the demo receipt and leaves sample financial state untouched', () => {
   const { instance, dialog, effects } = makeExperience({ dialogOpen: false });
   const sampleOverviewBalance = '5,000.00';
   const sampleBill = { availableBalance: 701, amount: 676.45, debited: false, ledgerEntries: [] };
   const before = structuredClone(sampleBill);
   const bill = instance.renderBill();
-  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
-  assert.doesNotMatch(bill, /data-demo-pay/);
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(bill, /Pay opens a demo receipt; no payment is sent\./);
 
-  // Keep exercising the existing internal receipt method as a legacy unit check;
-  // it is not reachable through the disabled Pay control in the rendered UI.
   instance.isBillOpen = true;
   dialog.open = true;
-  instance.openDemoReceipt();
+  let rendered = '';
+  fireAppClick({
+    payments: instance,
+    dialog,
+    selector: 'demo-pay',
+    onRender: () => { rendered = instance.renderReceipt(); }
+  });
   assert.equal(instance.isReceiptOpen, true);
   assert.equal(dialog.open, false);
-  assert.match(instance.renderReceipt(), /Receipt Preview/);
+  assert.match(rendered, /<h1 id="receipt-title">Successful<\/h1>/);
+  assert.match(rendered, /No payment was sent\./);
   assert.equal(sampleOverviewBalance, '5,000.00');
   assert.deepEqual(sampleBill, before, 'sample bill fields and ledger remain untouched');
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });

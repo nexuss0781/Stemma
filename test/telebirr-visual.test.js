@@ -42,13 +42,12 @@ test('Telebirr bill screen renders sample data as an explicitly disconnected vis
   assert.match(markup, /Available Balance:701\.00ETB/);
   assert.match(markup, /<span>Total Bill Amount<\/span><strong>676\.45 ETB<\/strong>/);
   assert.match(markup, /<span>Other amount<\/span>/);
-  assert.match(markup, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
+  assert.match(markup, /Visual preview only · Telebirr is not connected\. Pay opens a demo receipt; no payment is sent\./);
   assert.match(markup, /<button class="bill-secondary-action" type="button" data-bill-back>Back<\/button>\s*<button class="bill-primary-action" type="button" data-review-bill>Continue<\/button>/);
   const dialogTag = markup.match(/<dialog\b[^>]*>/)?.[0];
   assert.ok(dialogTag, 'payment dialog is present in the preview markup');
   assert.doesNotMatch(dialogTag, /\sopen(?:\s|>)/, 'payment dialog is initially closed');
-  assert.match(markup, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
-  assert.doesNotMatch(markup, /data-demo-pay/);
+  assert.match(markup, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
   assert.doesNotMatch(markup, /Subscribe/i);
   assert.equal((markup.match(/class="bill-pay-button"/g) || []).length, 1);
   assert.deepEqual(iconCalls, ['close'], 'the icon stub is used only for the close affordance');

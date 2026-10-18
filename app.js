@@ -480,7 +480,7 @@ document.addEventListener('click', event => {
   if (event.target.closest('[data-review-bill]')) { payments.showSheet(); return; }
   if (event.target.closest('[data-demo-pay]')) {
     // Visual simulation only: no payment, wallet, or persistence operation.
-    if (!payments.isDeposit && payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
+    if (payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
       payments.openDemoReceipt();
       render();
     }

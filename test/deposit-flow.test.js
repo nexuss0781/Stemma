@@ -151,7 +151,7 @@ test('deposit state is initialized, opens only with a valid canonical amount, an
   }
 });
 
-test('deposit bill uses the shared reference details with the entered amount and an inert Pay control', () => {
+test('deposit bill uses shared reference details with the entered amount and enabled demo Pay', () => {
   const { instance, dialog, effects } = makeExperience();
   assert.equal(instance.openDeposit('000123.45'), true);
   const markup = instance.renderBill();
@@ -168,9 +168,8 @@ test('deposit bill uses the shared reference details with the entered amount and
   const dialogTag = markup.match(/<dialog\b[^>]*>/)?.[0];
   assert.ok(dialogTag, 'wallet sheet markup exists');
   assert.doesNotMatch(dialogTag, /\sopen(?:\s|>)/, 'deposit opens on bill details, before the wallet sheet');
-  assert.match(markup, /<button class="bill-pay-button"[^>]*\bdisabled\b[^>]*>/);
-  assert.doesNotMatch(markup, /data-demo-pay/);
-  assert.match(markup, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
+  assert.match(markup, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(markup, /Visual preview only · Telebirr is not connected\. Pay opens a demo receipt; no payment is sent\./);
   assert.equal(instance.isReceiptOpen, false);
   assert.equal(dialog.open, false);
   const continued = fireAppClick({ payments: instance, selector: 'review-bill', sheetDialog: dialog });
@@ -181,33 +180,53 @@ test('deposit bill uses the shared reference details with the entered amount and
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
 });
 
-test('deposit blocks legacy receipt transitions and the regular illustrative bill keeps Pay disabled', () => {
-  const { instance, dialog, effects } = makeExperience({ dialogOpen: true });
-  assert.equal(instance.openDeposit('24.60'), true);
-  const beforeTime = instance.demoReceiptTime;
-  instance.openDemoReceipt();
-  assert.equal(instance.isReceiptOpen, false);
-  assert.equal(instance.demoReceiptTime, beforeTime);
-  assert.equal(dialog.open, true, 'rejected deposit receipt does not close the sheet');
-  assert.doesNotMatch(instance.renderBill(), /data-demo-pay/);
-
+test('Pay opens success receipt for regular and exact deposit amounts while guards prevent premature or duplicate actions', () => {
   const regular = makeExperience({ dialogOpen: true });
-  const bill = regular.instance.renderBill();
+  regular.instance.isBillOpen = true;
+  const regularBefore = { ...regular.effects };
+  fireAppClick({ payments: regular.instance, selector: 'demo-pay', sheetDialog: regular.dialog });
+  assert.equal(regular.instance.isReceiptOpen, true);
+  assert.match(regular.instance.renderReceipt(), /-676\.45 <small>\(ETB\)<\/small>/);
+
+  for (const [amount, expected] of [['1250.50', '1250.50'], ['0.01', '0.01'], ['999999999.99', '999999999.99']]) {
+    const { instance, dialog, effects } = makeExperience();
+    assert.equal(instance.openDeposit(amount), true);
+    dialog.open = true;
+    const before = { ...effects };
+    const click = fireAppClick({ payments: instance, selector: 'demo-pay', sheetDialog: dialog });
+    assert.equal(instance.isReceiptOpen, true, `${amount} reaches a receipt`);
+    assert.equal(dialog.open, false, 'successful preview closes the wallet sheet');
+    assert.equal(click.renders, 1, 'successful click renders the receipt exactly once');
+    assert.match(instance.renderReceipt(), new RegExp(`-${expected.replaceAll('.', '\\.') } <small>\\(ETB\\)<\\/small>`));
+    assert.match(instance.renderReceipt(), /<h1 id="receipt-title">Successful<\/h1>/);
+    assert.match(instance.renderReceipt(), /No payment was sent\./);
+    fireAppClick({ payments: instance, selector: 'receipt-back', sheetDialog: dialog });
+    assert.equal(instance.isReceiptOpen, false, 'receipt Back returns to bill details');
+    assert.equal(instance.depositAmount, expected, 'receipt Back retains the original entered amount');
+    assert.match(instance.renderBill(), new RegExp(`<strong>${expected.replaceAll('.', '\\.') } ETB<\\/strong>`));
+    assert.deepEqual(effects, before, 'demo Pay makes no network or storage calls');
+  }
+
+  const premature = makeExperience({ dialogOpen: true });
+  fireAppClick({ payments: premature.instance, selector: 'demo-pay', sheetDialog: premature.dialog });
+  assert.equal(premature.instance.isReceiptOpen, false, 'Pay before a bill is open does nothing');
+  assert.equal(premature.dialog.open, true, 'premature Pay leaves the sheet unchanged');
+
+  const duplicate = makeExperience({ dialogOpen: true });
+  duplicate.instance.isBillOpen = true;
+  fireAppClick({ payments: duplicate.instance, selector: 'demo-pay', sheetDialog: duplicate.dialog });
+  const receiptTime = duplicate.instance.demoReceiptTime;
+  const repeated = fireAppClick({ payments: duplicate.instance, selector: 'demo-pay', sheetDialog: duplicate.dialog });
+  assert.equal(duplicate.instance.demoReceiptTime, receiptTime, 'duplicate Pay cannot create another transition');
+  assert.equal(repeated.renders, 0, 'duplicate Pay while receipt is showing is ignored');
+  assert.equal(regular.effects.fetch, 0);
+  assert.deepEqual(regular.effects, regularBefore);
+
+  const bill = makeExperience({ dialogOpen: true }).instance.renderBill();
   assert.match(bill, /676\.45<small>ETB<\/small>/);
   assert.match(bill, /Available Balance:701\.00ETB/);
-  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
-  assert.doesNotMatch(bill, /data-demo-pay/);
-  assert.match(bill, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
-
-  // The original receipt renderer and transition method remain unit-testable,
-  // but no enabled Pay control exposes that transition to users.
-  regular.instance.isBillOpen = true;
-  regular.instance.openDemoReceipt();
-  assert.equal(regular.instance.isReceiptOpen, true);
-  assert.equal(regular.dialog.open, false);
-  assert.match(regular.instance.renderReceipt(), /-676\.45 <small>\(ETB\)<\/small>/);
-  assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
-  assert.deepEqual(regular.effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(bill, /Visual preview only · Telebirr is not connected\. Pay opens a demo receipt; no payment is sent\./);
 });
 
 test('deposit form markup is numeric, labeled, explicitly non-payment, and cards tab 1 uses its own entry grid', () => {
@@ -286,7 +305,7 @@ test('deposit and regular bill navigation maintain their mutually exclusive stat
   assert.match(appSource, /const wasDeposit = payments\.isDeposit;\s*payments\.isDeposit = false;[\s\S]*?payments\.isBillOpen = false;\s*render\(\);\s*document\.querySelector\(wasDeposit \? '#deposit-amount' : '\.fee-continue'\)/);
   assert.match(paymentUi, /renderBill\(\)\s*\{\s*if\s*\(this\.isDeposit\)\s*return this\.renderDeposit\(\)/);
   assert.match(paymentUi, /renderDeposit\(\)/);
-  assert.match(paymentUi, /if\s*\(this\.isDeposit\s*\|\|\s*!this\.isBillOpen\s*\|\|\s*this\.isReceiptOpen\)/);
+  assert.match(paymentUi, /if\s*\(!this\.isBillOpen\s*\|\|\s*this\.isReceiptOpen\)/);
 
   const deposit = makeExperience();
   deposit.instance.openDeposit('1250.50');
@@ -307,7 +326,6 @@ test('deposit and regular bill navigation maintain their mutually exclusive stat
   let receiptAttempts = 0;
   deposit.instance.openDemoReceipt = () => { receiptAttempts += 1; };
   const pay = fireAppClick({ payments: deposit.instance, selector: 'demo-pay', dialogOpen: true });
-  assert.equal(receiptAttempts, 0, 'deposit mode rejects the demo Pay click');
-  assert.equal(pay.renders, 0);
-  assert.equal(deposit.instance.isReceiptOpen, false);
+  assert.equal(receiptAttempts, 1, 'deposit mode can open the demo receipt');
+  assert.equal(pay.renders, 1);
 });
