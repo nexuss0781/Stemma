@@ -218,17 +218,18 @@ test('hero markup contains nickname and rear reflection before front photo, with
   assert.match(reflectionStyle, /z-index:\s*0/);
   assert.match(reflectionStyle, /inset:\s*5px/);
   assert.match(reflectionStyle, /width:\s*calc\(100% - 10px\)/);
-  assert.match(reflectionStyle, /clip-path:\s*inset\(0 round/, 'blur stays inside the inner layer instead of obscuring the warm outer ring');
+  assert.match(reflectionStyle, /clip-path:\s*inset\(0 round/, 'blur stays inside the inner layer instead of obscuring the soft-light frame');
   const photoFrameStyle = styles.match(/\.avatar-glass\.has-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.ok(photoFrameStyle, 'photo frame has a dedicated profile-photo state');
-  assert.match(photoFrameStyle, /background:\s*linear-gradient\(145deg, rgba\(239,210,161,\.46\), rgba\(215,164,124,\.4\)\)/, 'narrow outer glass uses the existing golden-brown treatment');
+  assert.match(photoFrameStyle, /background:\s*color-mix\(in srgb, var\(--paper-soft\) 94%, var\(--brand-burgundy\)\)/, 'frame uses the existing soft-light surface, subtly darkened with the existing burgundy token');
+  assert.doesNotMatch(photoFrameStyle, /(?:^|;)\s*(?:width|height|padding|margin|inset|border-radius)\s*:/, 'surface correction must not change the frame geometry');
   assert.doesNotMatch(photoFrameStyle, /(?:^|;)\s*filter\s*:/, 'glass frame must not grayscale the front layer');
   assert.match(photoFrameStyle, /backdrop-filter:\s*none/);
   const frontGlassStyle = styles.match(/\.avatar-glass\.has-profile-photo::after\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(frontGlassStyle, /background:\s*transparent/, 'inner reflection is not covered by a golden-brown fill');
   assert.doesNotMatch(frontGlassStyle, /filter\s*:/);
   const fullColorPhotoStyle = styles.match(/\.avatar-glass\.has-profile-photo \.overview-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(fullColorPhotoStyle, /z-index:\s*1/, 'actual photo is above the warm glass, not tinted by it');
+  assert.match(fullColorPhotoStyle, /z-index:\s*1/, 'actual photo is above the soft-light surface, not tinted by it');
   for (const rule of styles.matchAll(/[^{}]*\.overview-profile-photo\s*\{([^}]*)\}/g)) {
     assert.doesNotMatch(rule[1], /(?:^|;)\s*(?:filter|opacity|mix-blend-mode)\s*:/,
       'actual photo must retain its original full-color appearance');
