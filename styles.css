@@ -1226,6 +1226,11 @@ body { color: var(--brand-burgundy); }
 @media (max-width: 390px) { .personalization-form { padding-inline: 16px; } .personalization-fields { gap: 10px; } }
 
 /* Existing far-right Profile route: structured saved onboarding information. */
+.page-heading { display: contents; }
+.profile-heading-icons { display: none; }
+.app-main.profile-view .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.app-main.profile-view .profile-heading-icons { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.profile-heading-icon { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid rgba(104,27,29,.17); border-radius: 12px; color: var(--brand-burgundy); background: rgba(251,243,214,.92); box-shadow: inset 0 1px 0 rgba(241,223,155,.5); }
 .app-main.profile-view { grid-template-rows: 36px minmax(0,1fr); }
 .app-main.profile-view .page-title { margin: 0; color: var(--brand-burgundy); font-size: 25px; font-weight: 750; letter-spacing: -.045em; }
 /* Profile uses the shared navigation surface and border without a route-specific override. */
