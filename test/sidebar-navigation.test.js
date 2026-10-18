@@ -296,3 +296,10 @@ test('drawer puts Overview first without changing the five-item bottom-nav order
   await readFile(new URL('../assets/fraunces-deadline.ttf', import.meta.url));
   assert.doesNotMatch(htmlSource, /fonts\.googleapis\.com|fonts\.gstatic\.com/i, 'no new external font asset is introduced');
 });
+
+ test('glass styling is scoped to the image card and the drawer retains burgundy', () => {
+  const theme = cssSource.slice(cssSource.indexOf('.drawer-backdrop { background: rgba(61,8,14,.28); }'), cssSource.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(theme, /\.navigation-drawer\s*\{[^}]*background:\s*rgba\(91,20,22,\.98\)/);
+  assert.match(theme, /\.drawer-college-card\s*\{[^}]*backdrop-filter:\s*blur\(26px\)/);
+  assert.doesNotMatch(theme, /\.navigation-drawer\s*\{[^}]*backdrop-filter/);
+});
