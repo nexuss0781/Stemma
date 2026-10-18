@@ -305,9 +305,12 @@ test('drawer puts Overview first without changing the five-item bottom-nav order
 });
 
 test('college/profile card uses warm-gold glass and the selected drawer link uses the gold pill', () => {
-  assert.match(cssSource, /\/\*\s*Deep gold glass and a soft crest reflection stay inside this rectangle\.\s*\*\//);
-  assert.match(cssSource, /\.drawer-college-card\s*\{[^}]*background:[^}]*color-mix\(in srgb,\s*var\(--brand-gold\)\s+30%,\s*black\)/s);
-  assert.match(cssSource, /\.drawer-college-card::after\s*\{[^}]*background:[^;}]*assets\/tafari-makonnen-college-logo\.png[^}]*filter:\s*blur\(10px\)/s);
+  const glass = cssSource.slice(cssSource.indexOf('/* Warm frosted glass,'), cssSource.indexOf('/* Keep a 44px touch target'));
+  assert.match(glass, /\.drawer-college-card\s*\{[^}]*border-radius:\s*22px/s);
+  assert.match(glass, /background:[^}]*rgba\(251,241,200,\.1\)[^}]*rgba\(104,27,29,\.2\)/s);
+  assert.doesNotMatch(glass, /color-mix|background:[^;}]*#[0-9a-f]{3,8}/i, 'glass fill remains translucent rather than opaque');
+  assert.match(glass, /\.drawer-college-card::before\s*\{[^}]*pointer-events:\s*none[^}]*linear-gradient\(125deg/s);
+  assert.match(glass, /\.drawer-college-card::after\s*\{[^}]*background:[^;}]*assets\/tafari-makonnen-college-logo\.png[^}]*filter:\s*blur\(16px\)/s);
   assert.match(cssSource, /\.drawer-college-crest\s*\{[^}]*object-fit:\s*contain/s);
   assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*color:\s*var\(--brand-gold-light\)/s);
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]::before\s*\{[^}]*background:\s*var\(--brand-gold\)/s);
