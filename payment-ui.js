@@ -1,12 +1,63 @@
 /* Approved visual fixture only. Sample bill values are not real funds, bills, or payments. */
+function normalizeDepositAmount(value) {
+  const raw = String(value ?? '').trim();
+  if (!/^(?:\d{1,9}(?:\.\d{1,2})?|\.\d{1,2})$/.test(raw)) return null;
+  const [integer, fraction = ''] = raw.split('.');
+  const amount = `${(integer || '0').replace(/^0+(?=\d)/, '')}.${fraction.padEnd(2, '0')}`;
+  return amount === '0.00' ? null : amount;
+}
+
 class PaymentExperience {
   constructor() {
     this.isBillOpen = false;
     this.isReceiptOpen = false;
     this.demoReceiptTime = '';
+    this.isDeposit = false;
+    this.depositAmount = '';
+  }
+
+  openDeposit(rawAmount) {
+    const amount = normalizeDepositAmount(rawAmount);
+    if (!amount) return false;
+    this.depositAmount = amount;
+    this.isDeposit = true;
+    this.isBillOpen = true;
+    this.isReceiptOpen = false;
+    return true;
+  }
+
+  renderDeposit() {
+    const amount = this.depositAmount;
+    return `<article class="bill-page telebirr-preview" data-ui-preview="true" aria-labelledby="bill-page-title">
+      <header class="bill-page-heading">
+        <button class="bill-back" type="button" data-bill-back aria-label="Back to Deposit"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
+        <h1 id="bill-page-title">Deposit via Telebirr</h1>
+      </header>
+      <section class="bill-details-card" aria-label="Deposit details">
+        <table class="bill-details-table"><thead><tr><th scope="col">Description</th><th scope="col">Amount</th></tr></thead><tbody><tr><td>Stemma deposit</td><td>${amount}<small>ETB</small></td></tr></tbody></table>
+      </section>
+      <fieldset class="bill-amount-options" disabled>
+        <legend class="payment-visually-hidden">Deposit amount</legend>
+        <label><input type="radio" name="deposit-total" checked /><span class="bill-radio-mark is-selected" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-8"/></svg></span><span>Deposit Amount</span><strong>${amount} ETB</strong></label>
+      </fieldset>
+      <div class="bill-page-actions">
+        <p class="bill-page-preview-note">Visual preview only · Telebirr is not connected. No payment will be sent.</p>
+        <button class="bill-secondary-action" type="button" data-bill-back>Back</button>
+        <button class="bill-primary-action" type="button" data-review-bill>Continue</button>
+      </div>
+      <dialog class="bill-payment-sheet telebirr-sheet" id="bill-payment-dialog" aria-labelledby="bill-sheet-title" aria-describedby="bill-sheet-note">
+        <button class="bill-sheet-close" type="button" data-close-bill-sheet aria-label="Close payment details">${icon('close')}</button>
+        <h2 id="bill-sheet-title">Review deposit</h2>
+        <p class="bill-sheet-amount"><span>${amount}</span><small>ETB</small></p>
+        <section class="bill-method-card" aria-labelledby="bill-method-title"><h3 id="bill-method-title">Payment Method</h3><div class="deposit-method-preview"><strong>Telebirr</strong><p>Not connected</p></div></section>
+        <button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay</button>
+        <p class="bill-sheet-note" id="bill-sheet-note">No payment was sent. Telebirr is not connected; Pay is disabled.</p>
+      </dialog>
+    </article>`;
   }
 
   renderBill() {
+    if (this.isDeposit) return this.renderDeposit();
     // Reference-screen sample figures only; never submitted or linked to Overview's mock balance.
     return `<article class="bill-page telebirr-preview" data-ui-preview="true" aria-labelledby="bill-page-title">
       <header class="bill-page-heading">
@@ -70,7 +121,7 @@ class PaymentExperience {
   }
 
   openDemoReceipt() {
-    if (!this.isBillOpen || this.isReceiptOpen) return;
+    if (this.isDeposit || !this.isBillOpen || this.isReceiptOpen) return;
     this.closeSheet();
     this.demoReceiptTime = new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'Africa/Addis_Ababa', year: 'numeric', month: '2-digit', day: '2-digit',

@@ -1127,3 +1127,20 @@ body { color: var(--brand-burgundy); }
 .history-details-fields dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .history-details-fields .history-details-amount { font-size: 21px; }
 .history-details-amount small { font-size: 10px; }
+
+/* Deposit amount entry is centered and stays separate from wallet balances. */
+.app-main.deposit-entry-view { grid-template-rows: 36px 42px minmax(0,1fr); }
+.dashboard-grid.deposit-entry-grid { display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr); place-items: center; overflow-y: auto; padding: 4px; }
+.deposit-entry-card { width: min(100%, 380px); padding: clamp(22px, 5vw, 32px); border: 1px solid rgba(174,131,56,.3); border-radius: 25px; color: var(--brand-burgundy); background: linear-gradient(140deg, rgba(251,241,200,.94), rgba(251,241,200,.7)); box-shadow: 0 12px 30px rgba(104,27,29,.07); }
+.deposit-entry-card h2 { margin: 0 0 24px; font-size: 25px; letter-spacing: -.04em; }
+.deposit-entry-card label { display: block; margin-bottom: 9px; font-size: 13px; font-weight: 650; }
+.deposit-amount-field { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 15px; border: 1px solid rgba(104,27,29,.25); border-radius: 13px; background: var(--brand-gold-light); }
+.deposit-amount-field:focus-within { outline: 2px solid var(--brand-burgundy); outline-offset: 2px; }
+.deposit-amount-field input { width: 100%; min-width: 0; padding: 14px 0; border: 0; outline: none; background: transparent; color: var(--brand-burgundy); font: inherit; font-size: 24px; font-variant-numeric: tabular-nums; }
+.deposit-amount-field > span { font-size: 12px; font-weight: 700; }
+.deposit-entry-submit { width: 100%; min-height: 48px; margin-top: 20px; border: 1px solid var(--brand-burgundy); border-radius: 13px; background: var(--brand-burgundy); color: var(--brand-gold); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.deposit-entry-submit:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 3px; }
+#deposit-entry-note { margin: 14px 0 0; color: rgba(104,27,29,.65); font-size: 10px; line-height: 1.5; text-align: center; }
+.deposit-method-preview { padding: 15px; color: #333; }
+.deposit-method-preview p { margin: 5px 0 0; color: #777; font-size: 12px; }
+.telebirr-sheet .bill-pay-button:disabled { background: #d8d8d8; color: #777; opacity: 1; box-shadow: none; cursor: not-allowed; }

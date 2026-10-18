@@ -278,6 +278,18 @@ function renderForYou({ deadline, today = new Date(), interval = paymentDemoInte
     </article>
   </div>`;
 }
+function renderDepositForm() {
+  return `<section class="deposit-entry-card" aria-labelledby="deposit-entry-title">
+    <h2 id="deposit-entry-title">Deposit</h2>
+    <form id="deposit-amount-form">
+      <label for="deposit-amount">Amount of money</label>
+      <div class="deposit-amount-field"><input id="deposit-amount" name="amount" type="number" inputmode="decimal" min="0.01" max="999999999.99" step="0.01" required placeholder="0.00" value="${payments.depositAmount || ''}" aria-describedby="deposit-entry-note" /><span>ETB</span></div>
+      <button class="deposit-entry-submit" type="submit">Deposit</button>
+      <p id="deposit-entry-note">Visual preview only · No payment will be sent.</p>
+    </form>
+  </section>`;
+}
+
 function updatePaymentProgress() {
   const grid = document.getElementById('dashboard-grid');
   if (!grid.classList.contains('payment-carousel') || !grid.clientWidth) return;
@@ -301,6 +313,7 @@ function renderCards() {
   const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;
   grid.classList.toggle('payment-carousel', paymentCarousel);
   grid.classList.toggle('bill-content-grid', billView);
+  grid.classList.toggle('deposit-entry-grid', activeRoute === 'cards' && activeTabs.cards === 1 && !billView);
   grid.classList.toggle('payment-history-grid', activeRoute === 'cards' && activeTabs.cards === 2 && !billView);
   if (billView) {
     grid.removeAttribute('role');
@@ -325,6 +338,11 @@ function renderCards() {
   grid.removeAttribute('role');
   grid.removeAttribute('aria-roledescription');
   grid.removeAttribute('tabindex');
+  if (activeRoute === 'cards' && activeTabs.cards === 1) {
+    grid.setAttribute('aria-label', 'Deposit amount');
+    grid.innerHTML = renderDepositForm();
+    return;
+  }
   if (activeRoute === 'cards' && activeTabs.cards === 2) {
     grid.setAttribute('role', 'region');
     grid.setAttribute('aria-label', 'Payment history');
@@ -343,19 +361,21 @@ function render() {
   const paymentView = activeRoute === 'cards';
   const billView = paymentView && payments.isBillOpen;
   const historyView = paymentView && activeTabs.cards === 2 && !billView;
+  const depositView = paymentView && activeTabs.cards === 1 && !billView;
   const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
   main.classList.toggle('payment-view', paymentView);
   main.classList.toggle('bill-payment-view', billView);
   main.classList.toggle('payment-history-view', historyView);
+  main.classList.toggle('deposit-entry-view', depositView);
   main.classList.remove('route-from-left', 'route-from-right');
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
   main.querySelector('.page-title').hidden = billView || !paymentView;
   main.querySelector('.page-title').textContent = 'Payment';
   document.getElementById('page-tabs').hidden = billView;
-  main.querySelector('.section-intro').hidden = billView || historyView;
+  main.querySelector('.section-intro').hidden = billView || historyView || depositView;
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
   main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);
@@ -377,6 +397,7 @@ function navigate(route) {
   const wasBillOpen = payments.isBillOpen;
   payments.isBillOpen = false;
   payments.isReceiptOpen = false;
+  payments.isDeposit = false;
   if (route === activeRoute) { if (wasBillOpen) render(); closeDrawer(); return; }
   const currentIndex = sections.findIndex(item => item.id === activeRoute);
   const nextIndex = sections.findIndex(item => item.id === route);
@@ -405,6 +426,21 @@ function closeDrawer() {
   document.getElementById('menu-trigger').setAttribute('aria-expanded', 'false');
 }
 
+document.addEventListener('submit', event => {
+  if (event.target.id !== 'deposit-amount-form') return;
+  event.preventDefault();
+  if (activeRoute !== 'cards' || activeTabs.cards !== 1) return;
+  const input = document.getElementById('deposit-amount');
+  if (!input || !payments.openDeposit(input.value)) {
+    if (input) { input.setCustomValidity('Enter a positive ETB amount with up to two decimal places.'); input.reportValidity(); }
+    return;
+  }
+  render();
+});
+document.addEventListener('input', event => {
+  if (event.target.id === 'deposit-amount') event.target.setCustomValidity('');
+});
+
 document.addEventListener('click', event => {
   document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
     if (!picker.contains(event.target)) picker.open = false;
@@ -423,6 +459,7 @@ document.addEventListener('click', event => {
     return;
   }
   if (event.target.closest('[data-open-bill]')) {
+    payments.isDeposit = false;
     payments.isReceiptOpen = false;
     payments.isBillOpen = true;
     activeRoute = 'cards';
@@ -430,18 +467,20 @@ document.addEventListener('click', event => {
     return;
   }
   if (event.target.closest('[data-bill-back]')) {
+    const wasDeposit = payments.isDeposit;
+    payments.isDeposit = false;
     payments.closeSheet();
     payments.isReceiptOpen = false;
     payments.isBillOpen = false;
     render();
-    document.querySelector('.fee-continue')?.focus({ preventScroll: true });
+    document.querySelector(wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
     return;
   }
   if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); return; }
   if (event.target.closest('[data-review-bill]')) { payments.showSheet(); return; }
   if (event.target.closest('[data-demo-pay]')) {
     // Visual simulation only: no payment, wallet, or persistence operation.
-    if (payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
+    if (!payments.isDeposit && payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
       payments.openDemoReceipt();
       render();
     }
