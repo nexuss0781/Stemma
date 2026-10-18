@@ -599,6 +599,9 @@ let signedInEmail = '';
 let profilePhotoAccountKey = '';
 let profilePhotoNotice = '';
 let deviceProfilePhotoStore = null;
+let authenticatedProfilePhotoStore = null;
+let pendingLegacyProfilePhoto = null;
+let profilePhotoPersistence = null;
 let preparedProfilePhoto = null;
 let selectedProfilePhotoChanged = false;
 let profilePhotoPreparationError = false;
@@ -719,7 +722,7 @@ const personalizationFeedback = document.getElementById('personalization-feedbac
 const personalizationAccept = document.getElementById('personalization-accept');
 const personalizationBack = document.getElementById('personalization-back');
 let personalizationSaving = false;
-// Onboarding photo preview: local only, outside the profile save payload.
+// Onboarding photo preview: account-backed photo selection, outside the profile save payload.
 const studentPhotoButton = document.getElementById('student-photo-button');
 const studentPhotoInput = document.getElementById('student-photo-input');
 const studentPhotoPreview = document.getElementById('student-photo-preview');
@@ -768,7 +771,7 @@ function previewStudentPhoto(file) {
     studentPhotoButton.classList.add('has-photo');
     studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
     studentPhotoLabel.textContent = 'Replace photo';
-    studentPhotoStatus.textContent = 'Photo preview ready. Not uploaded.';
+    studentPhotoStatus.textContent = 'Photo ready. It will be saved to your signed-in profile when you accept.';
     if (typeof onStudentPhotoReady === 'function') onStudentPhotoReady(candidateImage);
     if (typeof updatePersonalizationSubmit === 'function') updatePersonalizationSubmit();
   };
@@ -795,7 +798,7 @@ personalizationForm.addEventListener('reset', resetStudentPhotoPreview);
 window.addEventListener('pagehide', resetStudentPhotoPreview);
 // End onboarding photo preview.
 
-// Profile photo integration: image bytes stay on this device and are scoped to the signed-in account.
+// Profile photo integration: authenticated photo bytes are saved to the signed-in account; IndexedDB is legacy-import-only.
 function refreshProfileIfVisible() {
   if (activeRoute === 'profile') renderCards();
 }
@@ -806,65 +809,165 @@ function getDevicePhotoStore() {
   if (!deviceProfilePhotoStore) deviceProfilePhotoStore = new DeviceProfilePhotoStore();
   return deviceProfilePhotoStore;
 }
+function getAuthenticatedPhotoStore() {
+  if (!authenticatedProfilePhotoStore) authenticatedProfilePhotoStore = new AuthenticatedProfilePhotoStore();
+  return authenticatedProfilePhotoStore;
+}
 function resetDevicePhotoDraft() {
   profilePhotoRevision += 1;
   selectedProfilePhotoChanged = false;
   preparedProfilePhoto = null;
+  pendingLegacyProfilePhoto = null;
   profilePhotoPreparationError = false;
   profilePhotoPreparation = Promise.resolve();
 }
+function setCurrentPhoto(blob, revision = profilePhotoRevision) {
+  if (revision !== profilePhotoRevision) return false;
+  const nextURL = URL.createObjectURL(blob);
+  const oldURL = studentPhotoURL;
+  studentPhotoURL = nextURL;
+  studentPhotoPreview.src = nextURL;
+  studentPhotoPreview.hidden = false;
+  studentPhotoPlaceholder.hidden = true;
+  studentPhotoButton.classList.add('has-photo');
+  studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
+  studentPhotoLabel.textContent = 'Replace photo';
+  if (oldURL && oldURL !== nextURL) URL.revokeObjectURL(oldURL);
+  return true;
+}
 function onStudentPhotoReady(image) {
   profilePhotoRevision += 1;
+  const revision = profilePhotoRevision;
   selectedProfilePhotoChanged = true;
+  pendingLegacyProfilePhoto = null;
   preparedProfilePhoto = null;
   profilePhotoPreparationError = false;
   const selectedURL = studentPhotoURL;
   profilePhotoPreparation = DeviceProfilePhotoStore.prepare(image).then(blob => {
-    if (studentPhotoURL === selectedURL) preparedProfilePhoto = blob;
+    if (studentPhotoURL === selectedURL && revision === profilePhotoRevision) preparedProfilePhoto = blob;
   }).catch(() => {
-    if (studentPhotoURL === selectedURL) profilePhotoPreparationError = true;
+    if (revision === profilePhotoRevision) profilePhotoPreparationError = true;
   });
   if (activeRoute === 'profile' && dashboardEntered) void saveProfilePhotoFromPage();
 }
-async function persistSelectedProfilePhoto() {
-  if (!selectedProfilePhotoChanged) return;
-  if (!profilePhotoAccountKey) throw new Error('Sign in again before saving a photo on this device.');
-  const revision = profilePhotoRevision;
-  await profilePhotoPreparation;
-  if (revision !== profilePhotoRevision) return;
-  if (profilePhotoPreparationError || !preparedProfilePhoto) throw new Error('The selected photo could not be prepared.');
-  const key = profilePhotoAccountKey;
-  await getDevicePhotoStore().put(key, preparedProfilePhoto);
-  if (key !== profilePhotoAccountKey) throw new Error('The signed-in account changed.');
-  if (revision !== profilePhotoRevision) return;
-  selectedProfilePhotoChanged = false;
-  profilePhotoNotice = '';
+async function decodeAndPrepareLegacyPhoto(blob, key, revision) {
+  const temporaryURL = URL.createObjectURL(blob);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const candidate = new Image();
+      candidate.onload = () => resolve(candidate);
+      candidate.onerror = () => reject(new Error('The older device photo could not be decoded.'));
+      candidate.src = temporaryURL;
+    });
+    if (key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return null;
+    return await DeviceProfilePhotoStore.prepare(image);
+  } finally {
+    URL.revokeObjectURL(temporaryURL);
+  }
 }
-async function restoreDeviceProfilePhoto() {
+async function deleteImportedLegacyPhoto(key) {
+  try { await getDevicePhotoStore().remove(key); } catch { /* A confirmed remote copy remains authoritative. */ }
+}
+async function persistSelectedPhotoLoop() {
+  while (selectedProfilePhotoChanged || pendingLegacyProfilePhoto) {
+    if (!profilePhotoAccountKey) throw new Error('Sign in again before saving your profile photo.');
+    const revision = profilePhotoRevision;
+    const key = profilePhotoAccountKey;
+    let blob;
+    let importingLegacy = false;
+    if (pendingLegacyProfilePhoto) {
+      blob = pendingLegacyProfilePhoto;
+      importingLegacy = true;
+    } else {
+      await profilePhotoPreparation;
+      if (revision !== profilePhotoRevision) continue;
+      if (profilePhotoPreparationError || !preparedProfilePhoto) throw new Error('The selected photo could not be prepared below the 1 MiB account limit.');
+      blob = preparedProfilePhoto;
+    }
+    try {
+      await getAuthenticatedPhotoStore().put(blob, { onlyIfAbsent: importingLegacy });
+    } catch (error) {
+      if (importingLegacy && error?.status === 412) {
+        const remote = await getAuthenticatedPhotoStore().get();
+        if (!remote) throw new Error('A profile photo already exists, but it could not be loaded from your account.');
+        if (key !== profilePhotoAccountKey || revision !== profilePhotoRevision) continue;
+        setCurrentPhoto(remote, revision);
+        pendingLegacyProfilePhoto = null;
+        selectedProfilePhotoChanged = false;
+        profilePhotoNotice = '';
+        studentPhotoStatus.textContent = 'Your saved profile photo was restored from your account.';
+        continue;
+      }
+      throw error;
+    }
+    if (key !== profilePhotoAccountKey) throw new Error('The signed-in account changed before the photo save completed.');
+    if (revision !== profilePhotoRevision) continue;
+    if (importingLegacy) await deleteImportedLegacyPhoto(key);
+    pendingLegacyProfilePhoto = null;
+    selectedProfilePhotoChanged = false;
+    profilePhotoNotice = '';
+    studentPhotoStatus.textContent = 'Profile photo saved to your account.';
+  }
+}
+async function persistSelectedProfilePhoto() {
+  if (profilePhotoPersistence) return profilePhotoPersistence;
+  profilePhotoPersistence = persistSelectedPhotoLoop();
+  try { await profilePhotoPersistence; }
+  finally { profilePhotoPersistence = null; }
+}
+async function restoreAccountProfilePhoto() {
   if (!profilePhotoAccountKey) return;
   const key = profilePhotoAccountKey;
+  const revision = profilePhotoRevision;
   try {
-    const blob = await getDevicePhotoStore().get(key);
-    if (!blob || key !== profilePhotoAccountKey || selectedProfilePhotoChanged) return;
-    if (studentPhotoURL) URL.revokeObjectURL(studentPhotoURL);
-    studentPhotoURL = URL.createObjectURL(blob);
-    studentPhotoPreview.src = studentPhotoURL;
-    studentPhotoPreview.hidden = false;
-    studentPhotoPlaceholder.hidden = true;
-    studentPhotoButton.classList.add('has-photo');
-    studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
-    studentPhotoLabel.textContent = 'Replace photo';
+    const remoteBlob = await getAuthenticatedPhotoStore().get();
+    if (key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return;
+    if (remoteBlob) {
+      setCurrentPhoto(remoteBlob, revision);
+      studentPhotoStatus.textContent = 'Profile photo loaded from your account.';
+      return;
+    }
+  } catch (error) {
+    if (key === profilePhotoAccountKey) profilePhotoNotice = error?.status === 401
+      ? 'Sign in again to load your profile photo. Your profile text remains available.'
+      : 'Your profile photo could not be loaded from your account. It was not replaced with a device copy.';
+    return; // Only an explicit 404 means absent; network/5xx/auth errors never trigger import.
+  }
+  if (key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return;
+  try {
+    const legacyBlob = await getDevicePhotoStore().get(key);
+    if (!legacyBlob || key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return;
+    const boundedBlob = await decodeAndPrepareLegacyPhoto(legacyBlob, key, revision);
+    if (!boundedBlob || key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return;
+    pendingLegacyProfilePhoto = boundedBlob;
+    setCurrentPhoto(boundedBlob, revision);
+    studentPhotoStatus.textContent = 'Older device photo found. Saving it to your account…';
+    try {
+      await persistSelectedProfilePhoto();
+    } catch (error) {
+      if (error?.status === 409) {
+        profilePhotoNotice = 'Your student profile must be completed before its saved photo can be imported.';
+        studentPhotoStatus.textContent = 'Photo kept on this device; it will be imported after your profile is saved.';
+      } else {
+        profilePhotoNotice = 'Your older device photo could not yet be saved to your account.';
+        studentPhotoStatus.textContent = 'Photo remains on this device; account save is still pending.';
+      }
+    }
   } catch {
-    profilePhotoNotice = 'Device photo storage is unavailable. Profile text is still saved to your account.';
+    if (key === profilePhotoAccountKey) profilePhotoNotice = 'An older device photo could not be prepared for your account.';
   }
 }
 async function saveProfilePhotoFromPage() {
-  profilePhotoNotice = 'Saving photo on this device…';
+  profilePhotoNotice = 'Saving photo to your account…';
   if (activeRoute === 'profile') renderCards();
   try {
     await persistSelectedProfilePhoto();
-  } catch {
-    profilePhotoNotice = 'This photo is available for this session only. It could not be saved on this device.';
+  } catch (error) {
+    profilePhotoNotice = error?.status === 401
+      ? 'Sign in again; this photo was not saved to your account.'
+      : error?.status === 409
+        ? 'Complete your student profile before saving this photo. The photo remains selected.'
+        : 'This photo was not saved to your account. Check your connection and try again.';
   }
   if (activeRoute === 'profile') renderCards();
 }
@@ -1020,7 +1123,7 @@ personalizationForm.addEventListener('submit', async event => {
     try {
       await persistSelectedProfilePhoto();
     } catch {
-      showPersonalizationFeedback('Your profile text was saved, but your photo could not be saved on this device. Please try Accept again.');
+      showPersonalizationFeedback('Your profile text was saved, but the photo was not saved to your account. It remains selected; please retry Accept.');
       return;
     }
     profileReadState = 'ready';
@@ -1121,7 +1224,7 @@ async function restoreAuthenticationState() {
     renderGoogleProfile(status.googleProfile);
     try {
       const profile = await loadStudentProfile();
-      await restoreDeviceProfilePhoto();
+      await restoreAccountProfilePhoto();
       profileReadState = 'ready';
       if (!dashboardEntered) {
         if (!isStudentProfileComplete(profile)) goToOnboardingSlide(2);

@@ -200,17 +200,17 @@ test('personalization save preserves base profile data, retains edits on errors,
   assert.deepEqual(Object.values(rejected.fields).map(field => field.value), ['Ada', 'ada_l', 'Mathematician']);
 });
 
-test('photo persistence failure keeps step four and truthfully reports that only profile text was saved', async () => {
+test('photo persistence failure keeps step four and truthfully reports that photo save failed', async () => {
   const saveProfile = { ...baseProfile, nickName: 'Ada', username: 'ada_l', bio: 'Mathematician' };
   const refreshCalls = [];
   const h = createHarness({
-    persistPhoto: async () => { throw new Error('IndexedDB write failed'); },
+    persistPhoto: async () => { throw new Error('Remote photo write failed'); },
     refreshProfile: () => refreshCalls.push('refreshed'),
     fetchImpl: async () => ({ ok: true, json: async () => ({ profile: { ...saveProfile, isPersonalizationComplete: true } }) })
   });
   await h.form.dispatch('submit');
 
-  assert.equal(h.requests.length, 1, 'profile text is saved before local photo persistence is attempted');
+  assert.equal(h.requests.length, 1, 'profile text is saved before account photo persistence is attempted');
   const [, options] = h.requests[0];
   assert.equal(options.method, 'PUT');
   const sentProfile = JSON.parse(options.body);
@@ -222,8 +222,8 @@ test('photo persistence failure keeps step four and truthfully reports that only
   assert.deepEqual(sentProfile, saveProfile);
   assert.equal(h.dashboardCalls.length, 0, 'photo persistence failure must not advance to the dashboard');
   assert.equal(h.context.profileReadState, 'loading', 'the page must not claim profile/photo readiness on failed persistence');
-  assert.deepEqual(refreshCalls, [], 'the ready profile view is refreshed only after local persistence succeeds');
-  assert.match(h.feedback.textContent, /profile text was saved, but your photo could not be saved on this device/i);
+  assert.deepEqual(refreshCalls, [], 'the ready profile view is refreshed only after remote persistence succeeds');
+  assert.match(h.feedback.textContent, /profile text was saved, but the photo was not saved to your account/i);
   assert.deepEqual(Object.values(h.fields).map(field => field.value), ['Ada', 'ada_l', 'Mathematician'],
     'the user remains on step four with their edits intact');
   assert.equal(h.accept.disabled, false, 'the text form remains retryable after photo storage failure');

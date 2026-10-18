@@ -175,51 +175,118 @@
       if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
         throw new TypeError('The selected image has no usable dimensions.');
       }
-
-      const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(sourceWidth, sourceHeight));
-      const width = Math.max(1, Math.round(sourceWidth * scale));
-      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const MAX_UPLOAD_BYTES = 1024 * 1024;
+      let scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(sourceWidth, sourceHeight));
+      let width = Math.max(1, Math.round(sourceWidth * scale));
+      let height = Math.max(1, Math.round(sourceHeight * scale));
       const documentObject = global.document;
       if (!documentObject || typeof documentObject.createElement !== 'function') {
         throw new Error('Canvas image preparation is unavailable in this browser.');
       }
-
       const canvas = documentObject.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
       const context = canvas.getContext('2d');
       if (!context || typeof context.drawImage !== 'function') {
         throw new Error('Canvas image preparation is unavailable in this browser.');
       }
-      context.drawImage(image, 0, 0, width, height);
-
       const encode = (type, quality) => new Promise((resolve, reject) => {
         try {
           canvas.toBlob(blob => {
             if (!blob) reject(new Error('The browser could not encode the selected image.'));
             else resolve(blob);
           }, type, quality);
-        } catch (error) {
-          reject(error);
-        }
+        } catch (error) { reject(error); }
       });
+      // Keep the legacy IndexedDB 10 MiB check unchanged, but prepare every newly
+      // selected/imported photo to the stricter server limit before it can be uploaded.
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        canvas.width = width;
+        canvas.height = height;
+        context.drawImage(image, 0, 0, width, height);
+        const webpBlob = await encode('image/webp', attempt < 3 ? [0.88, 0.76, 0.64][attempt] : 0.55);
+        let candidate = webpBlob;
+        if (!['image/webp', 'image/png'].includes(String(webpBlob.type || '').toLowerCase())) {
+          candidate = await encode('image/png');
+        }
+        const type = String(candidate.type || '').toLowerCase();
+        if (!ALLOWED_TYPES.has(type)) throw new Error('The browser did not produce a supported profile-photo format.');
+        if (candidate.size > 0 && candidate.size <= MAX_UPLOAD_BYTES) return candidate;
+        const ratio = candidate.size > MAX_UPLOAD_BYTES
+          ? Math.min(0.82, Math.sqrt(MAX_UPLOAD_BYTES / candidate.size) * 0.9)
+          : 0.75;
+        const nextWidth = Math.max(1, Math.floor(width * ratio));
+        const nextHeight = Math.max(1, Math.floor(height * ratio));
+        if (nextWidth === width && nextHeight === height) break;
+        width = nextWidth;
+        height = nextHeight;
+      }
+      throw new RangeError('The prepared profile photo could not be reduced below 1 MiB.');
+    }
 
-      const webpBlob = await encode('image/webp', 0.88);
-      let preparedBlob;
-      if (String(webpBlob.type || '').toLowerCase() === 'image/webp') {
-        preparedBlob = webpBlob;
-      } else if (String(webpBlob.type || '').toLowerCase() === 'image/png') {
-        // Canvas silently returned PNG: this is the browser's WebP fallback.
-        preparedBlob = webpBlob;
-      } else {
-        preparedBlob = await encode('image/png');
-        if (String(preparedBlob.type || '').toLowerCase() !== 'image/png') {
-          throw new Error('The browser did not produce a supported profile-photo format.');
+  }
+
+
+  const MAX_REMOTE_PHOTO_BYTES = 1024 * 1024;
+  class ProfilePhotoHttpError extends Error {
+    constructor(status, message) {
+      super(message || `Profile photo request failed (${status}).`);
+      this.name = 'ProfilePhotoHttpError';
+      this.status = status;
+    }
+  }
+  class AuthenticatedProfilePhotoStore {
+    constructor(options = {}) {
+      this.fetch = options.fetch || (typeof global.fetch === 'function' ? global.fetch.bind(global) : undefined);
+      this.endpoint = options.endpoint || '/api/student-profile/photo';
+      if (typeof this.fetch !== 'function') throw new Error('Fetch is unavailable; profile photos cannot be synced.');
+    }
+    async get() {
+      const response = await this.fetch(this.endpoint, {
+        method: 'GET', credentials: 'same-origin', cache: 'no-store',
+        headers: { Accept: 'image/png, image/jpeg, image/webp' }
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new ProfilePhotoHttpError(response.status, response.status === 401
+        ? 'Sign in again to load your profile photo.' : 'Your profile photo could not be loaded from your account.');
+      const type = String(response.headers?.get?.('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+      if (!ALLOWED_TYPES.has(type)) throw new Error('The saved profile photo has an unsupported image format.');
+      const contentLength = response.headers?.get?.('content-length');
+      if (contentLength !== null && contentLength !== undefined && contentLength !== '') {
+        if (!/^\d+$/.test(contentLength) || Number(contentLength) <= 0 || Number(contentLength) > MAX_REMOTE_PHOTO_BYTES) {
+          throw new Error('The saved profile photo has an invalid or oversized content length.');
         }
       }
-      return validatePhotoBlob(preparedBlob);
+      const blob = await response.blob();
+      if (!(blob instanceof global.Blob) || blob.size <= 0 || blob.size > MAX_REMOTE_PHOTO_BYTES ||
+          (contentLength !== null && contentLength !== undefined && contentLength !== '' && Number(contentLength) !== blob.size)) {
+        throw new Error('The saved profile photo is empty or exceeds its declared 1 MiB size.');
+      }
+      if (String(blob.type || '').toLowerCase() !== type) throw new Error('The saved profile photo type did not match its response.');
+      return blob;
+    }
+    async put(blob, { onlyIfAbsent = false } = {}) {
+      if (!(blob instanceof global.Blob)) throw new TypeError('A profile photo must be a Blob.');
+      const type = String(blob.type || '').toLowerCase();
+      if (!ALLOWED_TYPES.has(type)) throw new TypeError('Profile photos must be PNG, JPEG, or WebP images.');
+      if (blob.size <= 0 || blob.size > MAX_REMOTE_PHOTO_BYTES) throw new RangeError('A profile photo must be between 1 byte and 1 MiB.');
+      const headers = { 'Content-Type': type, Accept: 'application/json' };
+      if (onlyIfAbsent) headers['If-None-Match'] = '*';
+      const response = await this.fetch(this.endpoint, {
+        method: 'PUT', credentials: 'same-origin', headers, body: blob
+      });
+      if (!response.ok) throw new ProfilePhotoHttpError(response.status,
+        response.status === 401 ? 'Sign in again to save your profile photo.' :
+          response.status === 409 ? 'Complete your student profile before saving its photo.' :
+            response.status === 412 ? 'A profile photo is already saved on your account.' :
+              'Your profile photo could not be saved to your account.');
+      if (response.status === 204) return { saved: true };
+      let result;
+      try { result = await response.json(); } catch { throw new Error('The server did not confirm that your profile photo was saved.'); }
+      if (result?.saved !== true) throw new Error('The server did not confirm that your profile photo was saved.');
+      return result;
     }
   }
 
   global.DeviceProfilePhotoStore = DeviceProfilePhotoStore;
+  global.AuthenticatedProfilePhotoStore = AuthenticatedProfilePhotoStore;
+  global.ProfilePhotoHttpError = ProfilePhotoHttpError;
 })(globalThis);

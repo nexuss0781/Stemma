@@ -122,7 +122,7 @@ function assertReset(harness) {
   assert.equal(e['student-photo-button'].getAttribute('aria-label'), 'Choose profile photo');
 }
 
-test('student photo controls are native, accessible, local-only, and outside the profile form', () => {
+test('student photo controls are native, accessible, account-saved, and outside the profile form', () => {
   const formStart = html.indexOf('<form class="student-form" id="student-details-form"');
   const formEnd = html.indexOf('</form>', formStart);
   assert.ok(formStart >= 0 && formEnd > formStart, 'student details form exists');
@@ -145,7 +145,7 @@ test('student photo controls are native, accessible, local-only, and outside the
   assert.match(html, /id="student-photo-placeholder"/);
   assert.match(html, /<span\b(?=[^>]*id="student-photo-label")(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>Add photo</);
   assert.match(html, /id="student-photo-status"[^>]*role="status"[^>]*aria-live="polite"/);
-  assert.match(html, /<p\b(?=[^>]*id="student-photo-note")(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>\s*Choose an image up to 10 MB\. Image preview only; not uploaded\.\s*</);
+  assert.match(html, /<p\b(?=[^>]*id="student-photo-note")(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>\s*Choose an image up to 10 MB\. It will be resized to 1 MiB or less and saved to your signed-in profile when you accept\.\s*</);
   assert.match(personalizationMarkup, /<svg\b[^>]*>[\s\S]*?<\/svg>/,
     'the photo picker presents an icon rather than visible Add photo copy');
   const visiblePersonalizationMarkup = personalizationMarkup
@@ -160,7 +160,7 @@ test('student photo controls are native, accessible, local-only, and outside the
 
   const block = photoPreviewBlock();
   assert.doesNotMatch(block, /\bfetch\s*\(|XMLHttpRequest|sendBeacon|FormData|localStorage|sessionStorage/i,
-    'photo-preview behavior must not upload or persist the selected image');
+    'photo picker preview remains separate from account photo network persistence');
   assert.match(app, /Object\.fromEntries\(new FormData\(studentForm\)\)/,
     'the existing student save payload remains derived from native student-form fields');
   assert.doesNotMatch(app, /FormData\([^)]*student-photo|student-photo-input[^\n]*name=/,

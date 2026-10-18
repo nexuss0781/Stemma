@@ -241,23 +241,37 @@ test('student profile migration is additive/idempotent and store queries paramet
   const legacyProfile = { firstName: 'Ada', middleName: '', lastName: 'Lovelace', studentId: 'S-1', department: 'Math' };
   assert.deepEqual(await store.upsertStudentProfile('google-subject-1', legacyProfile), profile);
   assert.deepEqual(await store.getStudentProfile('google-subject-1'), profile);
+  const photo = { data: Buffer.from([1, 2, 3]), mimeType: 'image/png', width: 1, height: 1 };
+  await store.getStudentPhoto('google-subject-1');
+  await store.saveStudentPhoto('google-subject-1', photo, { onlyIfAbsent: true });
 
   assert.match(calls[0].text, /CREATE TABLE IF NOT EXISTS stemma_student_profiles/i);
   assert.match(calls[0].text, /REFERENCES stemma_google_identities\s*\(google_subject\)/i);
   assert.match(calls[0].text, /ON DELETE CASCADE/i);
   assert.doesNotMatch(calls[0].text, /\bDROP\s+(TABLE|SCHEMA|DATABASE)\b/i);
-  for (const call of [calls[1], calls[3]]) {
+  for (const call of [calls[1], calls[4]]) {
     assert.match(call.text, /ALTER TABLE stemma_student_profiles/i);
     for (const column of ['nick_name', 'username', 'bio']) {
       assert.match(call.text, new RegExp(`ADD COLUMN IF NOT EXISTS ${column} TEXT NOT NULL DEFAULT ''`, 'i'));
     }
   }
-  assert.match(calls[4].text, /ON CONFLICT \(google_subject\) DO UPDATE/i);
-  assert.match(calls[4].text, /nick_name = COALESCE\(\$7, stemma_student_profiles\.nick_name\)/i);
-  assert.match(calls[4].text, /username = COALESCE\(\$8, stemma_student_profiles\.username\)/i);
-  assert.match(calls[4].text, /bio = COALESCE\(\$9, stemma_student_profiles\.bio\)/i);
-  assert.deepEqual(calls[4].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', 'Ada', 'ada_1', 'Hi\nthere']);
-  assert.deepEqual(calls[5].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', null, null, null]);
-  assert.match(calls[6].text, /WHERE google_subject = \$1/);
-  assert.deepEqual(calls[6].values, ['google-subject-1']);
+  for (const call of [calls[2], calls[5]]) {
+    assert.match(call.text, /ADD COLUMN IF NOT EXISTS profile_image BYTEA NULL/i);
+    assert.match(call.text, /stemma_student_profiles_profile_image_valid/i);
+    assert.doesNotMatch(call.text, /\bDROP\s+(TABLE|SCHEMA|DATABASE|COLUMN)\b/i);
+  }
+  assert.match(calls[6].text, /ON CONFLICT \(google_subject\) DO UPDATE/i);
+  assert.match(calls[6].text, /nick_name = COALESCE\(\$7, stemma_student_profiles\.nick_name\)/i);
+  assert.match(calls[6].text, /username = COALESCE\(\$8, stemma_student_profiles\.username\)/i);
+  assert.match(calls[6].text, /bio = COALESCE\(\$9, stemma_student_profiles\.bio\)/i);
+  assert.deepEqual(calls[6].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', 'Ada', 'ada_1', 'Hi\nthere']);
+  assert.deepEqual(calls[7].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', null, null, null]);
+  assert.match(calls[8].text, /WHERE google_subject = \$1/);
+  assert.deepEqual(calls[8].values, ['google-subject-1']);
+  assert.match(calls[9].text, /SELECT profile_image AS data/);
+  assert.deepEqual(calls[9].values, ['google-subject-1']);
+  assert.match(calls[10].text, /UPDATE stemma_student_profiles/);
+  assert.match(calls[10].text, /AND profile_image IS NULL/);
+  assert.deepEqual(calls[10].values, ['google-subject-1', photo.data, photo.mimeType, 1, 1]);
+  assert.deepEqual(calls[11].values, ['google-subject-1']);
 });

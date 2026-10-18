@@ -243,6 +243,11 @@ test('prepare rejects invalid dimensions, unavailable canvas, null encodes, and 
   await assert.rejects(nullEncode.Store.prepare({ naturalWidth: 40, naturalHeight: 20 }), /could not encode/);
 
   const oversized = createHarness();
-  oversized.canvasConfig.responses = [new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: 'image/webp' })];
-  await assert.rejects(oversized.Store.prepare({ naturalWidth: 40, naturalHeight: 20 }), /10 MiB/);
+  oversized.canvasConfig.responses = [
+    new Blob([new Uint8Array(2 * 1024 * 1024)], { type: 'image/webp' }),
+    new Blob([new Uint8Array(700 * 1024)], { type: 'image/webp' })
+  ];
+  const reduced = await oversized.Store.prepare({ naturalWidth: 400, naturalHeight: 200 });
+  assert.ok(reduced.size <= 1024 * 1024, 'large PNG/WebP output is adaptively reduced for the server');
+  assert.ok(oversized.canvases[0].width < 400, 'adaptive reduction preserves proportions by shrinking both axes');
 });

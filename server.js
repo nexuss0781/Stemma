@@ -9,6 +9,7 @@ import connectPgSimple from 'connect-pg-simple';
 import pg from 'pg';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { validateProfileImage } from './profile-image.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -218,6 +219,8 @@ export function createStudentProfileStore(pool) {
         ADD COLUMN IF NOT EXISTS nick_name TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''`);
+      const photoMigration = await fs.readFile(path.join(ROOT, 'migrations', '003_profile_images.sql'), 'utf8');
+      await pool.query(photoMigration);
     },
     async upsertStudentProfile(subject, profile) {
       const result = await pool.query(
@@ -253,6 +256,32 @@ export function createStudentProfileStore(pool) {
         [subject]
       );
       return result.rows[0] ?? null;
+    },
+    async getStudentPhoto(subject) {
+      const result = await pool.query(
+        `SELECT profile_image AS data, profile_image_mime AS "mimeType",
+                profile_image_width AS width, profile_image_height AS height
+         FROM stemma_student_profiles
+         WHERE google_subject = $1 AND profile_image IS NOT NULL
+         LIMIT 1`,
+        [subject]
+      );
+      const row = result.rows[0];
+      return row ? { data: Buffer.from(row.data), mimeType: row.mimeType, width: row.width, height: row.height } : null;
+    },
+    async saveStudentPhoto(subject, image, { onlyIfAbsent = false } = {}) {
+      const result = await pool.query(
+        `UPDATE stemma_student_profiles
+         SET profile_image = $2, profile_image_mime = $3,
+             profile_image_width = $4, profile_image_height = $5,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE google_subject = $1${onlyIfAbsent ? ' AND profile_image IS NULL' : ''}
+         RETURNING google_subject`,
+        [subject, image.data, image.mimeType, image.width, image.height]
+      );
+      if (result.rows[0]) return { saved: true };
+      const exists = await pool.query('SELECT 1 FROM stemma_student_profiles WHERE google_subject = $1 LIMIT 1', [subject]);
+      return exists.rows.length ? { saved: false, reason: 'exists' } : { saved: false, reason: 'not-found' };
     }
   };
 }
@@ -640,6 +669,60 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     }
   }));
 
+  app.get('/api/student-profile/photo', requireGoogleSession, requireProfileStore, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    try {
+      const photo = await studentProfileStore.getStudentPhoto(req.session.stemmaUser.subject);
+      if (!photo) return res.status(404).json({ error: 'Profile photo not found.' });
+      res.set({
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Type': photo.mimeType
+      });
+      return res.status(200).send(photo.data);
+    } catch {
+      return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    }
+  }));
+
+  app.put('/api/student-profile/photo', requireGoogleSession, (req, res, next) => {
+    const requestOrigin = req.get('origin');
+    const expectedOrigin = config.appOrigin || `${req.protocol}://${req.get('host')}`;
+    if (!requestOrigin || requestOrigin !== expectedOrigin) {
+      setNoStore(res);
+      return res.status(403).json({ error: 'This request could not be verified.' });
+    }
+    const contentType = req.get('content-type') || '';
+    const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
+    if (!/^image\/[a-z0-9.+-]+$/.test(mediaType)) {
+      setNoStore(res);
+      return res.status(400).json({ error: 'Profile photo request headers are invalid.' });
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mediaType)) {
+      setNoStore(res);
+      return res.status(415).json({ error: 'Profile photos must be PNG, JPEG, or WebP images.' });
+    }
+    return next();
+  }, requireProfileStore, express.raw({ type: () => true, limit: '1mb' }), asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const image = validateProfileImage(req.body, req.get('content-type').split(';', 1)[0].trim());
+    if (!image) return res.status(400).json({ error: 'Profile photo data is invalid.' });
+    const onlyIfAbsent = req.get('if-none-match') === '*';
+    try {
+      const result = await studentProfileStore.saveStudentPhoto(
+        req.session.stemmaUser.subject,
+        image,
+        { onlyIfAbsent }
+      );
+      if (result?.saved) return res.json({ saved: true });
+      if (result?.reason === 'exists' && onlyIfAbsent) return res.status(412).json({ error: 'A profile photo already exists.' });
+      if (result?.reason === 'not-found') return res.status(409).json({ error: 'Student profile must exist before a photo can be saved.' });
+      return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    } catch {
+      return res.status(503).json({ error: 'Student profile service is unavailable.' });
+    }
+  }));
+
   app.get('/auth/fayda/start', authLimiter, asyncRoute(async (req, res) => {
     setNoStore(res);
     if (!isFaydaConfigured(config)) return res.redirect(303, '/?auth=unavailable');
@@ -946,12 +1029,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
-    if (req.path === '/api/student-profile') {
+    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo') {
       if (error?.status === 413 || error?.type === 'entity.too.large') {
-        return res.status(413).json({ error: 'Student profile request is too large.' });
+        return res.status(413).json({ error: req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
       }
       if (error?.status === 400 || error?.type === 'entity.parse.failed') {
-        return res.status(400).json({ error: 'Student profile data is invalid.' });
+        return res.status(400).json({ error: req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
       }
     }
     res.status(500).json({ error: 'The request could not be completed.' });

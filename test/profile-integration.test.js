@@ -134,14 +134,14 @@ test('device photo account key is derived only from verified Google session emai
   assert.match(app, /profilePhotoAccountKey = nextPhotoKey;/);
 });
 
-test('photo controller stores and restores with the account key and ignores a stale restore after account/selection changes', async () => {
+test('photo controller saves to the authenticated account and restores remote photos with stale-race guards', async () => {
   const calls = [];
   const storedBlob = new Blob(['photo'], { type: 'image/webp' });
   const replacementBlob = new Blob(['other'], { type: 'image/webp' });
   let resolveGet;
   const store = {
-    put: async (key, blob) => { calls.push(['put', key, blob]); },
-    get: key => { calls.push(['get', key]); return new Promise(resolve => { resolveGet = resolve; }); }
+    put: async (blob, options) => { calls.push(['put', blob, options]); },
+    get: () => { calls.push(['get']); return new Promise(resolve => { resolveGet = resolve; }); }
   };
   const preview = { src: '', hidden: true };
   const placeholder = { hidden: false };
@@ -149,39 +149,38 @@ test('photo controller stores and restores with the account key and ignores a st
   const profilePhotoInput = { files: [], addEventListener() {} };
   const context = vm.createContext({
     document: { getElementById: () => profilePhotoInput },
-    DeviceProfilePhotoStore: class { constructor() { calls.push(['store-created']); return store; } },
+    DeviceProfilePhotoStore: class { constructor() { calls.push(['legacy-store-created']); return { get() {}, remove() {} }; } },
+    AuthenticatedProfilePhotoStore: class { constructor() { calls.push(['remote-store-created']); return store; } },
     URL: {
       createObjectURL: blob => { calls.push(['create-url', blob]); return 'blob:restored-photo'; },
       revokeObjectURL: url => calls.push(['revoke-url', url])
     },
     activeRoute: 'profile', dashboardEntered: true,
-    profilePhotoAccountKey: 'google:ada@example.com',
-    profilePhotoNotice: '', deviceProfilePhotoStore: null,
+    profilePhotoAccountKey: 'google:ada@example.com', profilePhotoNotice: '', deviceProfilePhotoStore: null,
+    authenticatedProfilePhotoStore: null, pendingLegacyProfilePhoto: null, profilePhotoPersistence: null,
     preparedProfilePhoto: storedBlob, selectedProfilePhotoChanged: true,
     profilePhotoPreparationError: false, profilePhotoPreparation: Promise.resolve(), profilePhotoRevision: 4,
     studentPhotoURL: 'blob:previous', studentPhotoPreview: preview, studentPhotoPlaceholder: placeholder,
     studentPhotoButton: { classList: { add: name => classCalls.push(name) }, setAttribute() {} },
-    studentPhotoLabel: { textContent: '' },
-    renderCards() { calls.push(['render']); },
-    console
+    studentPhotoLabel: { textContent: '' }, studentPhotoStatus: { textContent: '' },
+    renderCards() { calls.push(['render']); }, console
   });
   vm.runInContext(appBlock('// Profile photo integration:', '// End Profile photo integration.'), context,
     { filename: 'app.js profile photo integration' });
 
   await context.persistSelectedProfilePhoto();
-  assert.equal(calls.find(call => call[0] === 'put')[1], 'google:ada@example.com');
-  assert.equal(calls.find(call => call[0] === 'put')[2], storedBlob);
+  assert.equal(calls.find(call => call[0] === 'put')[1], storedBlob);
+  assert.equal(calls.find(call => call[0] === 'put')[2].onlyIfAbsent, false);
   assert.equal(context.selectedProfilePhotoChanged, false);
   assert.equal(context.profilePhotoNotice, '');
 
-  context.profilePhotoAccountKey = 'google:ada@example.com';
   context.selectedProfilePhotoChanged = false;
   context.studentPhotoURL = 'blob:previous';
-  const restoringSavedPhoto = context.restoreDeviceProfilePhoto();
-  assert.deepEqual(calls.find(call => call[0] === 'get'), ['get', 'google:ada@example.com']);
+  const restoringSavedPhoto = context.restoreAccountProfilePhoto();
+  assert.deepEqual(calls.find(call => call[0] === 'get'), ['get']);
   resolveGet(storedBlob);
   await restoringSavedPhoto;
-  assert.equal(context.studentPhotoURL, 'blob:restored-photo', 'a saved photo is restored as the current preview URL');
+  assert.equal(context.studentPhotoURL, 'blob:restored-photo', 'remote saved photo is restored as the current preview URL');
   assert.equal(preview.src, 'blob:restored-photo');
   assert.equal(preview.hidden, false);
   assert.equal(placeholder.hidden, true);
@@ -191,8 +190,9 @@ test('photo controller stores and restores with the account key and ignores a st
   context.studentPhotoURL = 'blob:selection-current';
   preview.src = 'blob:selection-current';
   context.selectedProfilePhotoChanged = false;
-  const restoring = context.restoreDeviceProfilePhoto();
+  const restoring = context.restoreAccountProfilePhoto();
   context.profilePhotoAccountKey = 'google:other@example.com';
+  context.profilePhotoRevision += 1;
   context.selectedProfilePhotoChanged = true;
   context.preparedProfilePhoto = replacementBlob;
   resolveGet(replacementBlob);
@@ -204,24 +204,24 @@ test('photo controller stores and restores with the account key and ignores a st
   assert.equal(calls.filter(call => call[0] === 'revoke-url').length, 1, 'a stale restore does not revoke the active preview');
 });
 
-test('failed photo storage reports session-only status instead of claiming persistence', async () => {
+test('failed remote photo storage reports account failure and does not clear the unsaved selection', async () => {
   const profilePhotoInput = { files: [], addEventListener() {} };
   const context = vm.createContext({
     document: { getElementById: () => profilePhotoInput },
-    DeviceProfilePhotoStore: class { constructor() { return { put: async () => { throw new Error('quota exceeded'); } }; } },
+    AuthenticatedProfilePhotoStore: class { constructor() { return { put: async () => { throw new Error('network unavailable'); } }; } },
     URL: { revokeObjectURL() {} }, activeRoute: 'profile', dashboardEntered: true,
-    profilePhotoAccountKey: 'google:ada@example.com', profilePhotoNotice: '', deviceProfilePhotoStore: null,
+    profilePhotoAccountKey: 'google:ada@example.com', profilePhotoNotice: '', authenticatedProfilePhotoStore: null,
+    profilePhotoPersistence: null, pendingLegacyProfilePhoto: null,
     preparedProfilePhoto: new Blob(['photo'], { type: 'image/webp' }), selectedProfilePhotoChanged: true,
     profilePhotoPreparationError: false, profilePhotoPreparation: Promise.resolve(), profilePhotoRevision: 2,
-    studentPhotoURL: 'blob:selected', renderCards() {}, console
+    studentPhotoURL: 'blob:selected', studentPhotoStatus: { textContent: '' }, renderCards() {}, console
   });
   vm.runInContext(appBlock('// Profile photo integration:', '// End Profile photo integration.'), context,
     { filename: 'app.js failed profile photo storage' });
   await context.saveProfilePhotoFromPage();
-  assert.match(context.profilePhotoNotice, /available for this session only/i);
-  assert.match(context.profilePhotoNotice, /could not be saved on this device/i);
+  assert.match(context.profilePhotoNotice, /not saved to your account/i);
   assert.equal(context.selectedProfilePhotoChanged, true, 'failed storage must not clear the unsaved-selection state');
-  assert.doesNotMatch(context.profilePhotoNotice, /photo was saved on this device/i);
+  assert.match(context.profilePhotoNotice, /not saved to your account/i);
 });
 
 test('profile-photo.js and profile-ui.js are served as unauthenticated valid JavaScript assets', async t => {
