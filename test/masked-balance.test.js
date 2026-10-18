@@ -70,14 +70,17 @@ test('local reveal and remask update the value and matching accessible toggle st
   assert.deepEqual(surrounding, before);
 });
 
-test('approved hero, avatar, and cards skeleton fixtures remain in the release', () => {
+test('approved hero background, balance, and cards remain unchanged around identity slots', () => {
   assert.match(html, /class="hero-skeleton-name skeleton-shimmer"/);
-  assert.match(html, /class="avatar-glass"[^>]*aria-hidden="true"><span class="portrait-skeleton skeleton-shimmer"><\/span>/);
+  assert.match(html, /class="avatar-glass"[^>]*aria-hidden="true"><span id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"><\/span>/);
   assert.match(app, /function renderSkeletonCards\(\)[\s\S]*?skeleton-shimmer/);
   assert.match(styles, /\.skeleton-shimmer\s*\{/);
   assert.match(html, /class="overview-mock-balance"/);
   assert.ok(overviewHero, 'Overview hero markup exists');
-  assert.equal(createHash('sha256').update(overviewHero).digest('hex'), baseline.overviewHeroSha256, 'Overview hero matches the approved baseline hash');
+  const originalHero = overviewHero
+    .replace(/<div id="overview-name-placeholder" class="hero-skeleton-name skeleton-shimmer" aria-hidden="true"><\/div>\s*<p id="overview-student-name" class="overview-student-name" hidden><\/p>/, '<div class="hero-skeleton-name skeleton-shimmer" aria-hidden="true"></div>')
+    .replace(/<div id="overview-photo-frame" class="avatar-glass" aria-hidden="true"><span id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"><\/span><img id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden><\/div>/, '<div class="avatar-glass" aria-hidden="true"><span class="portrait-skeleton skeleton-shimmer"></span></div>');
+  assert.equal(createHash('sha256').update(originalHero).digest('hex'), baseline.overviewHeroSha256, 'Only the requested name/photo slots differ from the approved Overview hero');
 });
 
 test('approved bill navigation is visual-only and makes no financial API or money requests', () => {

@@ -88,6 +88,7 @@ function createPreviewHarness() {
   let nextUrl = 0;
   FakeImage.instances = [];
   const context = vm.createContext({
+    renderOverviewIdentity() {},
     personalizationForm: form,
     document: { getElementById: id => elements[id] ?? null },
     window: new FakeElement('window'),

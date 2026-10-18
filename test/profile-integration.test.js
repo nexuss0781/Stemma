@@ -163,6 +163,7 @@ test('photo controller saves to the authenticated account and restores remote ph
     studentPhotoURL: 'blob:previous', studentPhotoPreview: preview, studentPhotoPlaceholder: placeholder,
     studentPhotoButton: { classList: { add: name => classCalls.push(name) }, setAttribute() {} },
     studentPhotoLabel: { textContent: '' }, studentPhotoStatus: { textContent: '' },
+    renderOverviewIdentity() { calls.push(['overview']); },
     renderCards() { calls.push(['render']); }, console
   });
   vm.runInContext(appBlock('// Profile photo integration:', '// End Profile photo integration.'), context,

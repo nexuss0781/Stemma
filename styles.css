@@ -1298,3 +1298,31 @@ body { color: var(--brand-burgundy); }
 .friend-picker-message { margin: 18px 0; font-size: 14px; line-height: 1.6; }
 .friend-picker-note { margin: 12px 0 0; font-size: 11px; line-height: 1.55; text-align: center; opacity: .72; }
 .friend-student-dialog button:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 3px; }
+
+/* Overview-only saved identity; the existing glass rectangle/background is unchanged. */
+.hero-card .overview-student-name {
+  max-width: calc(100% - 40px);
+  flex: 0 0 auto;
+  margin: 0 0 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--brand-gold);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 14px;
+  text-align: center;
+}
+.hero-card .overview-profile-photo {
+  position: absolute;
+  inset: 5px;
+  width: calc(100% - 10px);
+  height: calc(100% - 10px);
+  object-fit: contain;
+  object-position: center;
+  background: transparent;
+}
+.hero-card [hidden] { display: none; }
+@media (max-height: 600px) {
+  .hero-card .overview-profile-photo { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); }
+}

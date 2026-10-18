@@ -54,6 +54,7 @@ function renderBottomNav() {
   });
   updateNavIndicator();
   renderSidebarIdentity();
+  renderOverviewIdentity();
 }
 
 function updateNavIndicator() {
@@ -768,6 +769,38 @@ let navigationRestoreFrame = 0;
 let depositDraftAmount = '';
 let pendingNavigationRestore = null;
 
+// Overview identity uses only the signed-in student's persisted profile and photo.
+function renderOverviewIdentity() {
+  const name = document.getElementById('overview-student-name');
+  const namePlaceholder = document.getElementById('overview-name-placeholder');
+  const photo = document.getElementById('overview-profile-photo');
+  const photoPlaceholder = document.getElementById('overview-photo-placeholder');
+  const frame = document.getElementById('overview-photo-frame');
+  if (!name || !namePlaceholder || !photo || !photoPlaceholder || !frame) return;
+  const profile = googleAuthenticated ? savedStudentProfile : null;
+  const displayName = profile ? ['firstName', 'middleName']
+    .map(key => typeof profile[key] === 'string' ? profile[key].trim() : '')
+    .filter(Boolean).join(' ') : '';
+  name.textContent = displayName;
+  name.title = displayName;
+  name.hidden = !displayName;
+  namePlaceholder.hidden = Boolean(displayName);
+  const photoURL = profile && studentPhotoURL ? studentPhotoURL : '';
+  photo.hidden = !photoURL;
+  photoPlaceholder.hidden = Boolean(photoURL);
+  frame.setAttribute('aria-hidden', String(!photoURL));
+  if (photoURL) {
+    if (photo.getAttribute('src') !== photoURL) photo.src = photoURL;
+  } else {
+    photo.removeAttribute('src');
+  }
+  photo.onerror = () => {
+    photo.hidden = true;
+    photoPlaceholder.hidden = false;
+    frame.setAttribute('aria-hidden', 'true');
+  };
+}
+
 function renderSidebarIdentity() {
   const name = document.getElementById('drawer-student-name');
   const username = document.getElementById('drawer-student-username');
@@ -952,6 +985,7 @@ function goToOnboardingSlide(index) {
 function enterDashboard() {
   dashboardEntered = true;
   renderSidebarIdentity();
+  renderOverviewIdentity();
   finishNavigationRestoration();
   persistNavigationLocation();
   document.getElementById('onboarding-screen').hidden = true;
@@ -1050,6 +1084,7 @@ function resetStudentPhotoPreview() {
   if (studentPhotoPendingURL) URL.revokeObjectURL(studentPhotoPendingURL);
   studentPhotoURL = '';
   studentPhotoPendingURL = '';
+  renderOverviewIdentity();
   studentPhotoInput.value = '';
   studentPhotoPreview.removeAttribute('src');
   studentPhotoPreview.hidden = true;
@@ -1114,6 +1149,7 @@ window.addEventListener('pagehide', resetStudentPhotoPreview);
 
 // Profile photo integration: authenticated photo bytes are saved to the signed-in account; IndexedDB is legacy-import-only.
 function refreshProfileIfVisible() {
+  renderOverviewIdentity();
   if (activeRoute === 'profile') renderCards();
 }
 function onStudentPhotoError(message) {
@@ -1146,6 +1182,7 @@ function setCurrentPhoto(blob, revision = profilePhotoRevision) {
   studentPhotoButton.classList.add('has-photo');
   studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
   studentPhotoLabel.textContent = 'Replace photo';
+  renderOverviewIdentity();
   if (oldURL && oldURL !== nextURL) URL.revokeObjectURL(oldURL);
   return true;
 }
@@ -1338,6 +1375,7 @@ async function loadStudentProfile() {
   updateStudentSubmit();
   updatePersonalizationSubmit();
   renderSidebarIdentity();
+  renderOverviewIdentity();
   return profile;
 }
 studentForm.addEventListener('submit', async event => {
@@ -1519,6 +1557,7 @@ async function restoreAuthenticationState() {
     }
     restoreNavigationLocation(nextPhotoKey);
     renderSidebarIdentity();
+    renderOverviewIdentity();
     updateStudentSubmit();
     updatePersonalizationSubmit();
     if (!status.authenticated) {
