@@ -317,17 +317,16 @@ test('college/profile card uses warm-gold glass and the selected drawer link use
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]\s*\{[^}]*color:\s*var\(--brand-burgundy\)/s);
 });
 
-test('sidebar identity overlays college lettering with a soft backdrop, never letter outlines', () => {
+test('sidebar identity uses only tight soft glyph shadows, never a broad backdrop or outlines', () => {
   const glass = cssSource.slice(cssSource.indexOf('/* Warm frosted glass,'), cssSource.indexOf('/* Keep a 44px touch target'));
   assert.match(glass, /--drawer-crest-height:\s*max\(96px, calc\(clamp\(190px, 27vh, 218px\) - 36\.75px - var\(--drawer-name-line\)\)\)/);
   assert.match(glass, /height:\s*calc\(var\(--drawer-crest-height\) \+ 18px\); min-height:\s*0; padding:\s*8px 0/);
   assert.match(glass, /\.drawer-college-crest\s*\{[^}]*height:\s*var\(--drawer-crest-height\)[^}]*flex:\s*0 0 auto/s);
   assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*isolation:\s*isolate[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.015\)[^}]*margin:\s*0; padding:\s*0; background:\s*none; text-align:\s*left/s);
-  assert.match(glass, /\.drawer-student-identity:has\(> p:not\(\[hidden\]\)\)::before\s*\{[^}]*z-index:\s*-1[^}]*radial-gradient\(ellipse[^}]*rgba\(0,0,0,\.66\)[^}]*transparent 74%[^}]*filter:\s*blur\(7px\)[^}]*pointer-events:\s*none/s);
-  assert.match(glass, /\.drawer-student-name, \.drawer-student-username\s*\{[^}]*text-align:\s*left/s);
-  for (const selector of ['drawer-student-name', 'drawer-student-username']) {
-    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*none`, 's'));
-  }
-  assert.doesNotMatch(glass, /text-stroke|text-shadow:\s*-1px|text-shadow:[^;}]*#000/, 'no sharp edges are applied to identity letters');
+  const identity = glass.slice(glass.indexOf('.drawer-student-identity {'));
+  assert.doesNotMatch(identity, /::before|::after|radial-gradient|filter:\s*blur|box-shadow/, 'no rectangular or blurred backdrop is painted behind the identity');
+  assert.match(identity, /\.drawer-student-name, \.drawer-student-username\s*\{[^}]*text-align:\s*left; text-shadow:\s*0 1px 2px rgba\(0,0,0,\.8\);/s);
+  assert.doesNotMatch(identity, /text-stroke|text-shadow:\s*-1px|text-shadow:[^;}]*,[^;}]*rgba/, 'one blurred shadow follows glyphs, with no sharp or stacked outlines');
+  assert.doesNotMatch(identity, /text-shadow:\s*none/, 'neither line overrides the shared glyph shadow');
   assert.match(glass, /overflow:\s*hidden; white-space:\s*nowrap; text-overflow:\s*ellipsis/);
 });
