@@ -317,15 +317,17 @@ test('college/profile card uses warm-gold glass and the selected drawer link use
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]\s*\{[^}]*color:\s*var\(--brand-burgundy\)/s);
 });
 
-test('sidebar identity overlays above the college lettering without a separate footer', () => {
+test('sidebar identity overlays college lettering with a soft backdrop, never letter outlines', () => {
   const glass = cssSource.slice(cssSource.indexOf('/* Warm frosted glass,'), cssSource.indexOf('/* Keep a 44px touch target'));
   assert.match(glass, /--drawer-crest-height:\s*max\(96px, calc\(clamp\(190px, 27vh, 218px\) - 36\.75px - var\(--drawer-name-line\)\)\)/);
   assert.match(glass, /height:\s*calc\(var\(--drawer-crest-height\) \+ 18px\); min-height:\s*0; padding:\s*8px 0/);
   assert.match(glass, /\.drawer-college-crest\s*\{[^}]*height:\s*var\(--drawer-crest-height\)[^}]*flex:\s*0 0 auto/s);
-  assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.12\)[^}]*margin:\s*0; padding:\s*0; background:\s*none; text-align:\s*left/s);
+  assert.match(glass, /\.drawer-student-identity\s*\{[^}]*position:\s*absolute[^}]*isolation:\s*isolate[^}]*bottom:\s*calc\(8px \+ var\(--drawer-crest-height\) \* \.015\)[^}]*margin:\s*0; padding:\s*0; background:\s*none; text-align:\s*left/s);
+  assert.match(glass, /\.drawer-student-identity:has\(> p:not\(\[hidden\]\)\)::before\s*\{[^}]*z-index:\s*-1[^}]*radial-gradient\(ellipse[^}]*rgba\(0,0,0,\.66\)[^}]*transparent 74%[^}]*filter:\s*blur\(7px\)[^}]*pointer-events:\s*none/s);
   assert.match(glass, /\.drawer-student-name, \.drawer-student-username\s*\{[^}]*text-align:\s*left/s);
   for (const selector of ['drawer-student-name', 'drawer-student-username']) {
-    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*-1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 0 #000`, 's'));
+    assert.match(glass, new RegExp(`\\.${selector}\\s*\\{[^}]*text-shadow:\\s*none`, 's'));
   }
+  assert.doesNotMatch(glass, /text-stroke|text-shadow:\s*-1px|text-shadow:[^;}]*#000/, 'no sharp edges are applied to identity letters');
   assert.match(glass, /overflow:\s*hidden; white-space:\s*nowrap; text-overflow:\s*ellipsis/);
 });
