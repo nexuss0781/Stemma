@@ -896,6 +896,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'app.js'));
   });
+  app.get('/payment-ui.js', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
+  });
   app.get('/styles.css', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
     res.type('text/css').sendFile(path.join(ROOT, 'styles.css'));

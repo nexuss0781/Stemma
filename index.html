@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=23" />
-  <script src="app.js?v=13" defer></script>
+  <link rel="stylesheet" href="styles.css?v=45" />
+  <script src="payment-ui.js?v=9" defer></script>
+  <script src="app.js?v=31" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -192,18 +193,16 @@
     </header>
 
     <main id="app-main" class="app-main overview-view" tabindex="-1" aria-label="Dashboard">
-      <section class="hero-card" aria-label="Profile and balance placeholders">
+      <section class="hero-card" aria-label="Profile and mock balance">
         <span class="hero-orb" aria-hidden="true"></span>
         <div class="hero-skeleton-name skeleton-shimmer" aria-hidden="true"></div>
         <div class="avatar-glass" aria-hidden="true"><span class="portrait-skeleton skeleton-shimmer"></span></div>
-        <div class="balance-skeleton" aria-hidden="true">
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
-          <span class="balance-skeleton-dot"></span>
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
-          <span class="balance-skeleton-digit skeleton-shimmer"></span>
+        <!-- Owner-approved static visual fixture only: not backed by a bank account or ledger. -->
+        <div class="overview-mock-balance" data-preview-only="true" aria-label="Private preview balance, not real funds">
+          <p class="overview-mock-amount"><span id="overview-balance-value" class="overview-balance-value" aria-label="Balance hidden" aria-live="polite">••••••</span> <span>ETB</span></p>
+          <button class="overview-balance-toggle" id="balance-visibility-toggle" data-balance-toggle type="button" aria-label="Show balance" aria-pressed="false" aria-controls="overview-balance-value">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="overview-eye-slash" d="m3 3 18 18"/></svg>
+          </button>
         </div>
       </section>
       <h1 class="page-title" id="page-title" hidden>Payment</h1>

@@ -1,0 +1,14 @@
+{
+  "serverSha256": "3b8205515a1048d7490ab3f818e8a42e7b5db06f2589d1e0fd9bc12ec498c3c5",
+  "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
+  "migrations": [
+    {
+      "name": "001_google_identities.sql",
+      "sha256": "d8e796a457091752c4f86e70b3de462e990adcea7e4604cf056819af7e75e7b2"
+    },
+    {
+      "name": "002_student_profiles.sql",
+      "sha256": "93aae69a57a4af46a57a666ae01472954d5084e7f114fefaf0f4c375dd05bebf"
+    }
+  ]
+}

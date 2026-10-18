@@ -21,8 +21,10 @@ let navIndicatorReady = false;
 let onboardingScrollFrame = 0;
 let paymentScrollFrame = 0;
 let paymentSlideIndex = 0;
+let paymentDemoInterval = '15-days';
 const paymentSlides = ['For You', 'For friend'];
 
+const payments = new PaymentExperience();
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
 function renderBottomNav() {
@@ -72,6 +74,17 @@ function updateNavIndicator() {
   indicator.style.transform = transform;
 }
 
+function setPreviewBalanceVisible(visible) {
+  const value = document.getElementById('overview-balance-value');
+  const button = document.getElementById('balance-visibility-toggle');
+  if (!value || !button) return;
+  // Private local visual fixture only; never a bank/ledger balance.
+  value.textContent = visible ? '5,000.00' : '••••••';
+  value.setAttribute('aria-label', visible ? 'Balance 5,000.00 ETB' : 'Balance hidden');
+  button.setAttribute('aria-pressed', String(visible));
+  button.setAttribute('aria-label', visible ? 'Hide balance' : 'Show balance');
+}
+
 function renderTabs() {
   const tabs = pageTabs[activeRoute];
   const tabNav = document.getElementById('page-tabs');
@@ -106,9 +119,50 @@ function renderSkeletonCards() {
       </div>
     </article>`).join('');
 }
-function renderForYou() {
+function samplePaymentDeadline(interval, today = new Date()) {
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (interval === '15-days') {
+    date.setDate(date.getDate() + 15);
+  } else {
+    const months = { '1-month': 1, '2-months': 2, '3-months': 3 }[interval] || 1;
+    const day = date.getDate();
+    date.setDate(1);
+    date.setMonth(date.getMonth() + months);
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    date.setDate(Math.min(day, lastDay));
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function paymentDeadlineHeading(deadline, today = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return 'Payment Date';
+  const [year, month, day] = deadline.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day || Number.isNaN(today.getTime())) return 'Payment Date';
+  // Compare calendar days, not elapsed hours, so DST does not shift the 15-day boundary.
+  const daysAway = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+  if (daysAway < 0) return 'Payment Date';
+  if (daysAway <= 15) return 'Payment Date is Open';
+  if (daysAway <= 45) return 'This Month';
+  if (daysAway <= 75) return 'Next Month';
+  return `In ${Math.max(3, Math.round(daysAway / 30))} Months`;
+}
+
+function renderForYou({ deadline, today = new Date(), interval = paymentDemoInterval } = {}) {
   // Static visual fixtures only: never sent to an API or saved as payment records.
-  // Calendar dates are anchored to the requested demo date, 17 October 2026.
+  // Demo selection shifts only the sample deadline; no payment action is enabled.
+  deadline = deadline || samplePaymentDeadline(interval, today);
+  const deadlineDate = new Date(`${deadline}T12:00:00`);
+  const deadlineDay = deadlineDate.getDate();
+  const deadlineMonth = deadlineDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const deadlineLabel = deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const heading = paymentDeadlineHeading(deadline, today);
+  const isOpen = heading === 'Payment Date is Open';
+  // The payment window begins 15 calendar days before its due date.
+  const openingDate = new Date(deadlineDate);
+  openingDate.setDate(openingDate.getDate() - 15);
+  const openingDay = `${openingDate.getFullYear()}-${String(openingDate.getMonth() + 1).padStart(2, '0')}-${String(openingDate.getDate()).padStart(2, '0')}`;
+  const daysRemaining = Math.max(0, Math.round((Date.UTC(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000));
   const sampleHistory = [
     { title: 'Monthly fee', date: '2026-10-15', label: '15 Oct 2026', amount: '1,250' },
     { title: 'Library', date: '2026-10-12', label: '12 Oct 2026', amount: '150' },
@@ -117,19 +171,26 @@ function renderForYou() {
     { title: 'ID card', date: '2026-09-21', label: '21 Sep 2026', amount: '100' }
   ];
   return `<div class="fee-for-you">
-    <article class="fee-month-card" aria-labelledby="fee-month-title">
-      <span class="fee-demo-label">Sample · October 2026</span>
-      <h2 id="fee-month-title">This Month</h2>
+    <article class="fee-month-card" data-payment-open="${isOpen}" aria-labelledby="fee-month-title">
+      <div class="fee-demo-controls">
+        <span class="fee-demo-label">Payment date is</span>
+        <details class="fee-demo-picker">
+          <summary class="fee-interval-pill" id="payment-demo-interval" aria-label="Payment interval" aria-describedby="payment-interval-value" aria-haspopup="listbox"><span id="payment-interval-value">${{ '1-month': '1 month', '2-months': '2 month', '3-months': '3 month', '15-days': '15 days' }[interval]}</span>${icon('chevron')}</summary>
+          <div class="fee-interval-menu" role="listbox" aria-label="Payment interval options">
+            ${[['1-month', '1 month'], ['2-months', '2 month'], ['3-months', '3 month'], ['15-days', '15 days']].map(([value, label]) => `<button class="fee-interval-option" type="button" role="option" aria-selected="${value === interval}" data-payment-interval="${value}">${label}</button>`).join('')}
+          </div>
+        </details>
+      </div>
+      <h2 id="fee-month-title"${isOpen ? ' class="is-open"' : ''} aria-live="polite">${isOpen ? 'OPEN' : heading}</h2>
       <div class="fee-deadline">
-        <span>Payment deadline</span>
-        <time class="fee-calendar" datetime="2026-10-25" aria-label="25 October 2026">
-          <span class="fee-calendar-day" aria-hidden="true">25</span>
-          <span class="fee-calendar-month" aria-hidden="true">October 2026</span>
+        ${isOpen ? '' : '<span>ON</span>'}
+        <time class="fee-calendar" datetime="${deadline}"${isOpen ? ` data-payment-start="${openingDay}"` : ''} aria-label="${isOpen ? `Payment window starts ${openingDay}; ${daysRemaining} days remaining, due ${deadlineLabel}` : deadlineLabel}">
+          <span class="fee-calendar-day" aria-hidden="true">${isOpen ? daysRemaining : deadlineDay}</span>
+          <span class="fee-calendar-month" aria-hidden="true">${isOpen ? 'Days Left' : deadlineMonth}</span>
         </time>
       </div>
-      <button class="fee-continue" type="button" data-fee-preview aria-describedby="fee-preview-note">Continue to Pay ${icon('arrow-up-right')}</button>
-      <p class="fee-preview-note" id="fee-preview-note" role="status" hidden>Design preview only. No payment has been started.</p>
-      <p class="fee-demo-caption">Demo only · No payment due</p>
+      <button class="fee-continue" type="button" data-open-bill>Continue to Pay</button>
+      <p class="fee-demo-caption">Please pay by the due date to avoid penalties.</p>
     </article>
     <button class="fee-friends-card" type="button" data-payment-slide="1" aria-label="Pay for your friends. Open For friend slide">
       <span class="fee-shortcut-top"><span class="fee-friends-symbol" aria-hidden="true">${icon('user')}${icon('user')}</span>${icon('arrow-up-right')}</span>
@@ -137,12 +198,11 @@ function renderForYou() {
       <span class="fee-friends-hint">Go to For friend <span aria-hidden="true">→</span></span>
     </button>
     <article class="fee-history-card" aria-labelledby="fee-history-title">
-      <div class="fee-history-heading"><h3 id="fee-history-title">History</h3><span>Top 5</span></div>
+      <div class="fee-history-heading"><h3 id="fee-history-title">History</h3><button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history">${icon('arrow-up-right')}</button></div>
       <p class="fee-history-demo">Sample activity · ETB</p>
       <ul class="fee-history-list" aria-label="Five sample payments. Demo only, not actual transactions.">
         ${sampleHistory.map(item => `<li><span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>Sample</span></span></li>`).join('')}
       </ul>
-      <button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history">View all ${icon('arrow-up-right')}</button>
     </article>
   </div>`;
 }
@@ -165,8 +225,18 @@ function syncPaymentCarousel() {
 }
 function renderCards() {
   const grid = document.getElementById('dashboard-grid');
-  const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0;
+  const billView = activeRoute === 'cards' && payments.isBillOpen;
+  const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;
   grid.classList.toggle('payment-carousel', paymentCarousel);
+  grid.classList.toggle('bill-content-grid', billView);
+  if (billView) {
+    grid.removeAttribute('role');
+    grid.removeAttribute('aria-roledescription');
+    grid.removeAttribute('tabindex');
+    grid.setAttribute('aria-label', payments.isReceiptOpen ? 'Receipt preview' : 'Bill payment details');
+    grid.innerHTML = payments.isReceiptOpen ? payments.renderReceipt() : payments.renderBill();
+    return;
+  }
   if (paymentCarousel) {
     grid.setAttribute('role', 'region');
     grid.setAttribute('aria-roledescription', 'carousel');
@@ -190,14 +260,19 @@ function render() {
   const main = document.getElementById('app-main');
   const overview = activeRoute === 'overview';
   const paymentView = activeRoute === 'cards';
-  const paymentCarousel = paymentView && activeTabs.cards === 0;
+  const billView = paymentView && payments.isBillOpen;
+  const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
   main.classList.toggle('payment-view', paymentView);
+  main.classList.toggle('bill-payment-view', billView);
   main.classList.remove('route-from-left', 'route-from-right');
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
-  main.querySelector('.page-title').hidden = !paymentView;
+  main.querySelector('.page-title').hidden = billView || !paymentView;
+  main.querySelector('.page-title').textContent = 'Payment';
+  document.getElementById('page-tabs').hidden = billView;
+  main.querySelector('.section-intro').hidden = billView;
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
   main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);
@@ -214,7 +289,12 @@ function render() {
 
 function navigate(route) {
   if (!pageTabs[route]) return;
-  if (route === activeRoute) { closeDrawer(); return; }
+  setPreviewBalanceVisible(false);
+  payments.closeSheet();
+  const wasBillOpen = payments.isBillOpen;
+  payments.isBillOpen = false;
+  payments.isReceiptOpen = false;
+  if (route === activeRoute) { if (wasBillOpen) render(); closeDrawer(); return; }
   const currentIndex = sections.findIndex(item => item.id === activeRoute);
   const nextIndex = sections.findIndex(item => item.id === route);
   routeDirection = Math.sign(nextIndex - currentIndex);
@@ -243,14 +323,55 @@ function closeDrawer() {
 }
 
 document.addEventListener('click', event => {
+  document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
+    if (!picker.contains(event.target)) picker.open = false;
+  });
+  const balanceToggle = event.target.closest('[data-balance-toggle]');
+  if (balanceToggle) {
+    setPreviewBalanceVisible(balanceToggle.getAttribute('aria-pressed') !== 'true');
+    return;
+  }
+  if (event.target.closest('[data-open-bill]')) {
+    payments.isReceiptOpen = false;
+    payments.isBillOpen = true;
+    activeRoute = 'cards';
+    render();
+    return;
+  }
+  if (event.target.closest('[data-bill-back]')) {
+    payments.closeSheet();
+    payments.isReceiptOpen = false;
+    payments.isBillOpen = false;
+    render();
+    document.querySelector('.fee-continue')?.focus({ preventScroll: true });
+    return;
+  }
+  if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); return; }
+  if (event.target.closest('[data-review-bill]')) { payments.showSheet(); return; }
+  if (event.target.closest('[data-demo-pay]')) {
+    // Visual simulation only: no payment, wallet, or persistence operation.
+    if (payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
+      payments.openDemoReceipt();
+      render();
+    }
+    return;
+  }
+  if (event.target.closest('[data-receipt-back]')) {
+    payments.isReceiptOpen = false;
+    render();
+    return;
+  }
+  const intervalOption = event.target.closest('[data-payment-interval]');
+  if (intervalOption) {
+    paymentDemoInterval = intervalOption.dataset.paymentInterval;
+    renderCards();
+    document.getElementById('payment-demo-interval')?.focus({ preventScroll: true });
+    return;
+  }
   const friendShortcut = event.target.closest('[data-payment-slide]');
   if (friendShortcut) {
     const grid = document.getElementById('dashboard-grid');
     grid.scrollTo({ left: Number(friendShortcut.dataset.paymentSlide) * grid.clientWidth, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-    return;
-  }
-  if (event.target.closest('[data-fee-preview]')) {
-    document.getElementById('fee-preview-note').hidden = false;
     return;
   }
   const routeButton = event.target.closest('[data-route]');
@@ -270,6 +391,34 @@ document.addEventListener('click', event => {
     }
   }
 });
+document.addEventListener('keydown', event => {
+  const picker = event.target.closest('.fee-demo-picker');
+  if (!picker) return;
+  const summary = picker.querySelector('summary');
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    picker.open = false;
+    summary.focus();
+    return;
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const wasOpen = picker.open;
+  picker.open = true;
+  const options = [...picker.querySelectorAll('[data-payment-interval]')];
+  const currentIndex = options.indexOf(document.activeElement);
+  const selectedIndex = options.findIndex(option => option.getAttribute('aria-selected') === 'true');
+  let index = currentIndex;
+  if (event.key === 'Home') index = 0;
+  else if (event.key === 'End') index = options.length - 1;
+  else if (!wasOpen || currentIndex < 0) index = selectedIndex;
+  else index = (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+  options[Math.max(0, index)]?.focus();
+});
+document.addEventListener('focusout', event => {
+  const picker = event.target.closest('.fee-demo-picker');
+  if (picker && !picker.contains(event.relatedTarget)) picker.open = false;
+});
 const dashboardGrid = document.getElementById('dashboard-grid');
 dashboardGrid.addEventListener('scroll', () => {
   if (!dashboardGrid.classList.contains('payment-carousel')) return;
@@ -280,6 +429,7 @@ dashboardGrid.addEventListener('scroll', () => {
   });
 }, { passive: true });
 dashboardGrid.addEventListener('keydown', event => {
+  if (event.target.closest('.fee-demo-picker')) return;
   if (!dashboardGrid.classList.contains('payment-carousel') || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   event.preventDefault();
   const direction = event.key === 'ArrowRight' ? 1 : -1;
@@ -618,7 +768,7 @@ document.addEventListener('keydown', event => {
 function bindSwipeNavigation(element) {
   let start = null;
   element.addEventListener('touchstart', event => {
-    if (event.target.closest('.payment-carousel')) { start = null; return; }
+    if (event.target.closest('.payment-carousel, .bill-page')) { start = null; return; }
     if (event.touches.length !== 1) { start = null; return; }
     start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
   }, { passive: true });
