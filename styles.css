@@ -1229,6 +1229,32 @@ body { color: var(--brand-burgundy); }
 .page-heading { display: contents; }
 .profile-heading-icons { display: none; }
 .app-main.profile-view .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.profile-heading-icon { padding: 0; cursor: pointer; font: inherit; }
+.profile-heading-icon:hover { filter: brightness(1.08); }
+.profile-heading-icon:focus-visible, .notifications-dialog button:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 4px; }
+.notifications-dialog { box-sizing: border-box; width: min(440px, calc(100vw - 32px)); max-height: min(680px, calc(100dvh - 48px)); padding: 0; border: 1px solid rgba(104,27,29,.18); border-radius: 24px; background: #fffaf3; color: var(--brand-burgundy); box-shadow: 0 24px 80px rgba(55,15,18,.24); overflow-y: auto; }
+.notifications-dialog::backdrop { background: rgba(39,15,18,.48); backdrop-filter: blur(5px); }
+.notifications-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 22px 20px; border-bottom: 1px solid rgba(104,27,29,.12); background: var(--brand-burgundy); color: var(--brand-gold); }
+.notifications-header h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.035em; }
+.notifications-header p { margin: 0; font-size: 12px; line-height: 1.5; }
+.notifications-header button { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; padding: 0; border: 1px solid rgba(241,223,155,.4); border-radius: 11px; background: transparent; color: var(--brand-gold); cursor: pointer; }
+.notifications-header button:focus-visible { outline-color: var(--brand-gold); }
+.notifications-content { min-height: 210px; }
+.notifications-empty { padding: 38px 28px 42px; text-align: center; }
+.notifications-empty > .icon { box-sizing: content-box; width: 26px; height: 26px; padding: 16px; border-radius: 20px; background: var(--brand-gold); color: var(--brand-burgundy); margin-inline: auto; }
+.notifications-empty h3 { margin: 18px 0 9px; font-size: 18px; }
+.notifications-empty p, .notifications-notice { color: #735a52; font-size: 13px; line-height: 1.65; }
+.notifications-empty p { margin: 0; }
+.notifications-notice { padding: 26px 24px; }
+.notifications-retry { padding: 9px 16px; border: 0; border-radius: 12px; background: var(--brand-burgundy); color: var(--brand-gold); font: inherit; cursor: pointer; }
+.notifications-list { list-style: none; margin: 0; padding: 0 22px; }
+.notification-item { padding: 20px 0; overflow-wrap: anywhere; }
+.notification-item + .notification-item { border-top: 1px solid rgba(104,27,29,.12); }
+.notification-item h3 { margin: 0 0 8px; font-size: 15px; }
+.notification-item p { margin: 0 0 12px; color: #735a52; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.notification-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #735a52; font-size: 11px; }
+.notification-status { padding: 3px 8px; border-radius: 8px; background: rgba(104,27,29,.07); }
+.notification-status.is-unread { background: var(--brand-gold); color: var(--brand-burgundy); font-weight: 700; }
 .app-main.profile-view .profile-heading-icons { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .profile-heading-icon { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid rgba(104,27,29,.17); border-radius: 12px; color: var(--brand-gold); background: var(--brand-burgundy); box-shadow: inset 0 1px 0 rgba(241,223,155,.5); }
 .app-main.profile-view { grid-template-rows: 36px minmax(0,1fr); }

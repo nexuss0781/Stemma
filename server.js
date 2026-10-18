@@ -631,6 +631,13 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     return next();
   }
 
+  app.get('/api/notifications', requireGoogleSession, (_req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0');
+    // No notification source or delivery records exist in this app yet.
+    // Never reinterpret demo payments, profiles, or other students' data as received notifications.
+    res.json({ notifications: [], sourceAvailable: false });
+  });
+
   function requireProfileStore(_req, res, next) {
     if (!studentProfileStore) return res.status(503).json({ error: 'Student profile service is unavailable.' });
     return next();
@@ -1013,7 +1020,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js', 'notifications-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
