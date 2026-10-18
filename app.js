@@ -773,8 +773,9 @@ function renderSidebarIdentity() {
   const username = document.getElementById('drawer-student-username');
   if (!name || !username) return;
   const profile = googleAuthenticated ? savedStudentProfile : null;
-  const fullName = profile ? ['firstName', 'middleName', 'lastName'].map(key => typeof profile[key] === 'string' ? profile[key].trim() : '').filter(Boolean).join(' ') : '';
-  const displayName = fullName || (typeof profile?.nickName === 'string' ? profile.nickName.trim() : '');
+  const fullName = profile ? ['firstName', 'lastName'].map(key => typeof profile[key] === 'string' ? profile[key].trim() : '').filter(Boolean).join(' ') : '';
+  const nickName = typeof profile?.nickName === 'string' ? profile.nickName.trim() : '';
+  const displayName = nickName || fullName;
   const handle = typeof profile?.username === 'string' ? profile.username.trim().replace(/^@+/, '') : '';
   name.textContent = displayName;
   username.textContent = handle ? `@${handle}` : '';

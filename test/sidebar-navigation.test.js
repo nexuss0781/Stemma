@@ -243,14 +243,14 @@ test('capture and queued flush persist the same active UI view and scroll positi
   assert.equal(persisted.scrollTop, captured.scrollTop);
 });
 
-test('sidebar identity uses saved full name and @username as text, and hides for guests', () => {
+test('sidebar identity falls back to trimmed first and last names as text, and hides for guests', () => {
   const h = makeHarness();
   h.evaluate(`googleAuthenticated = true; savedStudentProfile = {
-    firstName: '  Ada ', middleName: ' <b>Marie</b> ', lastName: ' Lovelace  ', username: '  @ada<&>  '
+    nickName: '   ', firstName: '  Ada ', middleName: ' <b>Marie</b> ', lastName: ' Lovelace  ', username: '  @ada<&>  '
   }; renderSidebarIdentity()`);
   const name = h.elements['drawer-student-name'];
   const username = h.elements['drawer-student-username'];
-  assert.equal(name.textContent, 'Ada <b>Marie</b> Lovelace');
+  assert.equal(name.textContent, 'Ada Lovelace');
   assert.equal(username.textContent, '@ada<&>');
   assert.equal(name.hidden, false);
   assert.equal(username.hidden, false);
@@ -263,6 +263,20 @@ test('sidebar identity uses saved full name and @username as text, and hides for
   assert.equal(name.htmlWrites + username.htmlWrites, 0);
   assert.match(controllerSource.match(/function renderSidebarIdentity\(\) \{[\s\S]*?\n\}/)?.[0] || '', /\.textContent\s*=/);
   assert.doesNotMatch(controllerSource.match(/function renderSidebarIdentity\(\) \{[\s\S]*?\n\}/)?.[0] || '', /\.innerHTML\s*=|insertAdjacentHTML/);
+});
+
+test('sidebar identity prefers the trimmed saved nickname and keeps it as text', () => {
+  const h = makeHarness();
+  h.evaluate(`googleAuthenticated = true; savedStudentProfile = {
+    nickName: '  <b>Ada</b>  ', firstName: 'Augusta', middleName: 'Byron', lastName: 'Lovelace', username: 'ada'
+  }; renderSidebarIdentity()`);
+  const name = h.elements['drawer-student-name'];
+  const username = h.elements['drawer-student-username'];
+  assert.equal(name.textContent, '<b>Ada</b>');
+  assert.equal(username.textContent, '@ada');
+  assert.equal(name.hidden, false);
+  assert.equal(username.hidden, false);
+  assert.equal(name.htmlWrites + username.htmlWrites, 0, 'nickname and username are never interpolated through HTML');
 });
 
 test('drawer puts Overview first without changing the five-item bottom-nav order; existing crest and bundled Fraunces remain local', async () => {

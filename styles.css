@@ -282,20 +282,36 @@ body { color: var(--brand-burgundy); }
 .nav-item { color: rgba(104,27,29,.72); }
 .nav-item:hover:not([aria-current="page"]) { color: var(--brand-burgundy); background: rgba(104,27,29,.07); }
 .nav-item[aria-current="page"] { color: var(--brand-gold-light); }
-.drawer-backdrop { background: rgba(61,8,14,.28); }
-.navigation-drawer { background: rgba(91,20,22,.98); border-right-color: rgba(241,223,155,.34); box-shadow: 15px 0 42px rgba(35,5,8,.24); }
-.drawer-brand { color: var(--brand-gold-light); font-size: 19px; font-weight: 750; letter-spacing: -.055em; line-height: 1; }
-.drawer-college-card { background: linear-gradient(145deg, #762b2a, #5b1416 74%); }
-.drawer-divider { position: relative; flex: 0 0 auto; height: 2px; margin: 0 2px 12px; border-radius: 999px; background: linear-gradient(90deg, rgba(241,223,155,.12), rgba(241,223,155,.62) 28%, rgba(241,223,155,.3) 76%, rgba(241,223,155,.08)); box-shadow: 0 1px 8px rgba(35,5,8,.12); }
-.drawer-divider::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30px; border-radius: inherit; background: linear-gradient(90deg, rgba(241,223,155,.98), rgba(241,223,155,.2)); }
-.drawer-top .icon-button { color: var(--brand-gold-light); }
-.drawer-top .icon-button:hover, .drawer-top .icon-button:focus-visible { background: rgba(241,223,155,.14); color: var(--brand-gold-light); }
-.drawer-link { color: rgba(251,241,200,.8); }
-.drawer-link:hover, .drawer-link[aria-current="page"] { border-color: rgba(241,223,155,.28); background: rgba(241,223,155,.14); color: var(--brand-gold-light); }
-.drawer-link-skeleton { background: rgba(241,223,155,.68); }
-.drawer-foot { border-top-color: rgba(241,223,155,.22); }
-.drawer-avatar-skeleton { border-color: rgba(241,223,155,.55); background: rgba(241,223,155,.3); }
-.drawer-foot-line { background: rgba(241,223,155,.66); }
+/* Champagne liquid glass is confined to the navigation drawer. */
+.drawer-backdrop { background: rgba(61,32,24,.18); }
+.navigation-drawer {
+  color: var(--brand-burgundy);
+  background: radial-gradient(ellipse at 0% 0%, rgba(255,255,255,.84), transparent 58%), radial-gradient(ellipse at 100% 78%, rgba(225,193,121,.2), transparent 60%), linear-gradient(155deg, rgba(251,245,229,.93), rgba(243,232,206,.9));
+  border-right-color: rgba(255,255,255,.86);
+  box-shadow: 15px 0 48px rgba(69,40,24,.16), inset -1px 0 0 rgba(172,130,53,.18), inset 1px 0 0 rgba(255,255,255,.95);
+  -webkit-backdrop-filter: blur(26px) saturate(135%);
+  backdrop-filter: blur(26px) saturate(135%);
+}
+.drawer-brand { color: var(--brand-burgundy); font-size: 19px; font-weight: 750; letter-spacing: -.055em; line-height: 1; }
+.drawer-college-card { border-color: rgba(255,255,255,.85); background: radial-gradient(ellipse at 18% 0%, rgba(255,255,255,.95), transparent 68%), linear-gradient(145deg, rgba(255,251,239,.78), rgba(232,209,159,.44)); box-shadow: 0 8px 20px rgba(98,68,31,.08), inset 0 1px 0 rgba(255,255,255,.92); }
+.drawer-student-identity { background: linear-gradient(180deg, rgba(250,241,221,0), rgba(250,241,221,.8) 30%, rgba(250,241,221,.96)); }
+.drawer-student-name { color: var(--brand-burgundy); text-shadow: 0 1px 2px rgba(255,255,255,.85); }
+.drawer-student-username { color: #704333; text-shadow: 0 1px 1px rgba(255,255,255,.7); }
+.drawer-divider { position: relative; flex: 0 0 auto; height: 2px; margin: 0 2px 12px; border-radius: 999px; background: linear-gradient(90deg, rgba(159,115,41,.08), rgba(159,115,41,.42) 28%, rgba(159,115,41,.18) 76%, rgba(159,115,41,.04)); }
+.drawer-divider::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30px; border-radius: inherit; background: linear-gradient(90deg, rgba(159,115,41,.7), rgba(159,115,41,.12)); }
+.drawer-top .icon-button { color: var(--brand-burgundy); }
+.drawer-top .icon-button:hover, .drawer-top .icon-button:focus-visible { background: rgba(104,27,29,.07); color: var(--brand-burgundy); }
+.drawer-link { color: #704333; }
+.drawer-link:hover, .drawer-link[aria-current="page"] { border-color: rgba(159,115,41,.24); background: linear-gradient(135deg, rgba(255,255,255,.8), rgba(241,223,155,.35)); color: var(--brand-burgundy); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 3px 10px rgba(98,68,31,.04); }
+.drawer-link:focus-visible, .drawer-sign-out:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 2px; }
+.drawer-link-skeleton { background: rgba(104,27,29,.25); }
+.drawer-foot { border-top-color: rgba(159,115,41,.22); }
+.drawer-avatar-skeleton { border-color: rgba(255,255,255,.8); background: rgba(194,160,97,.25); }
+.drawer-foot-line { background: rgba(104,27,29,.25); }
+.drawer-profile-name { color: var(--brand-burgundy); }
+.drawer-profile-email { color: #704333; }
+.drawer-sign-out { border-color: rgba(104,27,29,.18); color: var(--brand-burgundy); background: rgba(255,255,255,.35); }
+.drawer-sign-out:hover, .drawer-sign-out:focus-visible { border-color: rgba(104,27,29,.4); background: rgba(241,223,155,.35); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
