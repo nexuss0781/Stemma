@@ -27,50 +27,28 @@ class PaymentExperience {
   }
 
   renderDeposit() {
-    const amount = this.depositAmount;
-    return `<article class="bill-page telebirr-preview" data-ui-preview="true" aria-labelledby="bill-page-title">
-      <header class="bill-page-heading">
-        <button class="bill-back" type="button" data-bill-back aria-label="Back to Deposit"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
-        <h1 id="bill-page-title">Deposit via Telebirr</h1>
-      </header>
-      <section class="bill-details-card" aria-label="Deposit details">
-        <table class="bill-details-table"><thead><tr><th scope="col">Description</th><th scope="col">Amount</th></tr></thead><tbody><tr><td>Stemma deposit</td><td>${amount}<small>ETB</small></td></tr></tbody></table>
-      </section>
-      <fieldset class="bill-amount-options" disabled>
-        <legend class="payment-visually-hidden">Deposit amount</legend>
-        <label><input type="radio" name="deposit-total" checked /><span class="bill-radio-mark is-selected" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-8"/></svg></span><span>Deposit Amount</span><strong>${amount} ETB</strong></label>
-      </fieldset>
-      <div class="bill-page-actions">
-        <p class="bill-page-preview-note">Visual preview only · Telebirr is not connected. No payment will be sent.</p>
-        <button class="bill-secondary-action" type="button" data-bill-back>Back</button>
-        <button class="bill-primary-action" type="button" data-review-bill>Continue</button>
-      </div>
-      <dialog class="bill-payment-sheet telebirr-sheet" id="bill-payment-dialog" aria-labelledby="bill-sheet-title" aria-describedby="bill-sheet-note">
-        <button class="bill-sheet-close" type="button" data-close-bill-sheet aria-label="Close payment details">${icon('close')}</button>
-        <h2 id="bill-sheet-title">Review deposit</h2>
-        <p class="bill-sheet-amount"><span>${amount}</span><small>ETB</small></p>
-        <section class="bill-method-card" aria-labelledby="bill-method-title"><h3 id="bill-method-title">Payment Method</h3><div class="deposit-method-preview"><strong>Telebirr</strong><p>Not connected</p></div></section>
-        <button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay</button>
-        <p class="bill-sheet-note" id="bill-sheet-note">No payment was sent. Telebirr is not connected; Pay is disabled.</p>
-      </dialog>
-    </article>`;
+    return this.renderReferenceBill(this.depositAmount, true);
   }
 
   renderBill() {
     if (this.isDeposit) return this.renderDeposit();
+    return this.renderReferenceBill('676.45');
+  }
+
+  renderReferenceBill(amount, isDeposit = false) {
     // Reference-screen sample figures only; never submitted or linked to Overview's mock balance.
     return `<article class="bill-page telebirr-preview" data-ui-preview="true" aria-labelledby="bill-page-title">
       <header class="bill-page-heading">
-        <button class="bill-back" type="button" data-bill-back aria-label="Back to payment"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
+        <button class="bill-back" type="button" data-bill-back aria-label="${isDeposit ? 'Back to Deposit' : 'Back to payment'}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
         <h1 id="bill-page-title">Pay Ethio telecom bill</h1>
       </header>
       <section class="bill-details-card" aria-label="Illustrative bill details">
         <div class="bill-customer"><span>Customer Name:</span><strong>Customer 001</strong></div>
-        <table class="bill-details-table"><caption class="payment-visually-hidden">Visual preview using sample bill information, not a retrieved invoice.</caption><thead><tr><th scope="col">Month</th><th scope="col">Amount</th><th scope="col">Due Date</th></tr></thead><tbody><tr><td>12/2024</td><td>676.45<small>ETB</small></td><td class="bill-example-due">27/01/2025</td></tr></tbody></table>
+        <table class="bill-details-table"><caption class="payment-visually-hidden">Visual preview using sample bill information, not a retrieved invoice.</caption><thead><tr><th scope="col">Month</th><th scope="col">Amount</th><th scope="col">Due Date</th></tr></thead><tbody><tr><td>12/2024</td><td>${amount}<small>ETB</small></td><td class="bill-example-due">27/01/2025</td></tr></tbody></table>
       </section>
       <fieldset class="bill-amount-options" disabled>
         <legend class="payment-visually-hidden">Illustrative amount selection</legend>
-        <label><input type="radio" name="bill-amount" value="total" checked /><span class="bill-radio-mark is-selected" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-8"/></svg></span><span>Total Bill Amount</span><strong>676.45 ETB</strong></label>
+        <label><input type="radio" name="bill-amount" value="total" checked /><span class="bill-radio-mark is-selected" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-8"/></svg></span><span>Total Bill Amount</span><strong>${amount} ETB</strong></label>
         <label><input type="radio" name="bill-amount" value="other" /><span class="bill-radio-mark" aria-hidden="true"></span><span>Other amount</span></label>
       </fieldset>
       <div class="bill-page-actions">
@@ -81,13 +59,13 @@ class PaymentExperience {
       <dialog class="bill-payment-sheet telebirr-sheet" id="bill-payment-dialog" aria-labelledby="bill-sheet-title" aria-describedby="bill-sheet-note">
         <button class="bill-sheet-close" type="button" data-close-bill-sheet aria-label="Close payment details">${icon('close')}</button>
         <h2 id="bill-sheet-title">Pay Bill</h2>
-        <p class="bill-sheet-amount"><span>676.45</span><small>ETB</small></p>
+        <p class="bill-sheet-amount"><span>${amount}</span><small>ETB</small></p>
         <section class="bill-method-card" aria-labelledby="bill-method-title">
           <h3 id="bill-method-title">Payment Method</h3>
           <div class="bill-balance-method"><span class="bill-wallet-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h14a2 2 0 0 1 2 2v12H3V7a3 3 0 0 1 3-3h10v2M16 12h5v5h-5z"/></svg></span><div><strong>Balance</strong><p>(Available Balance:701.00ETB)</p></div><span class="bill-method-badge" aria-label="Illustrative selected payment method"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-8"/></svg></span></div>
         </section>
-        <button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay</button>
-        <p class="bill-sheet-note" id="bill-sheet-note">Visual preview only · Telebirr is not connected. Pay opens a receipt preview; no payment is sent.</p>
+        <button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay</button>
+        <p class="bill-sheet-note" id="bill-sheet-note">Visual preview only · Telebirr is not connected. No payment was sent; Pay is disabled.</p>
       </dialog>
     </article>`;
   }

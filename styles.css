@@ -1144,3 +1144,32 @@ body { color: var(--brand-burgundy); }
 .deposit-method-preview { padding: 15px; color: #333; }
 .deposit-method-preview p { margin: 5px 0 0; color: #777; font-size: 12px; }
 .telebirr-sheet .bill-pay-button:disabled { background: #d8d8d8; color: #777; opacity: 1; box-shadow: none; cursor: not-allowed; }
+
+/* Reference-aligned Telebirr proportions; scoped away from Overview and History. */
+.telebirr-preview { --telebirr-unit: clamp(.85px, .2674vw, 1.6px); }
+.bill-page.telebirr-preview:not(.demo-receipt) { padding: 0 calc(15 * var(--telebirr-unit)) calc(18 * var(--telebirr-unit)); }
+.telebirr-preview .bill-page-heading { height: calc(50 * var(--telebirr-unit)); margin: 0 calc(-9 * var(--telebirr-unit)) calc(18 * var(--telebirr-unit)); gap: calc(7 * var(--telebirr-unit)); }
+.telebirr-preview .bill-page-heading h1 { font-size: calc(14 * var(--telebirr-unit)); font-weight: 650; }
+.telebirr-preview .bill-customer { margin-bottom: calc(32 * var(--telebirr-unit)); font-size: calc(12 * var(--telebirr-unit)); }
+.telebirr-preview .bill-customer strong { font-size: inherit; }
+.telebirr-preview .bill-details-table th { padding-bottom: calc(18 * var(--telebirr-unit)); font-size: calc(12 * var(--telebirr-unit)); }
+.telebirr-preview .bill-details-table td { padding-bottom: calc(10 * var(--telebirr-unit)); font-size: calc(13 * var(--telebirr-unit)); }
+.telebirr-preview .bill-amount-options { margin-inline: calc(-7 * var(--telebirr-unit)); }
+.telebirr-preview .bill-amount-options label { gap: calc(8 * var(--telebirr-unit)); padding-block: calc(8 * var(--telebirr-unit)); font-size: calc(12 * var(--telebirr-unit)); }
+.telebirr-preview .bill-amount-options strong { font-size: inherit; }
+.telebirr-preview .bill-radio-mark { width: calc(19 * var(--telebirr-unit)); height: calc(19 * var(--telebirr-unit)); flex-basis: calc(19 * var(--telebirr-unit)); }
+.bill-payment-sheet.telebirr-sheet { padding: calc(48 * var(--telebirr-unit)) calc(10 * var(--telebirr-unit)) max(calc(8 * var(--telebirr-unit)), env(safe-area-inset-bottom)); border-radius: calc(10 * var(--telebirr-unit)) calc(10 * var(--telebirr-unit)) 0 0; background: #f7f7f7; }
+.telebirr-sheet .bill-sheet-close { top: calc(12 * var(--telebirr-unit)); left: calc(6 * var(--telebirr-unit)); min-width: 36px; min-height: 36px; }
+.telebirr-sheet h2 { font-size: calc(12 * var(--telebirr-unit)); line-height: 1.2; }
+.telebirr-sheet .bill-sheet-amount { margin: calc(9 * var(--telebirr-unit)) 0 calc(12 * var(--telebirr-unit)); font-size: calc(29 * var(--telebirr-unit)); letter-spacing: -.025em; }
+.telebirr-sheet .bill-sheet-amount small { font-size: calc(12 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-method-card { min-height: calc(93 * var(--telebirr-unit)); margin-bottom: calc(18 * var(--telebirr-unit)); padding: calc(14 * var(--telebirr-unit)) calc(8 * var(--telebirr-unit)) calc(18 * var(--telebirr-unit)); border-radius: calc(7 * var(--telebirr-unit)); background: linear-gradient(#fff, #efefef); box-shadow: 0 1px 12px rgba(0,0,0,.025); }
+.telebirr-sheet .bill-method-card h3 { margin-bottom: calc(15 * var(--telebirr-unit)); font-size: calc(12 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-balance-method { gap: calc(9 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-balance-method strong { font-size: calc(13 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-balance-method p { margin-top: calc(4 * var(--telebirr-unit)); font-size: calc(9 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-wallet-icon, .telebirr-sheet .bill-wallet-icon svg { width: calc(23 * var(--telebirr-unit)); height: calc(25 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-method-badge { width: calc(16 * var(--telebirr-unit)); height: calc(16 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-pay-button { width: calc(100% - 22 * var(--telebirr-unit)); min-height: max(40px, calc(40 * var(--telebirr-unit))); border-radius: calc(7 * var(--telebirr-unit)); font-size: calc(13 * var(--telebirr-unit)); }
+.telebirr-sheet .bill-sheet-note { margin-top: calc(5 * var(--telebirr-unit)); font-size: max(8px, calc(8 * var(--telebirr-unit))); }
+.telebirr-preview:has(.bill-customer) .bill-pay-button:disabled { background: #81b52b; color: rgba(255,255,255,.7); opacity: .72; box-shadow: none; cursor: not-allowed; }

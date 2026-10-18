@@ -34,19 +34,22 @@ function renderPreview() {
 
 test('Telebirr bill screen renders sample data as an explicitly disconnected visual preview', () => {
   const { markup, iconCalls, effects } = renderPreview();
-  assert.match(markup, /<strong>Customer 001<\/strong>/);
+  assert.match(markup, /Customer Name:<\/span><strong>Customer 001<\/strong>/);
+  assert.match(markup, /<th scope="col">Month<\/th><th scope="col">Amount<\/th><th scope="col">Due Date<\/th>/);
+  assert.match(markup, /<td>12\/2024<\/td><td>676\.45<small>ETB<\/small><\/td><td class="bill-example-due">27\/01\/2025<\/td>/);
   assert.match(markup, /676\.45<small>ETB<\/small>/);
   assert.match(markup, /676\.45 ETB/);
   assert.match(markup, /Available Balance:701\.00ETB/);
-  assert.match(markup, /Visual preview only · Telebirr is not connected\./);
-  assert.match(markup, /Pay opens a receipt preview; no payment is sent\./);
+  assert.match(markup, /<span>Total Bill Amount<\/span><strong>676\.45 ETB<\/strong>/);
+  assert.match(markup, /<span>Other amount<\/span>/);
+  assert.match(markup, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
   assert.match(markup, /<button class="bill-secondary-action" type="button" data-bill-back>Back<\/button>\s*<button class="bill-primary-action" type="button" data-review-bill>Continue<\/button>/);
   const dialogTag = markup.match(/<dialog\b[^>]*>/)?.[0];
   assert.ok(dialogTag, 'payment dialog is present in the preview markup');
   assert.doesNotMatch(dialogTag, /\sopen(?:\s|>)/, 'payment dialog is initially closed');
-  assert.match(markup, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(markup, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.doesNotMatch(markup, /data-demo-pay/);
   assert.doesNotMatch(markup, /Subscribe/i);
-  assert.match(markup, /Customer 001/);
   assert.equal((markup.match(/class="bill-pay-button"/g) || []).length, 1);
   assert.deepEqual(iconCalls, ['close'], 'the icon stub is used only for the close affordance');
   assert.deepEqual(effects, { fetch: 0, xhr: 0, urlWrites: 0, historyWrites: 0 });

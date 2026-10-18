@@ -77,12 +77,12 @@ function fireInput() {
   return cleared;
 }
 
-function fireAppClick({ payments, activeTab = 1, selector, dialogOpen = false }) {
+function fireAppClick({ payments, activeTab = 1, selector, dialogOpen = false, sheetDialog }) {
   let listener;
   let renders = 0;
   let focused = 0;
   const input = { focus() { focused += 1; } };
-  const dialog = { open: dialogOpen };
+  const dialog = sheetDialog ?? { open: dialogOpen };
   vm.runInNewContext(extractHandler(appSource, 'click'), {
     document: {
       addEventListener: (_type, callback) => { listener = callback; },
@@ -151,24 +151,37 @@ test('deposit state is initialized, opens only with a valid canonical amount, an
   }
 });
 
-test('deposit bill markup displays the exact amount in its details, total and review, never sample bill figures, and keeps Pay inert', () => {
+test('deposit bill uses the shared reference details with the entered amount and an inert Pay control', () => {
   const { instance, dialog, effects } = makeExperience();
   assert.equal(instance.openDeposit('000123.45'), true);
   const markup = instance.renderBill();
   const visibleAmountMentions = (markup.match(/123\.45/g) ?? []).length;
-  assert.ok(visibleAmountMentions >= 3, 'deposit amount appears in the details, total and review areas');
+  assert.ok(visibleAmountMentions >= 3, 'entered amount appears in bill details, total selection and payment sheet');
   assert.match(markup, /<article class="bill-page telebirr-preview"/);
-  assert.match(markup, /Deposit via Telebirr/);
-  assert.doesNotMatch(markup, /676\.45|701\.00/);
+  assert.match(markup, /Customer Name:<\/span><strong>Customer 001<\/strong>/);
+  assert.match(markup, /<th scope="col">Month<\/th><th scope="col">Amount<\/th><th scope="col">Due Date<\/th>/);
+  assert.match(markup, /<td>12\/2024<\/td><td>123\.45<small>ETB<\/small><\/td><td class="bill-example-due">27\/01\/2025<\/td>/);
+  assert.match(markup, /<span>Total Bill Amount<\/span><strong>123\.45 ETB<\/strong>/);
+  assert.match(markup, /<span>Other amount<\/span>/);
+  assert.doesNotMatch(markup, /676\.45/);
+  assert.match(markup, /Available Balance:701\.00ETB/);
+  const dialogTag = markup.match(/<dialog\b[^>]*>/)?.[0];
+  assert.ok(dialogTag, 'wallet sheet markup exists');
+  assert.doesNotMatch(dialogTag, /\sopen(?:\s|>)/, 'deposit opens on bill details, before the wallet sheet');
   assert.match(markup, /<button class="bill-pay-button"[^>]*\bdisabled\b[^>]*>/);
   assert.doesNotMatch(markup, /data-demo-pay/);
-  assert.match(markup, /No payment will be sent\./);
+  assert.match(markup, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
   assert.equal(instance.isReceiptOpen, false);
   assert.equal(dialog.open, false);
+  const continued = fireAppClick({ payments: instance, selector: 'review-bill', sheetDialog: dialog });
+  assert.equal(dialog.open, true, 'Continue opens the wallet sheet after the reference bill is reviewed');
+  assert.equal(continued.renders, 0, 'opening the sheet does not trigger a receipt or payment render');
+  assert.equal(instance.isReceiptOpen, false);
+  assert.match(instance.renderBill(), /<p class="bill-sheet-amount"><span>123\.45<\/span><small>ETB<\/small><\/p>/);
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
 });
 
-test('deposit blocks demo receipt transitions while the original fee bill and receipt flow remain intact', () => {
+test('deposit blocks legacy receipt transitions and the regular illustrative bill keeps Pay disabled', () => {
   const { instance, dialog, effects } = makeExperience({ dialogOpen: true });
   assert.equal(instance.openDeposit('24.60'), true);
   const beforeTime = instance.demoReceiptTime;
@@ -182,7 +195,12 @@ test('deposit blocks demo receipt transitions while the original fee bill and re
   const bill = regular.instance.renderBill();
   assert.match(bill, /676\.45<small>ETB<\/small>/);
   assert.match(bill, /Available Balance:701\.00ETB/);
-  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.doesNotMatch(bill, /data-demo-pay/);
+  assert.match(bill, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
+
+  // The original receipt renderer and transition method remain unit-testable,
+  // but no enabled Pay control exposes that transition to users.
   regular.instance.isBillOpen = true;
   regular.instance.openDemoReceipt();
   assert.equal(regular.instance.isReceiptOpen, true);

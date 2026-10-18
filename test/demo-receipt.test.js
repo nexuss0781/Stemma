@@ -53,12 +53,13 @@ function fireAppClick({ payments, dialog, selector, onRender = () => {} }) {
   clickListener({ target: button });
 }
 
-test('bill Pay is an enabled demo-only action and receipt markup stays clearly illustrative', () => {
+test('bill Pay is disabled in the visual preview and legacy receipt markup stays clearly illustrative', () => {
   const { instance } = makeExperience();
   const bill = instance.renderBill();
-  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.doesNotMatch(bill, /data-demo-pay/);
   assert.match(bill, /Visual preview only · Telebirr is not connected\./);
-  assert.match(bill, /Pay opens a receipt preview; no payment is sent\./);
+  assert.match(bill, /Visual preview only · Telebirr is not connected\. No payment was sent; Pay is disabled\./);
 
   instance.demoReceiptTime = '2026/10/18 12:34:56';
   const receipt = instance.renderReceipt();
@@ -136,26 +137,23 @@ test('openDemoReceipt requires an open bill, closes the sheet, and creates only 
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
 });
 
-test('demo-pay app action runs only for an open bill with its dialog open, then renders one receipt', () => {
+test('legacy receipt action is not exposed by the disabled bill Pay markup', () => {
   const { instance, dialog, effects } = makeExperience({ dialogOpen: false });
   const sampleOverviewBalance = '5,000.00';
   const sampleBill = { availableBalance: 701, amount: 676.45, debited: false, ledgerEntries: [] };
   const before = structuredClone(sampleBill);
-  let renders = 0;
+  const bill = instance.renderBill();
+  assert.match(bill, /<button class="bill-pay-button" type="button" data-bill-pay disabled aria-describedby="bill-sheet-note">Pay<\/button>/);
+  assert.doesNotMatch(bill, /data-demo-pay/);
 
-  fireAppClick({ payments: instance, dialog, selector: 'demo-pay', onRender: () => { renders += 1; } });
-  assert.equal(instance.isReceiptOpen, false, 'closed dialog blocks an out-of-order Pay event');
-  assert.equal(renders, 0);
+  // Keep exercising the existing internal receipt method as a legacy unit check;
+  // it is not reachable through the disabled Pay control in the rendered UI.
   instance.isBillOpen = true;
   dialog.open = true;
-  fireAppClick({ payments: instance, dialog, selector: 'demo-pay', onRender: () => { renders += 1; } });
+  instance.openDemoReceipt();
   assert.equal(instance.isReceiptOpen, true);
   assert.equal(dialog.open, false);
-  assert.equal(renders, 1);
   assert.match(instance.renderReceipt(), /Receipt Preview/);
-
-  fireAppClick({ payments: instance, dialog, selector: 'demo-pay', onRender: () => { renders += 1; } });
-  assert.equal(renders, 1, 'duplicate Pay after receipt open does not rerender or repeat action');
   assert.equal(sampleOverviewBalance, '5,000.00');
   assert.deepEqual(sampleBill, before, 'sample bill fields and ledger remain untouched');
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
