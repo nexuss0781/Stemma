@@ -52,6 +52,43 @@ function cssRulesMatching(selectorFragment) {
     .filter(({ selector }) => selector.includes(selectorFragment));
 }
 
+function historyEntries() {
+  return JSON.parse(runDemo('JSON.stringify(paymentHistoryEntries())'));
+}
+
+function fullHistory() {
+  return runDemo('renderPaymentHistory()');
+}
+
+function visibleText(markup) {
+  return markup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function paymentHistoryTab() {
+  const classes = new Set();
+  const attributes = {};
+  const grid = {
+    classList: {
+      toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name); },
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); }
+    },
+    setAttribute(name, value) { attributes[name] = value; },
+    removeAttribute(name) { delete attributes[name]; },
+    innerHTML: ''
+  };
+  const cardsSource = source.slice(source.indexOf('function renderCards()'), source.indexOf('\nfunction render()'));
+  vm.runInNewContext(`${renderSource}\n${cardsSource}\nrenderCards()`, {
+    activeRoute: 'cards',
+    activeTabs: { cards: 2 },
+    payments: { isBillOpen: false },
+    document: { getElementById: id => id === 'dashboard-grid' ? grid : null },
+    window: { requestAnimationFrame: callback => callback() }
+  });
+  return { classes, attributes, html: grid.innerHTML };
+}
+
 const html = renderForYou({ today: frozenToday });
 
 test('For You demo shows the generated payment date, compact interval selector, and inert CTA', () => {
@@ -102,28 +139,90 @@ test('interval selector retains each selected value and renders that interval de
   }
 });
 
-test('history contains exactly five clearly marked static samples before demo today', () => {
-  const history = html.match(/<ul class="fee-history-list"[\s\S]*?<\/ul>/)?.[0];
-  assert.ok(history, 'sample history list exists');
-  assert.equal((history.match(/<li>/g) || []).length, 5);
-  assert.equal((history.match(/<span>Sample<\/span>/g) || []).length, 5);
-  const dates = [...history.matchAll(/datetime="(\d{4}-\d{2}-\d{2})"/g)].map(match => match[1]);
-  assert.equal(dates.length, 5);
-  dates.forEach(date => {
-    assert.ok(date <= '2026-10-17');
-    assert.equal(new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10), date);
-  });
-  assert.match(history, /not actual transactions/);
-  assert.match(html, /Sample activity · ETB/);
-  assert.doesNotMatch(renderSource, /fetch\(|localStorage|sessionStorage|XMLHttpRequest/);
+test('payment history is 25 static, valid, descending transactions with monthly fee recurrence', () => {
+  const entries = historyEntries();
+  assert.equal(entries.length, 25);
+  for (const entry of entries) {
+    assert.deepEqual(Object.keys(entry).sort(), ['amount', 'date', 'label', 'title']);
+    assert.ok(['string'].every(type => [entry.title, entry.date, entry.label, entry.amount].every(value => typeof value === type)));
+    assert.match(entry.date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(new Date(`${entry.date}T00:00:00Z`).toISOString().slice(0, 10), entry.date, `valid date ${entry.date}`);
+    assert.ok(entry.date <= '2026-10-17', `${entry.date} is not in the future`);
+  }
+  const dates = entries.map(({ date }) => date);
+  assert.deepEqual(dates, [...dates].sort((left, right) => right.localeCompare(left)), 'transactions are newest first');
+  assert.equal(new Set(dates).size, 25, 'each transaction has a unique date');
+  const monthlyFees = entries.filter(({ title }) => title === 'Monthly fee');
+  assert.equal(monthlyFees.length, 12);
+  const recurringDates = [
+    '2026-10-15', '2026-09-25', '2026-08-25', '2026-07-25', '2026-06-25', '2026-05-25',
+    '2026-04-25', '2026-03-25', '2026-02-25', '2026-01-25', '2025-12-25', '2025-11-25'
+  ];
+  assert.deepEqual(monthlyFees.map(({ date }) => date), recurringDates);
+  assert.equal(new Set(monthlyFees.map(({ date }) => date.slice(0, 7))).size, 12, 'monthly fee recurs in 12 distinct months');
 });
 
-test('history is an article with the history action in its heading and no footer action', () => {
-  assert.match(html, /<article class="fee-history-card" aria-labelledby="fee-history-title">/);
-  assert.match(html, /<div class="fee-history-heading"><h3 id="fee-history-title">History<\/h3><button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"><\/use><\/svg><\/button><\/div>/);
-  assert.doesNotMatch(html, /Top 5/);
-  assert.doesNotMatch(html, /<button class="fee-view-history"[^>]*>[\s\S]*?View all/);
+test('five-row payment preview retains its original leading transactions without demo/sample labels or a count', () => {
+  const preview = html.match(/<article class="fee-history-card"[\s\S]*?<\/article>/)?.[0];
+  assert.ok(preview, 'payment history preview exists');
+  assert.match(preview, /Payment activity · ETB/);
+  const rows = [...preview.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(([, row]) => row);
+  assert.equal(rows.length, 5);
+  const leadingTransactions = [
+    ['Monthly fee', '2026-10-15', '1,250'],
+    ['Library', '2026-10-12', '150'],
+    ['Lab fee', '2026-10-08', '300'],
+    ['Monthly fee', '2026-09-25', '1,250'],
+    ['ID card', '2026-09-21', '100']
+  ];
+  rows.forEach((row, index) => {
+    const [title, date, amount] = leadingTransactions[index];
+    assert.match(row, new RegExp(`<strong>${title}<\\/strong>[\\s\\S]*<time datetime="${date}"`));
+    assert.match(row, new RegExp(`<span class="fee-history-total"><strong>${amount}<\\/strong><span>ETB<\\/span>`));
+    assert.doesNotMatch(row, /Sample|Demo/i);
+  });
+  assert.doesNotMatch(visibleText(preview), /Sample|Demo|\b\d+\s+(?:payments|transactions|entries)\b/i);
+  assert.match(preview, /<article class="fee-history-card" aria-labelledby="fee-history-title">/);
+  assert.match(preview, /data-tab="2" aria-label="View all payment history"/);
   assert.equal((html.match(/class="fee-view-history"/g) || []).length, 1);
+});
+
+test('full history renders all 25 transactions as an accessible article and list, with no visible count or demo language', () => {
+  const rendered = fullHistory();
+  assert.match(rendered, /<article class="fee-history-card payment-history-panel" aria-labelledby="payment-history-title">/);
+  assert.match(rendered, /<h2 id="payment-history-title">History<\/h2>/);
+  assert.match(rendered, /Monthly payments and other fees · ETB/);
+  assert.match(rendered, /<ul class="fee-history-list" aria-label="Payment transactions">/);
+  assert.equal((rendered.match(/<li>/g) || []).length, 25);
+  assert.doesNotMatch(visibleText(rendered), /Sample|Demo|\b\d+\s+(?:payments|transactions|entries)\b/i);
+  assert.doesNotMatch(renderSource, /fetch\s*\(|localStorage|sessionStorage|XMLHttpRequest|\.\s*(?:push|pop|splice|shift|unshift|sort|reverse)\s*\(/i);
+  const before = JSON.stringify(historyEntries());
+  fullHistory();
+  renderForYou({ today: frozenToday });
+  assert.equal(JSON.stringify(historyEntries()), before, 'rendering does not mutate the static transaction data');
+});
+
+test('the history tab renders the full history on the existing cards grid with scrollable, unclipped rows', () => {
+  const tab = paymentHistoryTab();
+  assert.ok(tab.classes.has('payment-history-grid'), 'history tab adds the payment-history-grid class');
+  assert.equal((tab.html.match(/<li>/g) || []).length, 25);
+  assert.match(tab.html, /aria-label="Payment transactions"/);
+  const grid = cssRulesMatching('.dashboard-grid.payment-history-grid').find(({ selector }) => selector === '.dashboard-grid.payment-history-grid');
+  assert.ok(grid, 'history grid has a dedicated layout rule');
+  assert.match(grid.declarations, /display:\s*block/);
+  assert.match(grid.declarations, /overflow-y:\s*auto/);
+  assert.match(grid.declarations, /overflow-x:\s*hidden/);
+  const list = cssRulesMatching('.payment-history-panel .fee-history-list').find(({ selector }) => selector === '.payment-history-panel .fee-history-list');
+  assert.ok(list, 'full-history list does not flex-shrink into the preview card height');
+  assert.match(list.declarations, /flex:\s*none/);
+  assert.match(list.declarations, /justify-content:\s*flex-start/);
+  const rows = cssRulesMatching('.payment-history-panel .fee-history-list li').find(({ selector }) => selector === '.payment-history-panel .fee-history-list li');
+  assert.ok(rows, 'history rows have full-height spacing instead of clipping');
+  assert.match(rows.declarations, /min-height:\s*66px/);
+});
+
+test('history action continues to target cards tab index 2', () => {
+  assert.match(html, /data-tab="2" aria-label="View all payment history"/);
 });
 
 test('history action overlay spans its card and keyboard focus remains visible', () => {

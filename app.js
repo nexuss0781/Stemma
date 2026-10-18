@@ -148,6 +148,51 @@ function paymentDeadlineHeading(deadline, today = new Date()) {
   return `In ${Math.max(3, Math.round(daysAway / 30))} Months`;
 }
 
+// Static presentation fixtures only; never persisted or connected to a wallet or ledger.
+function paymentHistoryEntries() {
+  return [
+    ['Monthly fee', '2026-10-15', '1,250'],
+    ['Library', '2026-10-12', '150'],
+    ['Lab fee', '2026-10-08', '300'],
+    ['Monthly fee', '2026-09-25', '1,250'],
+    ['ID card', '2026-09-21', '100'],
+    ['Library', '2026-09-10', '150'],
+    ['Monthly fee', '2026-08-25', '1,250'],
+    ['Lab fee', '2026-08-18', '300'],
+    ['Library', '2026-08-05', '150'],
+    ['Monthly fee', '2026-07-25', '1,250'],
+    ['Lab fee', '2026-07-16', '300'],
+    ['Monthly fee', '2026-06-25', '1,250'],
+    ['Library', '2026-06-12', '150'],
+    ['Monthly fee', '2026-05-25', '1,250'],
+    ['Lab fee', '2026-05-14', '300'],
+    ['Monthly fee', '2026-04-25', '1,250'],
+    ['Library', '2026-04-09', '150'],
+    ['Monthly fee', '2026-03-25', '1,250'],
+    ['Lab fee', '2026-03-06', '300'],
+    ['Monthly fee', '2026-02-25', '1,250'],
+    ['Library', '2026-02-10', '150'],
+    ['Monthly fee', '2026-01-25', '1,250'],
+    ['Lab fee', '2026-01-12', '300'],
+    ['Monthly fee', '2025-12-25', '1,250'],
+    ['Monthly fee', '2025-11-25', '1,250']
+  ].map(([title, date, amount]) => ({ title, date, amount,
+    label: new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  }));
+}
+
+function renderHistoryRows(entries) {
+  return entries.map(item => `<li><span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>ETB</span></span></li>`).join('');
+}
+
+function renderPaymentHistory() {
+  return `<article class="fee-history-card payment-history-panel" aria-labelledby="payment-history-title">
+    <div class="fee-history-heading"><h2 id="payment-history-title">History</h2></div>
+    <p class="payment-history-subtitle">Monthly payments and other fees · ETB</p>
+    <ul class="fee-history-list" aria-label="Payment transactions">${renderHistoryRows(paymentHistoryEntries())}</ul>
+  </article>`;
+}
+
 function renderForYou({ deadline, today = new Date(), interval = paymentDemoInterval } = {}) {
   // Static visual fixtures only: never sent to an API or saved as payment records.
   // Demo selection shifts only the sample deadline; no payment action is enabled.
@@ -163,13 +208,7 @@ function renderForYou({ deadline, today = new Date(), interval = paymentDemoInte
   openingDate.setDate(openingDate.getDate() - 15);
   const openingDay = `${openingDate.getFullYear()}-${String(openingDate.getMonth() + 1).padStart(2, '0')}-${String(openingDate.getDate()).padStart(2, '0')}`;
   const daysRemaining = Math.max(0, Math.round((Date.UTC(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate()) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000));
-  const sampleHistory = [
-    { title: 'Monthly fee', date: '2026-10-15', label: '15 Oct 2026', amount: '1,250' },
-    { title: 'Library', date: '2026-10-12', label: '12 Oct 2026', amount: '150' },
-    { title: 'Lab fee', date: '2026-10-08', label: '08 Oct 2026', amount: '300' },
-    { title: 'Monthly fee', date: '2026-09-25', label: '25 Sep 2026', amount: '1,250' },
-    { title: 'ID card', date: '2026-09-21', label: '21 Sep 2026', amount: '100' }
-  ];
+  const recentHistory = paymentHistoryEntries().slice(0, 5);
   return `<div class="fee-for-you">
     <article class="fee-month-card" data-payment-open="${isOpen}" aria-labelledby="fee-month-title">
       <div class="fee-demo-controls">
@@ -199,9 +238,9 @@ function renderForYou({ deadline, today = new Date(), interval = paymentDemoInte
     </button>
     <article class="fee-history-card" aria-labelledby="fee-history-title">
       <div class="fee-history-heading"><h3 id="fee-history-title">History</h3><button class="fee-view-history" type="button" data-tab="2" aria-label="View all payment history">${icon('arrow-up-right')}</button></div>
-      <p class="fee-history-demo">Sample activity · ETB</p>
-      <ul class="fee-history-list" aria-label="Five sample payments. Demo only, not actual transactions.">
-        ${sampleHistory.map(item => `<li><span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>Sample</span></span></li>`).join('')}
+      <p class="fee-history-demo">Payment activity · ETB</p>
+      <ul class="fee-history-list" aria-label="Recent payment activity">
+        ${renderHistoryRows(recentHistory)}
       </ul>
     </article>
   </div>`;
@@ -229,6 +268,7 @@ function renderCards() {
   const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;
   grid.classList.toggle('payment-carousel', paymentCarousel);
   grid.classList.toggle('bill-content-grid', billView);
+  grid.classList.toggle('payment-history-grid', activeRoute === 'cards' && activeTabs.cards === 2 && !billView);
   if (billView) {
     grid.removeAttribute('role');
     grid.removeAttribute('aria-roledescription');
@@ -252,6 +292,14 @@ function renderCards() {
   grid.removeAttribute('role');
   grid.removeAttribute('aria-roledescription');
   grid.removeAttribute('tabindex');
+  if (activeRoute === 'cards' && activeTabs.cards === 2) {
+    grid.setAttribute('role', 'region');
+    grid.setAttribute('aria-label', 'Payment history');
+    grid.tabIndex = 0;
+    grid.innerHTML = renderPaymentHistory();
+    grid.scrollTop = 0;
+    return;
+  }
   grid.setAttribute('aria-label', 'Content placeholders');
   grid.innerHTML = renderSkeletonCards();
 }
@@ -261,18 +309,20 @@ function render() {
   const overview = activeRoute === 'overview';
   const paymentView = activeRoute === 'cards';
   const billView = paymentView && payments.isBillOpen;
+  const historyView = paymentView && activeTabs.cards === 2 && !billView;
   const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
   main.classList.toggle('payment-view', paymentView);
   main.classList.toggle('bill-payment-view', billView);
+  main.classList.toggle('payment-history-view', historyView);
   main.classList.remove('route-from-left', 'route-from-right');
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
   main.querySelector('.page-title').hidden = billView || !paymentView;
   main.querySelector('.page-title').textContent = 'Payment';
   document.getElementById('page-tabs').hidden = billView;
-  main.querySelector('.section-intro').hidden = billView;
+  main.querySelector('.section-intro').hidden = billView || historyView;
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
   main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);

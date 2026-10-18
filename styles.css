@@ -1092,3 +1092,17 @@ body { color: var(--brand-burgundy); }
 /* Before the payment window opens, offer the existing Deposit tab instead. */
 .fee-month-card[data-payment-open="false"] .fee-continue,
 .fee-month-card[data-payment-open="false"] .fee-continue:hover { background: var(--brand-burgundy); color: var(--brand-gold); }
+
+/* History uses the existing card palette and a single accessible scrolling list. */
+.dashboard-grid.payment-history-grid { display: block; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: rgba(104,27,29,.28) transparent; border-radius: 20px; }
+.payment-history-panel { min-height: 100%; padding: clamp(18px, 3vw, 28px); }
+.payment-history-panel:hover { background: linear-gradient(140deg, rgba(251,241,200,.94), rgba(251,241,200,.58)); border-color: rgba(174,131,56,.28); }
+.payment-history-panel h2 { margin: 0; font-size: 21px; letter-spacing: -.04em; }
+.payment-history-subtitle { margin: 6px 0 12px; color: rgba(104,27,29,.7); font-size: 11px; line-height: 1.5; }
+.payment-history-panel .fee-history-list { flex: none; justify-content: flex-start; margin: 0; }
+.payment-history-panel .fee-history-list li { min-height: 66px; gap: 14px; padding: 13px 0; }
+.payment-history-panel .fee-history-detail strong, .payment-history-panel .fee-history-total strong { font-size: 14px; }
+.payment-history-panel .fee-history-detail time { margin-top: 5px; font-size: 11px; }
+.payment-history-panel .fee-history-total > span { margin-top: 5px; font-size: 10px; }
+.payment-history-grid:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -3px; }
+.app-main.payment-history-view { grid-template-rows: 36px 42px minmax(0,1fr); }
