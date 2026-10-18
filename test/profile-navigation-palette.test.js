@@ -23,14 +23,13 @@ function paletteHex(token) {
   return match[1];
 }
 
-test('Profile cards and navigation share existing shaded soft light with burgundy boundaries and no new token', () => {
+test('Profile cards retain existing shaded soft light with burgundy boundaries and no new token', () => {
   assert.doesNotMatch(css, /--profile-surface-gold|#c6a34f/i);
-  for (const rule of [declarations('.bottom-nav'), declarations('.student-profile-section', ''), declarations('.student-profile-empty-card', '')]) {
+  for (const rule of [declarations('.student-profile-section', ''), declarations('.student-profile-empty-card', '')]) {
     assert.match(rule, /background: color-mix\(in srgb, var\(--paper-soft\) 94%, var\(--brand-burgundy\)\);/);
     assert.doesNotMatch(rule, /white|#fff|255\s*,\s*255\s*,\s*255/i);
     assert.doesNotMatch(rule, /background: (?:rgba?\(|#|var\(--brand-gold-light\)|var\(--brand-burgundy\))/);
   }
-  assert.match(declarations('.bottom-nav'), /border-color: var\(--brand-burgundy\)/);
   for (const selector of ['.student-profile-section', '.student-profile-empty-card']) {
     assert.match(declarations(selector, ''), /border: 1px solid var\(--brand-burgundy\)/);
   }
@@ -58,12 +57,13 @@ test('existing burgundy boundaries distinguish soft-light surfaces from the page
   assert.match(declarations('.student-profile-detail dd', ''), /color: #49332e/);
 });
 
-test('the page stays the established gold and other routes retain their navigation styling', () => {
+test('Profile inherits the exact shared navigation container surface and border', () => {
   assert.match(css, /--brand-gold: #F1DF9B;/);
   assert.match(css, /--brand-cream: #F2E49A;/);
   assert.match(css, /html, body \{ background: var\(--brand-cream\); \}/);
   assert.match(css, /\.bottom-nav \{ border-color: rgba\(104,27,29,\.17\); background: rgba\(251,243,214,\.92\);/);
+  assert.doesNotMatch(css, /[^{}]*profile-view[^{}]*\.bottom-nav[^{}]*\{/);
   const profileRules = css.split('\n').filter(line => line.startsWith(scope));
-  assert.equal(profileRules.length, 6);
+  assert.equal(profileRules.length, 5);
   assert.ok(profileRules.every(line => !/student-profile|html|body/.test(line)));
 });
