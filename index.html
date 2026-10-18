@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=69" />
+  <link rel="stylesheet" href="styles.css?v=71" />
   <script src="payment-ui.js?v=14" defer></script>
   <script src="profile-photo.js?v=3"></script>
   <script src="profile-ui.js?v=2"></script>
   <script src="navigation-memory.js?v=2"></script>
   <script src="friend-ui.js?v=1" defer></script>
-  <script src="app.js?v=47" defer></script>
+  <script src="app.js?v=48" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -248,18 +248,12 @@
     </header>
 
     <main id="app-main" class="app-main overview-view" tabindex="-1" aria-label="Dashboard">
-      <section class="hero-card" aria-label="Profile and mock balance">
+      <section class="hero-card" aria-label="Student profile">
         <span class="hero-orb" aria-hidden="true"></span>
         <div id="overview-name-placeholder" class="hero-skeleton-name skeleton-shimmer" aria-hidden="true"></div>
         <p id="overview-student-name" class="overview-student-name" hidden></p>
-        <div id="overview-photo-frame" class="avatar-glass" aria-hidden="true"><span id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"></span><img id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden></div>
-        <!-- Owner-approved static visual fixture only: not backed by a bank account or ledger. -->
-        <div class="overview-mock-balance" data-preview-only="true" aria-label="Private preview balance, not real funds">
-          <p class="overview-mock-amount"><span id="overview-balance-value" class="overview-balance-value" aria-label="Balance hidden" aria-live="polite">••••••</span> <span>ETB</span></p>
-          <button class="overview-balance-toggle" id="balance-visibility-toggle" data-balance-toggle type="button" aria-label="Show balance" aria-pressed="false" aria-controls="overview-balance-value">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="overview-eye-slash" d="m3 3 18 18"/></svg>
-          </button>
-        </div>
+        <div id="overview-photo-frame" class="avatar-glass" aria-hidden="true"><img id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden><span id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"></span><img id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden></div>
+        <p id="overview-student-nickname" class="overview-student-nickname" hidden></p>
       </section>
       <h1 class="page-title" id="page-title" hidden>Payment</h1>
       <nav class="page-tabs" id="page-tabs" role="tablist" aria-label="Page tabs"></nav>

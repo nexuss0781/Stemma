@@ -18,27 +18,45 @@ const rendererSource = app.slice(rendererStart, rendererEnd);
 
 function createHarness({ authenticated = true, profile = null, photoURL = '' } = {}) {
   const attributes = new Map();
-  const name = { textContent: '', title: '', hidden: true };
-  const namePlaceholder = { hidden: false };
-  let photoSource = '';
-  const photo = {
-    hidden: true,
-    onerror: null,
-    get src() { return photoSource; },
-    set src(value) { photoSource = String(value); attributes.set('src', photoSource); },
-    getAttribute(key) { return key === 'src' ? (attributes.get('src') ?? null) : null; },
-    setAttribute(key, value) { attributes.set(key, String(value)); if (key === 'src') photoSource = String(value); },
-    removeAttribute(key) { attributes.delete(key); if (key === 'src') photoSource = ''; }
-  };
+  const legacyName = { textContent: '', title: '', hidden: true };
+  const legacyNamePlaceholder = { hidden: false };
+  const nickname = { textContent: '', hidden: true };
+  function createImage() {
+    let photoSource = '';
+    return {
+      hidden: true,
+      onerror: null,
+      get src() { return photoSource; },
+      set src(value) { photoSource = String(value); attributes.set(`${this.id}:src`, photoSource); },
+      getAttribute(key) { return key === 'src' ? (attributes.get(`${this.id}:src`) ?? null) : null; },
+      setAttribute(key, value) { attributes.set(`${this.id}:${key}`, String(value)); if (key === 'src') photoSource = String(value); },
+      removeAttribute(key) { attributes.delete(`${this.id}:${key}`); if (key === 'src') photoSource = ''; }
+    };
+  }
+  const photo = Object.assign(createImage(), { id: 'overview-profile-photo' });
+  const reflection = Object.assign(createImage(), { id: 'overview-photo-reflection' });
   const photoPlaceholder = { hidden: false };
   const frame = {
     attributes: new Map([['aria-hidden', 'true']]),
+    classes: new Set(),
+    classList: {
+      add(name) { frame.classes.add(name); },
+      remove(name) { frame.classes.delete(name); },
+      contains(name) { return frame.classes.has(name); },
+      toggle(name, force) {
+        const enabled = force === undefined ? !frame.classes.has(name) : Boolean(force);
+        if (enabled) frame.classes.add(name); else frame.classes.delete(name);
+        return enabled;
+      }
+    },
     setAttribute(key, value) { this.attributes.set(key, String(value)); }
   };
   const elements = new Map([
-    ['overview-student-name', name],
-    ['overview-name-placeholder', namePlaceholder],
+    ['overview-student-name', legacyName],
+    ['overview-name-placeholder', legacyNamePlaceholder],
+    ['overview-student-nickname', nickname],
     ['overview-profile-photo', photo],
+    ['overview-photo-reflection', reflection],
     ['overview-photo-placeholder', photoPlaceholder],
     ['overview-photo-frame', frame]
   ]);
@@ -49,14 +67,14 @@ function createHarness({ authenticated = true, profile = null, photoURL = '' } =
     studentPhotoURL: photoURL
   });
   vm.runInContext(rendererSource, context, { filename: 'app.js renderOverviewIdentity' });
-  return { context, name, namePlaceholder, photo, photoPlaceholder, frame };
+  return { context, nickname, photo, reflection, photoPlaceholder, frame };
 }
 
 function render(harness) {
   vm.runInContext('renderOverviewIdentity();', harness.context);
 }
 
-test('authenticated saved profile shows only trimmed first and middle names and photo', () => {
+test('authenticated saved profile shows only its trimmed persisted nickname and mirrors the photo', () => {
   const h = createHarness({
     authenticated: true,
     profile: {
@@ -68,42 +86,46 @@ test('authenticated saved profile shows only trimmed first and middle names and 
   });
 
   render(h);
-  assert.equal(h.name.textContent, 'Ada Byron');
-  assert.equal(h.name.title, 'Ada Byron');
-  assert.equal(h.name.hidden, false);
-  assert.equal(h.namePlaceholder.hidden, true);
+  assert.equal(h.nickname.textContent, 'Countess');
+  assert.equal(h.nickname.hidden, false);
   assert.equal(h.photo.src, 'blob:student-photo');
   assert.equal(h.photo.hidden, false);
+  assert.equal(h.reflection.src, 'blob:student-photo');
+  assert.equal(h.reflection.hidden, false);
   assert.equal(h.photoPlaceholder.hidden, true);
   assert.equal(h.frame.attributes.get('aria-hidden'), 'false');
+  assert.equal(h.frame.classList.contains('has-profile-photo'), true);
 });
 
 test('guest mode ignores lingering saved profile and photo and leaves the original placeholders', () => {
   const h = createHarness({
     authenticated: false,
-    profile: { firstName: 'Saved', middleName: 'Student', lastName: 'Ignored' },
+    profile: { firstName: 'Saved', middleName: 'Student', lastName: 'Ignored', nickName: 'Stale nickname' },
     photoURL: 'blob:stale-account-photo'
   });
 
   render(h);
-  assert.equal(h.name.textContent, '');
-  assert.equal(h.name.hidden, true);
-  assert.equal(h.namePlaceholder.hidden, false);
+  assert.equal(h.nickname.textContent, '');
+  assert.equal(h.nickname.hidden, true);
   assert.equal(h.photo.hidden, true);
   assert.equal(h.photo.getAttribute('src'), null);
+  assert.equal(h.reflection.hidden, true);
+  assert.equal(h.reflection.getAttribute('src'), null);
   assert.equal(h.photoPlaceholder.hidden, false);
   assert.equal(h.frame.attributes.get('aria-hidden'), 'true');
+  assert.equal(h.frame.classList.contains('has-profile-photo'), false);
 });
 
-test('missing middle name displays only first name; missing photo preserves portrait skeleton', () => {
-  const h = createHarness({ authenticated: true, profile: { firstName: '  Hana  ', lastName: 'Ignored' } });
+test('missing profile or photo leaves the nickname empty and preserves portrait skeleton', () => {
+  const h = createHarness({ authenticated: true, profile: null, photoURL: 'blob:unowned-photo' });
 
   render(h);
-  assert.equal(h.name.textContent, 'Hana');
-  assert.equal(h.name.hidden, false);
-  assert.equal(h.namePlaceholder.hidden, true);
+  assert.equal(h.nickname.textContent, '');
+  assert.equal(h.nickname.hidden, true);
   assert.equal(h.photo.hidden, true);
   assert.equal(h.photo.getAttribute('src'), null);
+  assert.equal(h.reflection.hidden, true);
+  assert.equal(h.reflection.getAttribute('src'), null);
   assert.equal(h.photoPlaceholder.hidden, false);
   assert.equal(h.frame.attributes.get('aria-hidden'), 'true');
 });
@@ -111,26 +133,27 @@ test('missing middle name displays only first name; missing photo preserves port
 test('account reset clears previously rendered identity even if stale profile and photo remain in memory', () => {
   const h = createHarness({
     authenticated: true,
-    profile: { firstName: 'Mina', middleName: 'Example' },
+    profile: { firstName: 'Mina', middleName: 'Example', nickName: 'Mina' },
     photoURL: 'blob:old-account-photo'
   });
   render(h);
-  assert.equal(h.name.textContent, 'Mina Example');
+  assert.equal(h.nickname.textContent, 'Mina');
   assert.equal(h.photo.hidden, false);
 
   h.context.googleAuthenticated = false;
   render(h);
-  assert.equal(h.name.textContent, '');
-  assert.equal(h.name.title, '');
-  assert.equal(h.name.hidden, true);
-  assert.equal(h.namePlaceholder.hidden, false);
+  assert.equal(h.nickname.textContent, '');
+  assert.equal(h.nickname.hidden, true);
   assert.equal(h.photo.getAttribute('src'), null);
   assert.equal(h.photo.hidden, true);
+  assert.equal(h.reflection.getAttribute('src'), null);
+  assert.equal(h.reflection.hidden, true);
   assert.equal(h.photoPlaceholder.hidden, false);
   assert.equal(h.frame.attributes.get('aria-hidden'), 'true');
+  assert.equal(h.frame.classList.contains('has-profile-photo'), false);
 });
 
-test('photo load failure hides the image and restores the portrait skeleton', () => {
+test('photo load failure hides both images and restores the portrait skeleton', () => {
   const h = createHarness({
     authenticated: true,
     profile: { firstName: 'Sam' },
@@ -141,37 +164,60 @@ test('photo load failure hides the image and restores the portrait skeleton', ()
   h.photo.onerror();
 
   assert.equal(h.photo.hidden, true);
+  assert.equal(h.reflection.hidden, true);
   assert.equal(h.photoPlaceholder.hidden, false);
   assert.equal(h.frame.attributes.get('aria-hidden'), 'true');
+  assert.equal(h.frame.classList.contains('has-profile-photo'), false);
 });
 
-test('profile text is assigned as textContent rather than interpreted as markup', () => {
+test('nickname is assigned as textContent rather than interpreted as markup', () => {
   const payload = '<img src=x onerror="alert(1)">';
   const h = createHarness({
     authenticated: true,
-    profile: { firstName: payload, middleName: '<script>bad()</script>' }
+    profile: { firstName: 'Ignored', nickName: `  ${payload}  ` }
   });
 
   render(h);
-  assert.equal(h.name.textContent, `${payload} <script>bad()</script>`);
-  assert.equal(h.name.title, `${payload} <script>bad()</script>`);
-  assert.equal(h.name.innerHTML, undefined, 'renderer does not populate the name through innerHTML');
-  assert.match(rendererSource, /name\.textContent\s*=\s*displayName/);
-  assert.doesNotMatch(rendererSource, /name\.innerHTML\s*=/);
+  assert.equal(h.nickname.textContent, payload);
+  assert.equal(h.nickname.innerHTML, undefined, 'renderer does not populate nickname through innerHTML');
+  assert.match(rendererSource, /nickname\.textContent\s*=/);
+  assert.doesNotMatch(rendererSource, /nickname\.innerHTML\s*=/);
 });
 
-test('hero markup keeps both fallback skeletons, the same balance card, and photo uses contain fit', () => {
+test('empty nickname is hidden and an unusually long nickname is preserved after trimming', () => {
+  const empty = createHarness({ authenticated: true, profile: { nickName: '   \t  ' } });
+  render(empty);
+  assert.equal(empty.nickname.textContent, '');
+  assert.equal(empty.nickname.hidden, true);
+
+  const longNickname = 'N'.repeat(500);
+  const long = createHarness({ authenticated: true, profile: { nickName: ` ${longNickname} ` } });
+  render(long);
+  assert.equal(long.nickname.textContent, longNickname);
+  assert.equal(long.nickname.hidden, false);
+});
+
+test('hero markup contains nickname and rear reflection before front photo, with fallback and contain fit', () => {
   const hero = html.match(/<section class="hero-card"[\s\S]*?<\/section>/)?.[0];
   assert.ok(hero, 'existing Overview hero card exists');
   for (const id of [
-    'overview-student-name', 'overview-name-placeholder', 'overview-profile-photo',
+    'overview-student-nickname', 'overview-photo-reflection', 'overview-profile-photo',
     'overview-photo-placeholder', 'overview-photo-frame'
   ]) assert.match(hero, new RegExp(`id="${id}"`), `${id} remains inside the hero card`);
-  assert.match(hero, /id="overview-name-placeholder"[^>]*class="hero-skeleton-name skeleton-shimmer"/);
   assert.match(hero, /id="overview-photo-placeholder"[^>]*class="portrait-skeleton skeleton-shimmer"/);
-  assert.match(hero, /id="overview-student-name"[^>]*hidden/);
+  assert.match(hero, /<p id="overview-student-nickname" class="overview-student-nickname" hidden><\/p>/);
+  assert.match(hero, /id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden/);
   assert.match(hero, /id="overview-profile-photo"[^>]*hidden/);
-  assert.match(hero, /class="overview-mock-balance" data-preview-only="true"/);
+  assert.ok(hero.indexOf('overview-photo-reflection') < hero.indexOf('overview-photo-placeholder'));
+  assert.ok(hero.indexOf('overview-photo-reflection') < hero.indexOf('overview-profile-photo'));
+  assert.doesNotMatch(hero, /overview-mock-balance|overview-balance-value|balance-visibility-toggle/);
   assert.match(styles, /\.hero-card \.overview-profile-photo\s*\{[^}]*object-fit:\s*contain\s*;/s);
+  const reflectionStyle = styles.match(/\.overview-photo-reflection\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.match(reflectionStyle, /filter:\s*[^;]*grayscale\(1\)[^;]*blur\(12px\)/);
+  assert.match(reflectionStyle, /object-fit:\s*cover/);
+  const photoFrameStyle = styles.match(/\.avatar-glass\.has-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
+  assert.ok(photoFrameStyle, 'photo frame has a dedicated profile-photo state');
+  assert.match(photoFrameStyle, /background:/);
+  assert.match(photoFrameStyle, /backdrop-filter:\s*none/);
   assert.match(styles, /\.hero-card\s*\{[^}]*border-radius\s*:/s, 'existing hero rectangle retains its rounded-card styling');
 });

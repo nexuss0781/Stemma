@@ -79,17 +79,6 @@ function updateNavIndicator() {
   indicator.style.transform = transform;
 }
 
-function setPreviewBalanceVisible(visible) {
-  const value = document.getElementById('overview-balance-value');
-  const button = document.getElementById('balance-visibility-toggle');
-  if (!value || !button) return;
-  // Private local visual fixture only; never a bank/ledger balance.
-  value.textContent = visible ? '5,000.00' : '••••••';
-  value.setAttribute('aria-label', visible ? 'Balance 5,000.00 ETB' : 'Balance hidden');
-  button.setAttribute('aria-pressed', String(visible));
-  button.setAttribute('aria-label', visible ? 'Hide balance' : 'Show balance');
-}
-
 function renderTabs() {
   const tabs = pageTabs[activeRoute];
   const tabNav = document.getElementById('page-tabs');
@@ -497,7 +486,6 @@ function navigate(route) {
   cancelPendingNavigationRestoration();
   closeFriendPicker();
   closeHistoryDetails();
-  setPreviewBalanceVisible(false);
   payments.closeSheet();
   const wasBillOpen = payments.isBillOpen;
   payments.isBillOpen = false;
@@ -606,11 +594,6 @@ document.addEventListener('click', event => {
   if (event.target.id === 'history-details-dialog') {
     const bounds = event.target.getBoundingClientRect();
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeHistoryDetails();
-    return;
-  }
-  const balanceToggle = event.target.closest('[data-balance-toggle]');
-  if (balanceToggle) {
-    setPreviewBalanceVisible(balanceToggle.getAttribute('aria-pressed') !== 'true');
     return;
   }
   if (event.target.closest('[data-open-bill]')) {
@@ -776,7 +759,9 @@ function renderOverviewIdentity() {
   const photo = document.getElementById('overview-profile-photo');
   const photoPlaceholder = document.getElementById('overview-photo-placeholder');
   const frame = document.getElementById('overview-photo-frame');
-  if (!name || !namePlaceholder || !photo || !photoPlaceholder || !frame) return;
+  const reflection = document.getElementById('overview-photo-reflection');
+  const nickname = document.getElementById('overview-student-nickname');
+  if (!name || !namePlaceholder || !photo || !photoPlaceholder || !frame || !reflection || !nickname) return;
   const profile = googleAuthenticated ? savedStudentProfile : null;
   const displayName = profile ? ['firstName', 'middleName']
     .map(key => typeof profile[key] === 'string' ? profile[key].trim() : '')
@@ -785,20 +770,32 @@ function renderOverviewIdentity() {
   name.title = displayName;
   name.hidden = !displayName;
   namePlaceholder.hidden = Boolean(displayName);
+  const savedNickname = typeof profile?.nickName === 'string' ? profile.nickName.trim() : '';
+  nickname.textContent = savedNickname;
+  nickname.title = savedNickname;
+  nickname.hidden = !savedNickname;
   const photoURL = profile && studentPhotoURL ? studentPhotoURL : '';
   photo.hidden = !photoURL;
   photoPlaceholder.hidden = Boolean(photoURL);
   frame.setAttribute('aria-hidden', String(!photoURL));
+  frame.classList.toggle('has-profile-photo', Boolean(photoURL));
+  reflection.hidden = !photoURL;
   if (photoURL) {
     if (photo.getAttribute('src') !== photoURL) photo.src = photoURL;
+    if (reflection.getAttribute('src') !== photoURL) reflection.src = photoURL;
   } else {
     photo.removeAttribute('src');
+    reflection.removeAttribute('src');
   }
   photo.onerror = () => {
     photo.hidden = true;
+    reflection.hidden = true;
+    reflection.removeAttribute('src');
     photoPlaceholder.hidden = false;
+    frame.classList.remove('has-profile-photo');
     frame.setAttribute('aria-hidden', 'true');
   };
+  reflection.onerror = () => { reflection.hidden = true; };
 }
 
 function renderSidebarIdentity() {
