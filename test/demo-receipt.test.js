@@ -164,7 +164,7 @@ test('enabled bill Pay opens only the demo receipt and leaves sample financial s
   assert.equal(sampleOverviewBalance, '5,000.00');
   assert.deepEqual(sampleBill, before, 'sample bill fields and ledger remain untouched');
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
-  assert.doesNotMatch(paymentUi, /\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket|localStorage|sessionStorage)\b|\/api\//i);
+  assert.doesNotMatch(paymentUi.replaceAll('/api/friend-bills/${billId}/photo', ''), /\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket|localStorage|sessionStorage)\b|\/api\//i);
   assert.doesNotMatch(paymentUi, /(?:charge|debit|transfer|createPayment|submitPayment)\s*\(/i);
 });
 

@@ -324,7 +324,7 @@ test('deposit and regular bill navigation maintain their mutually exclusive stat
   assert.match(appSource, /if\s*\(event\.target\.closest\('\[data-open-bill\]'\)\)\s*\{[\s\S]*?payments\.isDeposit\s*=\s*false/);
   assert.match(appSource, /if\s*\(event\.target\.closest\('\[data-bill-back\]'\)\)\s*\{[\s\S]*?payments\.isDeposit\s*=\s*false/);
   assert.match(appSource, /payments\.isDeposit\s*=\s*false/);
-  assert.match(appSource, /const wasDeposit = payments\.isDeposit;\s*payments\.isDeposit = false;[\s\S]*?payments\.isBillOpen = false;\s*render\(\);\s*document\.querySelector\(wasDeposit \? '#deposit-amount' : '\.fee-continue'\)/);
+  assert.match(appSource, /const wasDeposit = payments\.isDeposit;\s*const wasFriend = payments\.isFriend;\s*payments\.isFriend = false;\s*payments\.friendBill = null;\s*payments\.isDeposit = false;[\s\S]*?payments\.isBillOpen = false;\s*render\(\);\s*document\.querySelector\(wasFriend \? '#friend-username' : wasDeposit \? '#deposit-amount' : '\.fee-continue'\)/);
   assert.match(paymentUi, /renderBill\(\)\s*\{\s*if\s*\(this\.isDeposit\)\s*return this\.renderDeposit\(\)/);
   assert.match(paymentUi, /renderDeposit\(\)/);
   assert.match(paymentUi, /if\s*\(!this\.isBillOpen\s*\|\|\s*this\.isReceiptOpen\)/);

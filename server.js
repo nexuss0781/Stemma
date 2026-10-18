@@ -10,6 +10,7 @@ import pg from 'pg';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { validateProfileImage } from './profile-image.js';
+import { registerFriendBillsApi } from './friend-bills-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -468,7 +469,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -634,6 +635,13 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     if (!studentProfileStore) return res.status(503).json({ error: 'Student profile service is unavailable.' });
     return next();
   }
+
+  registerFriendBillsApi(app, {
+    requireGoogleSession,
+    studentProfileStore,
+    friendBillStore,
+    validateProfileImage
+  });
 
   app.get('/api/student-profile', requireGoogleSession, requireProfileStore, asyncRoute(async (req, res) => {
     try {
@@ -1005,7 +1013,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));

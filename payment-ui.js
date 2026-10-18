@@ -7,8 +7,28 @@ function normalizeDepositAmount(value) {
   return amount === '0.00' ? null : amount;
 }
 
+function escapePaymentHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+function isValidFriendMonth(value) {
+  return value === '' || (typeof value === 'string' && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(value));
+}
+
+function isValidFriendDate(value) {
+  if (value === '') return true;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [, year, month, day] = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return parsed.getUTCFullYear() === Number(year) && parsed.getUTCMonth() === Number(month) - 1 && parsed.getUTCDate() === Number(day);
+}
+
 class PaymentExperience {
   constructor() {
+    this.isFriend = false;
+    this.friendBill = null;
     this.isBillOpen = false;
     this.isReceiptOpen = false;
     this.demoReceiptTime = '';
@@ -19,8 +39,29 @@ class PaymentExperience {
   openDeposit(rawAmount) {
     const amount = normalizeDepositAmount(rawAmount);
     if (!amount) return false;
+    this.isFriend = false;
+    this.friendBill = null;
     this.depositAmount = amount;
     this.isDeposit = true;
+    this.isBillOpen = true;
+    this.isReceiptOpen = false;
+    return true;
+  }
+
+  openFriendBill(studentDTO) {
+    if (!studentDTO || typeof studentDTO !== 'object' || Array.isArray(studentDTO)) return false;
+    const { billId, username, firstName, lastName, amountDue, currency, photoURL, month, dueDate } = studentDTO;
+    if (typeof billId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(billId) ||
+        typeof username !== 'string' || !/^[A-Za-z0-9_.]{3,30}$/.test(username) ||
+        typeof firstName !== 'string' || firstName.trim().length === 0 || firstName.length > 80 ||
+        typeof lastName !== 'string' || lastName.trim().length === 0 || lastName.length > 80 ||
+        typeof amountDue !== 'string' || !/^(?:0|[1-9]\d{0,8})\.\d{2}$/.test(amountDue) || amountDue === '0.00' ||
+        currency !== 'ETB' || photoURL !== `/api/friend-bills/${billId}/photo` ||
+        !isValidFriendMonth(month) || !isValidFriendDate(dueDate)) return false;
+
+    this.friendBill = Object.freeze({ billId, username, firstName, lastName, amountDue, currency, photoURL, month, dueDate });
+    this.isFriend = true;
+    this.isDeposit = false;
     this.isBillOpen = true;
     this.isReceiptOpen = false;
     return true;
@@ -32,19 +73,40 @@ class PaymentExperience {
 
   renderBill() {
     if (this.isDeposit) return this.renderDeposit();
+    if (this.isFriend && this.friendBill) return this.renderReferenceBill(this.friendBill.amountDue, false, this.friendBill);
     return this.renderReferenceBill('676.45');
   }
 
-  renderReferenceBill(amount, isDeposit = false) {
+  renderReferenceBill(amount, isDeposit = false, friendBill = null) {
     // Reference-screen sample figures only; never submitted or linked to Overview's mock balance.
+    const isFriendBill = Boolean(friendBill);
+    const customerName = isFriendBill
+      ? `${escapePaymentHtml(friendBill.firstName)} ${escapePaymentHtml(friendBill.lastName)}`
+      : 'Customer 001';
+    const month = isFriendBill
+      ? (friendBill.month ? `${friendBill.month.slice(5, 7)}/${friendBill.month.slice(0, 4)}` : '—')
+      : '12/2024';
+    const dueDate = isFriendBill
+      ? (friendBill.dueDate ? `${friendBill.dueDate.slice(8, 10)}/${friendBill.dueDate.slice(5, 7)}/${friendBill.dueDate.slice(0, 4)}` : '—')
+      : '27/01/2025';
+    const backLabel = isDeposit ? 'Back to Deposit' : isFriendBill ? 'Back to For friend' : 'Back to payment';
+    const title = isFriendBill ? 'Pay student bill' : 'Pay Ethio telecom bill';
+    const previewNote = 'Visual preview only · Telebirr is not connected.';
+    const walletBalance = isFriendBill ? 'No wallet connected' : '(Available Balance:701.00ETB)';
+    const payAttributes = isFriendBill
+      ? 'data-bill-pay disabled aria-disabled="true" aria-describedby="bill-sheet-note"'
+      : 'data-bill-pay data-demo-pay aria-describedby="bill-sheet-note"';
+    const sheetNote = isFriendBill
+      ? 'Visual preview only · No payment will be sent.'
+      : 'Visual preview only · Telebirr is not connected. Pay opens a demo receipt; no payment is sent.';
     return `<article class="bill-page telebirr-preview" data-ui-preview="true" aria-labelledby="bill-page-title">
       <header class="bill-page-heading">
-        <button class="bill-back" type="button" data-bill-back aria-label="${isDeposit ? 'Back to Deposit' : 'Back to payment'}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
-        <h1 id="bill-page-title">Pay Ethio telecom bill</h1>
+        <button class="bill-back" type="button" data-bill-back aria-label="${backLabel}"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4-8 8 8 8M4 12h16"/></svg></button>
+        <h1 id="bill-page-title">${title}</h1>
       </header>
       <section class="bill-details-card" aria-label="Illustrative bill details">
-        <div class="bill-customer"><span>Customer Name:</span><strong>Customer 001</strong></div>
-        <table class="bill-details-table"><caption class="payment-visually-hidden">Visual preview using sample bill information, not a retrieved invoice.</caption><thead><tr><th scope="col">Month</th><th scope="col">Amount</th><th scope="col">Due Date</th></tr></thead><tbody><tr><td>12/2024</td><td>${amount}<small>ETB</small></td><td class="bill-example-due">27/01/2025</td></tr></tbody></table>
+        <div class="bill-customer"><span>Customer Name:</span><strong>${customerName}</strong></div>
+        <table class="bill-details-table"><caption class="payment-visually-hidden">${isFriendBill ? 'Visual preview using friend bill details; no payment will be sent.' : 'Visual preview using sample bill information, not a retrieved invoice.'}</caption><thead><tr><th scope="col">Month</th><th scope="col">Amount</th><th scope="col">Due Date</th></tr></thead><tbody><tr><td>${month}</td><td>${amount}<small>ETB</small></td><td class="bill-example-due">${dueDate}</td></tr></tbody></table>
       </section>
       <fieldset class="bill-amount-options" disabled>
         <legend class="payment-visually-hidden">Illustrative amount selection</legend>
@@ -52,7 +114,7 @@ class PaymentExperience {
         <label><input type="radio" name="bill-amount" value="other" /><span class="bill-radio-mark" aria-hidden="true"></span><span>Other amount</span></label>
       </fieldset>
       <div class="bill-page-actions">
-        <p class="bill-page-preview-note">Visual preview only · Telebirr is not connected.</p>
+        <p class="bill-page-preview-note">${previewNote}</p>
         <button class="bill-secondary-action" type="button" data-bill-back>Back</button>
         <button class="bill-primary-action" type="button" data-review-bill>Continue</button>
       </div>
@@ -62,15 +124,16 @@ class PaymentExperience {
         <p class="bill-sheet-amount"><span>${amount}</span><small>ETB</small></p>
         <section class="bill-method-card" aria-labelledby="bill-method-title">
           <h3 id="bill-method-title">Payment Method</h3>
-          <div class="bill-balance-method"><span class="bill-wallet-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h14a2 2 0 0 1 2 2v12H3V7a3 3 0 0 1 3-3h10v2M16 12h5v5h-5z"/></svg></span><div><strong>Balance</strong><p>(Available Balance:701.00ETB)</p></div><span class="bill-method-badge" aria-label="Illustrative selected payment method"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-8"/></svg></span></div>
+          <div class="bill-balance-method"><span class="bill-wallet-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h14a2 2 0 0 1 2 2v12H3V7a3 3 0 0 1 3-3h10v2M16 12h5v5h-5z"/></svg></span><div><strong>Balance</strong><p>${walletBalance}</p></div><span class="bill-method-badge" aria-label="Illustrative selected payment method"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-8"/></svg></span></div>
         </section>
-        <button class="bill-pay-button" type="button" data-bill-pay data-demo-pay aria-describedby="bill-sheet-note">Pay</button>
-        <p class="bill-sheet-note" id="bill-sheet-note">Visual preview only · Telebirr is not connected. Pay opens a demo receipt; no payment is sent.</p>
+        <button class="bill-pay-button" type="button" ${payAttributes}>Pay</button>
+        <p class="bill-sheet-note" id="bill-sheet-note">${sheetNote}</p>
       </dialog>
     </article>`;
   }
 
   renderReceipt() {
+    if (this.isFriend) return this.friendBill ? this.renderBill() : '';
     const amount = this.isDeposit ? this.depositAmount : '676.45';
     // Static QR contains a harmless demo identifier only, never a payment URL or transaction record.
     return `<article class="bill-page telebirr-preview demo-receipt" data-ui-preview="true" aria-labelledby="receipt-title" aria-describedby="receipt-no-payment-note">
@@ -101,6 +164,7 @@ class PaymentExperience {
 
   openDemoReceipt() {
     if (!this.isBillOpen || this.isReceiptOpen) return;
+    if (this.isFriend) return;
     this.closeSheet();
     this.demoReceiptTime = new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'Africa/Addis_Ababa', year: 'numeric', month: '2-digit', day: '2-digit',

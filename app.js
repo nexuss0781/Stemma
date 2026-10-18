@@ -25,6 +25,8 @@ let paymentDemoInterval = '15-days';
 const paymentSlides = ['For You', 'For friend'];
 
 const payments = new PaymentExperience();
+const friends = new FriendPaymentFlow();
+let friendInteractionToken = 0;
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
 function renderBottomNav() {
@@ -294,6 +296,90 @@ function renderDepositForm() {
   </section>`;
 }
 
+function friendContextActive() {
+  return activeRoute === 'cards' && activeTabs.cards === 0 && paymentSlideIndex === 1 && !payments.isBillOpen;
+}
+function updateFriendPicker(focusChoice = false) {
+  const dialog = document.getElementById('friend-student-dialog');
+  if (!dialog) return;
+  dialog.innerHTML = friends.renderPicker();
+  if (dialog.open) {
+    const choice = focusChoice ? Array.from(dialog.querySelectorAll('[data-friend-student]')).find(button => button.dataset.friendStudent === friends.selectedBillId) : null;
+    (choice || dialog.querySelector('[data-close-friend-picker]'))?.focus({ preventScroll: true });
+  }
+}
+function closeFriendPicker() {
+  friendInteractionToken += 1;
+  friends.cancel();
+  const dialog = document.getElementById('friend-student-dialog');
+  if (dialog?.open) dialog.close();
+  queueNavigationSave();
+}
+async function openFriendPicker(rawQuery, selectedBillId = '') {
+  if (!friendContextActive()) return false;
+  const query = normalizeFriendUsername(rawQuery);
+  if (!query) return false;
+  const dialog = document.getElementById('friend-student-dialog');
+  if (!dialog) return false;
+  const account = navigationAccountKey;
+  const operation = ++friendInteractionToken;
+  friends.query = query;
+  friends.selectedBillId = '';
+  friends.students = [];
+  friends.notice = '';
+  friends.status = googleAuthenticated ? 'loading' : 'guest';
+  updateFriendPicker();
+  if (!dialog.open) {
+    dialog.showModal();
+    dialog.addEventListener('close', () => {
+      if (document.getElementById('friend-student-dialog') !== dialog) return;
+      friendInteractionToken += 1;
+      friends.cancel();
+      queueNavigationSave();
+    }, { once: true });
+  }
+  queueNavigationSave();
+  if (!googleAuthenticated) return true;
+  const updated = await friends.search(query);
+  if (!updated || operation !== friendInteractionToken || account !== navigationAccountKey || !friendContextActive() || !dialog.open) return false;
+  if (friends.students.some(student => student.billId === selectedBillId)) friends.selectedBillId = selectedBillId;
+  updateFriendPicker(Boolean(friends.selectedBillId));
+  queueNavigationSave();
+  return true;
+}
+async function confirmFriendSelection() {
+  const selected = friends.selected;
+  const dialog = document.getElementById('friend-student-dialog');
+  if (!googleAuthenticated || !friendContextActive() || !dialog?.open || friends.status !== 'ready' || !selected) return;
+  const account = navigationAccountKey;
+  const operation = ++friendInteractionToken;
+  friends.status = 'loading';
+  friends.notice = '';
+  updateFriendPicker();
+  try {
+    const current = await friends.resolve(selected.billId);
+    if (operation !== friendInteractionToken || account !== navigationAccountKey || !friendContextActive() || !dialog.open) return;
+    friends.students = friends.students.map(student => student.billId === current.billId ? current : student);
+    friends.status = 'ready';
+    if (['username', 'firstName', 'lastName', 'amountDue', 'currency', 'month', 'dueDate'].some(key => current[key] !== selected[key])) {
+      friends.notice = 'The bill details changed. Please review them and confirm again.';
+      updateFriendPicker(true);
+      return;
+    }
+    if (!payments.openFriendBill(current)) throw new Error('Bill could not be verified.');
+    closeFriendPicker();
+    render();
+  } catch (error) {
+    if (operation !== friendInteractionToken || account !== navigationAccountKey || !dialog.open) return;
+    friends.students = [];
+    friends.selectedBillId = '';
+    friends.status = error.status === 404 ? 'empty' : 'error';
+    friends.notice = error.status === 404 ? 'This bill is no longer eligible. Please search again.' : 'The bill could not be verified. Please search again.';
+    updateFriendPicker();
+    queueNavigationSave();
+  }
+}
+
 function updatePaymentProgress() {
   const grid = document.getElementById('dashboard-grid');
   if (!grid.classList.contains('payment-carousel') || !grid.clientWidth) return;
@@ -335,7 +421,7 @@ function renderCards() {
     grid.tabIndex = 0;
     grid.innerHTML = paymentSlides.map((label, index) => `
       <section class="payment-slide" role="group" aria-roledescription="slide" aria-label="${index + 1} of ${paymentSlides.length}: ${label}">
-        ${index === 0 ? renderForYou() : `<div class="payment-slide-grid">${renderSkeletonCards()}</div>`}
+        ${index === 0 ? renderForYou() : friends.renderForm()}
       </section>`).join('');
     window.requestAnimationFrame(syncPaymentCarousel);
     return;
@@ -407,6 +493,8 @@ function render() {
 
 function navigate(route) {
   if (!pageTabs[route]) return;
+  cancelPendingNavigationRestoration();
+  closeFriendPicker();
   closeHistoryDetails();
   setPreviewBalanceVisible(false);
   payments.closeSheet();
@@ -414,6 +502,8 @@ function navigate(route) {
   payments.isBillOpen = false;
   payments.isReceiptOpen = false;
   payments.isDeposit = false;
+  payments.isFriend = false;
+  payments.friendBill = null;
   if (route === activeRoute) { if (wasBillOpen) render(); closeDrawer(); return; }
   const currentIndex = sections.findIndex(item => item.id === activeRoute);
   const nextIndex = sections.findIndex(item => item.id === route);
@@ -427,6 +517,7 @@ function navigate(route) {
 }
 
 function openDrawer() {
+  cancelPendingNavigationRestoration();
   const drawer = document.getElementById('navigation-drawer');
   drawer.classList.add('open');
   drawer.setAttribute('aria-hidden', 'false');
@@ -454,6 +545,12 @@ document.addEventListener('submit', event => {
   render();
 });
 document.addEventListener('input', event => {
+  if (event.target.id === 'friend-username') {
+    cancelPendingNavigationRestoration();
+    event.target.setCustomValidity('');
+    friends.query = normalizeFriendUsername(event.target.value, true) || '';
+    queueNavigationSave();
+  }
   if (event.target.id === 'deposit-amount') {
     event.target.setCustomValidity('');
     depositDraftAmount = normalizeDepositAmount(event.target.value) || '';
@@ -462,10 +559,40 @@ document.addEventListener('input', event => {
   }
 });
 
+document.addEventListener('submit', event => {
+  if (event.target.id !== 'friend-username-form') return;
+  event.preventDefault();
+  cancelPendingNavigationRestoration();
+  if (!friendContextActive()) return;
+  const input = document.getElementById('friend-username');
+  if (!input || !normalizeFriendUsername(input.value)) {
+    if (input) { input.setCustomValidity('Enter a username with 3–30 letters, numbers, underscores, or periods.'); input.reportValidity(); }
+    return;
+  }
+  void openFriendPicker(input.value);
+});
+document.addEventListener('error', event => {
+  if (event.target.matches?.('.friend-student-photo')) event.target.hidden = true;
+}, true);
+
 document.addEventListener('click', event => {
   document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
     if (!picker.contains(event.target)) picker.open = false;
   });
+  const friendChoice = event.target.closest('[data-friend-student]');
+  if (friendChoice) {
+    if (friendContextActive() && friends.status === 'ready' && friends.students.some(student => student.billId === friendChoice.dataset.friendStudent)) {
+      friends.selectedBillId = friendChoice.dataset.friendStudent; friends.notice = ''; updateFriendPicker(true); queueNavigationSave();
+    }
+    return;
+  }
+  if (event.target.closest('[data-close-friend-picker]')) { closeFriendPicker(); return; }
+  if (event.target.closest('[data-confirm-friend]')) { void confirmFriendSelection(); return; }
+  if (event.target.id === 'friend-student-dialog') {
+    const bounds = event.target.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeFriendPicker();
+    return;
+  }
   if (event.target.closest('[data-setup-profile]')) { openProfileSetup(); return; }
   if (event.target.closest('[data-retry-profile]')) { void restoreAuthenticationState(); return; }
   if (event.target.closest('[data-profile-photo]')) {
@@ -486,6 +613,8 @@ document.addEventListener('click', event => {
     return;
   }
   if (event.target.closest('[data-open-bill]')) {
+    payments.isFriend = false;
+    payments.friendBill = null;
     payments.isDeposit = false;
     payments.isReceiptOpen = false;
     payments.isBillOpen = true;
@@ -495,19 +624,22 @@ document.addEventListener('click', event => {
   }
   if (event.target.closest('[data-bill-back]')) {
     const wasDeposit = payments.isDeposit;
+    const wasFriend = payments.isFriend;
+    payments.isFriend = false;
+    payments.friendBill = null;
     payments.isDeposit = false;
     payments.closeSheet();
     payments.isReceiptOpen = false;
     payments.isBillOpen = false;
     render();
-    document.querySelector(wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
+    document.querySelector(wasFriend ? '#friend-username' : wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
     return;
   }
   if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); queueNavigationSave(); return; }
   if (event.target.closest('[data-review-bill]')) { payments.showSheet(); queueNavigationSave(); return; }
   if (event.target.closest('[data-demo-pay]')) {
     // Visual simulation only: no payment, wallet, or persistence operation.
-    if (payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
+    if (!payments.isFriend && payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
       payments.openDemoReceipt();
       render();
     }
@@ -540,6 +672,8 @@ document.addEventListener('click', event => {
   }
   const tabButton = event.target.closest('[data-tab]');
   if (tabButton) {
+    cancelPendingNavigationRestoration();
+    closeFriendPicker();
     activeTabs[activeRoute] = Number(tabButton.dataset.tab);
     if (activeRoute === 'cards') {
       if (activeTabs.cards === 0) paymentSlideIndex = 0;
@@ -656,11 +790,15 @@ function captureNavigationLocation() {
   if (activeRoute === 'cards') {
     if (payments.isBillOpen) view = payments.isReceiptOpen ? 'receipt' : sheet?.open ? 'sheet' : 'bill';
     else if (activeTabs.cards === 2 && history?.open) view = 'history-details';
+    else if (activeTabs.cards === 0 && paymentSlideIndex === 1 && document.getElementById('friend-student-dialog')?.open) view = 'friend-picker';
   }
   return {
     version: 1, route: activeRoute, tabs: { ...activeTabs },
     paymentSlide: paymentSlideIndex, interval: paymentDemoInterval, view,
     isDeposit: payments.isDeposit,
+    isFriend: Boolean(payments.isFriend),
+    friendBillId: payments.isFriend ? payments.friendBill?.billId || '' : friends.selectedBillId,
+    friendUsernameQuery: friends.query,
     depositAmount: payments.isDeposit ? payments.depositAmount : depositDraftAmount,
     receiptTime: payments.demoReceiptTime || '',
     historyId: view === 'history-details' ? history.dataset.historyId || '' : '',
@@ -692,7 +830,13 @@ function restoreNavigationLocation(accountKey) {
   navigationRestoredFor = accountKey;
   const saved = navigationMemory.load(accountKey);
   payments.closeSheet();
+  closeFriendPicker();
   closeHistoryDetails();
+  friends.clear();
+  friends.query = saved?.friendUsernameQuery || '';
+  friends.selectedBillId = saved?.friendBillId || '';
+  payments.isFriend = false;
+  payments.friendBill = null;
   activeRoute = saved?.route || 'overview';
   for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
   paymentSlideIndex = saved?.paymentSlide || 0;
@@ -700,8 +844,8 @@ function restoreNavigationLocation(accountKey) {
   depositDraftAmount = saved?.depositAmount || '';
   payments.depositAmount = saved?.depositAmount || '';
   payments.isDeposit = Boolean(saved?.isDeposit);
-  payments.isBillOpen = Boolean(saved && ['bill', 'sheet', 'receipt'].includes(saved.view));
-  payments.isReceiptOpen = saved?.view === 'receipt';
+  payments.isBillOpen = Boolean(saved && !saved.isFriend && ['bill', 'sheet', 'receipt'].includes(saved.view));
+  payments.isReceiptOpen = !saved?.isFriend && saved?.view === 'receipt';
   payments.demoReceiptTime = saved?.receiptTime || '';
   routeDirection = 0;
   render();
@@ -712,23 +856,53 @@ function restoreNavigationLocation(accountKey) {
   finishNavigationRestoration();
 }
 
+function cancelPendingNavigationRestoration() {
+  if (!navigationRestoring) return;
+  if (navigationRestoreFrame) window.cancelAnimationFrame(navigationRestoreFrame);
+  navigationRestoreFrame = 0;
+  navigationRestoring = false;
+  pendingNavigationRestore = null;
+  friendInteractionToken += 1;
+  friends.cancel();
+}
 function finishNavigationRestoration() {
   if (!dashboardEntered || !navigationRestoring || navigationRestoreFrame) return;
   const saved = pendingNavigationRestore;
   const accountKey = navigationAccountKey;
-  navigationRestoreFrame = window.requestAnimationFrame(() => {
+  navigationRestoreFrame = window.requestAnimationFrame(async () => {
     navigationRestoreFrame = 0;
-    if (navigationAccountKey !== accountKey) return;
+    if (navigationAccountKey !== accountKey || !navigationRestoring) return;
     syncPaymentCarousel();
     const grid = document.getElementById('dashboard-grid');
     if (grid && saved) grid.scrollTop = saved.scrollTop;
-    if (saved?.view === 'sheet') {
-      document.querySelector('[data-review-bill]')?.focus({ preventScroll: true });
-      payments.showSheet();
-    }
-    if (saved?.view === 'history-details') {
-      Array.from(grid.querySelectorAll('[data-history-entry]')).find(button => button.dataset.historyEntry === saved.historyId)?.focus({ preventScroll: true });
-      showHistoryDetails(saved.historyId);
+    if (saved?.isFriend) {
+      try {
+        const current = await friends.resolve(saved.friendBillId);
+        if (navigationAccountKey !== accountKey || !navigationRestoring) return;
+        if (googleAuthenticated && friendContextActive() && payments.openFriendBill(current)) {
+          friends.students = [current]; friends.selectedBillId = current.billId; friends.status = 'ready';
+          render();
+          if (saved.view === 'sheet') payments.showSheet();
+        }
+      } catch {
+        if (navigationAccountKey !== accountKey || !navigationRestoring) return;
+        friends.students = []; friends.selectedBillId = ''; friends.status = 'empty';
+        friends.notice = 'The saved student bill is no longer available. Please search again.';
+        const dialog = document.getElementById('friend-student-dialog');
+        if (dialog) { updateFriendPicker(); dialog.showModal(); }
+      }
+    } else if (saved?.view === 'friend-picker') {
+      await openFriendPicker(saved.friendUsernameQuery, saved.friendBillId);
+      if (navigationAccountKey !== accountKey || !navigationRestoring) return;
+    } else {
+      if (saved?.view === 'sheet') {
+        document.querySelector('[data-review-bill]')?.focus({ preventScroll: true });
+        payments.showSheet();
+      }
+      if (saved?.view === 'history-details') {
+        Array.from(grid.querySelectorAll('[data-history-entry]')).find(button => button.dataset.historyEntry === saved.historyId)?.focus({ preventScroll: true });
+        showHistoryDetails(saved.historyId);
+      }
     }
     pendingNavigationRestore = null;
     navigationRestoring = false;
@@ -741,7 +915,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') persistNavigationLocation();
 });
 document.addEventListener('close', event => {
-  if (event.target.matches?.('#bill-payment-dialog, #history-details-dialog')) queueNavigationSave();
+  if (event.target.matches?.('#bill-payment-dialog, #history-details-dialog, #friend-student-dialog')) queueNavigationSave();
 }, true);
 
 

@@ -55,7 +55,8 @@ test('Telebirr bill screen renders sample data as an explicitly disconnected vis
 });
 
 test('visual renderer contains no provider, network, payment endpoint, or URL-write behavior', () => {
-  assert.doesNotMatch(paymentUi, /\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b|\/api\/|location\.(?:assign|replace|href)|history\.pushState/i);
+  const paymentUiWithoutValidatedFriendPhotoPath = paymentUi.replace('`/api/friend-bills/${billId}/photo`', '');
+  assert.doesNotMatch(paymentUiWithoutValidatedFriendPhotoPath, /\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b|\/api\/|location\.(?:assign|replace|href)|history\.pushState/i);
   assert.doesNotMatch(paymentUi, /(?:subscribe|createPayment|submitPayment|initiatePayment)\s*\(/i);
 });
 

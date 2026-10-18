@@ -21,7 +21,8 @@ function state(route = 'overview', selectedTab = 0) {
   tabs[route] = selectedTab;
   return {
     version: 1, route, tabs, paymentSlide: 1, interval: '3-months', view: 'main',
-    isDeposit: false, depositAmount: '', receiptTime: '', historyId: '', scrollTop: 1234
+    isDeposit: false, depositAmount: '', receiptTime: '', historyId: '',
+    isFriend: false, friendBillId: '', friendUsernameQuery: '', scrollTop: 1234
   };
 }
 
@@ -166,4 +167,127 @@ test('an unsent Deposit draft survives without pretending a bill or payment is o
   assert.equal(saved.isDeposit, false);
   const stale = StemmaNavigationMemory.sanitize({ ...draft, view: 'sheet', isDeposit: false });
   assert.equal(stale.view, 'main', 'a Deposit bill requires an explicit validated Deposit mode');
+});
+
+test('friend-picker and friend bill/sheet states round-trip only on supported cards slides', () => {
+  const memory = new StemmaNavigationMemory(makeStorage());
+  const picker = { ...state('cards', 0), view: 'friend-picker', friendBillId: 'candidate_42',
+    friendUsernameQuery: 'ab', isDeposit: true, depositAmount: '50.00', receiptTime: '2026/10/18 23:59:59' };
+  const savedPicker = StemmaNavigationMemory.sanitize(picker);
+  assert.equal(savedPicker.view, 'friend-picker');
+  assert.equal(savedPicker.isFriend, false);
+  assert.equal(savedPicker.friendBillId, 'candidate_42');
+  assert.equal(savedPicker.friendUsernameQuery, 'ab');
+  assert.equal(savedPicker.isDeposit, false);
+  assert.equal(savedPicker.depositAmount, '');
+  assert.equal(savedPicker.receiptTime, '');
+  assert.equal(memory.save('google:picker@example.test', picker), true);
+  assert.deepEqual(memory.load('google:picker@example.test'), savedPicker);
+
+  const staleSlideFriend = StemmaNavigationMemory.sanitize({ ...state('cards', 0), paymentSlide: 0,
+    view: 'bill', isFriend: true, friendBillId: 'friend-bill-42' });
+  assert.equal(staleSlideFriend.view, 'bill');
+  assert.equal(staleSlideFriend.paymentSlide, 1);
+
+  for (const [tab, view] of [[0, 'bill'], [1, 'sheet']]) {
+    const friend = { ...state('cards', tab), view, isFriend: true,
+      friendBillId: 'friend-bill-42', friendUsernameQuery: 'alice_1', isDeposit: true,
+      depositAmount: '676.45', receiptTime: '2026/10/18 23:59:59' };
+    const clean = StemmaNavigationMemory.sanitize(friend);
+    assert.equal(clean.view, view);
+    assert.equal(clean.paymentSlide, 1);
+    assert.equal(clean.isFriend, true);
+    assert.equal(clean.friendBillId, 'friend-bill-42');
+    assert.equal(clean.friendUsernameQuery, 'alice_1');
+    assert.equal(clean.isDeposit, false);
+    assert.equal(clean.depositAmount, '');
+    assert.equal(clean.receiptTime, '');
+    assert.equal(memory.save(`google:friend-${tab}@example.test`, friend), true);
+    assert.deepEqual(memory.load(`google:friend-${tab}@example.test`), clean);
+  }
+});
+
+test('friend memory is a strict privacy whitelist and legacy v1 payloads receive safe defaults', () => {
+  const clean = StemmaNavigationMemory.sanitize;
+  const legacy = { ...state('cards', 0) };
+  delete legacy.isFriend;
+  delete legacy.friendBillId;
+  delete legacy.friendUsernameQuery;
+  assert.deepEqual(clean(legacy), state('cards', 0));
+
+  const storage = makeStorage();
+  const memory = new StemmaNavigationMemory(storage);
+  const friendPicker = { ...state('cards', 0), view: 'friend-picker', friendUsernameQuery: 'ab',
+    fullName: 'Private Name', photo: 'private-photo.jpg', amount: '676.45', recipient: { name: 'Nope' } };
+  assert.equal(memory.save('google:privacy@example.test', friendPicker), true);
+  const raw = storage.values.get(`${PREFIX}google%3Aprivacy%40example.test`);
+  assert.equal(raw.includes('Private Name'), false);
+  assert.equal(raw.includes('photo'), false);
+  assert.equal(raw.includes('676.45'), false);
+  assert.equal(raw.includes('recipient'), false);
+  const loaded = memory.load('google:privacy@example.test');
+  assert.deepEqual(Object.keys(loaded).sort(), Object.keys(state('cards', 0)).sort());
+
+  for (const query of ['a', 'ab', 'alice_1.test']) {
+    assert.equal(clean({ ...state('cards', 0), view: 'main', friendUsernameQuery: query }).friendUsernameQuery, query);
+  }
+  for (const query of ['@alice', 'a'.repeat(31), 12, null, { username: 'alice' }]) {
+    assert.equal(clean({ ...state('cards', 0), view: 'main', friendUsernameQuery: query }).friendUsernameQuery, '');
+  }
+});
+
+test('invalid, revoked, stale and corrupt friend contexts fail closed without becoming Deposit or receipt views', () => {
+  const clean = StemmaNavigationMemory.sanitize;
+  const fallback = clean({ ...state('cards', 0), view: 'bill', isFriend: true,
+    friendBillId: 'bad/id', friendUsernameQuery: 'alice', isDeposit: true, depositAmount: '676.45' });
+  assert.equal(fallback.view, 'main');
+  assert.equal(fallback.isFriend, false);
+  assert.equal(fallback.friendBillId, '');
+  assert.equal(fallback.friendUsernameQuery, 'alice');
+  assert.equal(fallback.isDeposit, false);
+  assert.equal(fallback.depositAmount, '');
+
+  const missingIdentity = clean({ ...state('cards', 1), view: 'sheet', isFriend: true,
+    friendBillId: '', isDeposit: true, depositAmount: '676.45' });
+  assert.equal(missingIdentity.view, 'main');
+  assert.equal(missingIdentity.isFriend, false);
+  assert.equal(missingIdentity.depositAmount, '');
+
+  const unconfirmedIdentity = clean({ ...state('cards', 0), view: 'bill', isFriend: false,
+    friendBillId: 'friend-42', depositAmount: '676.45' });
+  assert.equal(unconfirmedIdentity.view, 'main');
+  assert.equal(unconfirmedIdentity.friendBillId, '');
+  assert.equal(unconfirmedIdentity.depositAmount, '');
+
+  const invalidPickerId = clean({ ...state('cards', 0), view: 'friend-picker', friendBillId: '../bad',
+    friendUsernameQuery: 'al' });
+  assert.equal(invalidPickerId.view, 'main');
+  assert.equal(invalidPickerId.friendBillId, '');
+  assert.equal(invalidPickerId.friendUsernameQuery, 'al');
+
+  const receipt = clean({ ...state('cards', 0), view: 'receipt', isFriend: true,
+    friendBillId: 'friend-42', receiptTime: '2026/10/18 23:59:59' });
+  assert.equal(receipt.view, 'main');
+  assert.equal(receipt.receiptTime, '');
+  assert.equal(receipt.isFriend, false);
+  assert.equal(receipt.friendBillId, '');
+
+  const staleTab = clean({ ...state('cards', 2), view: 'sheet', isFriend: true,
+    friendBillId: 'friend-42', friendUsernameQuery: 'alice' });
+  assert.equal(staleTab.view, 'main');
+  assert.equal(staleTab.isFriend, false);
+  assert.equal(staleTab.friendBillId, '');
+  assert.equal(staleTab.friendUsernameQuery, '');
+
+  const staleRoute = clean({ ...state('profile', 0), isFriend: true,
+    friendBillId: 'friend-42', friendUsernameQuery: 'alice' });
+  assert.equal(staleRoute.isFriend, false);
+  assert.equal(staleRoute.friendBillId, '');
+  assert.equal(staleRoute.friendUsernameQuery, '');
+
+  const corruptPicker = clean({ ...state('cards', 0), view: 'friend-picker', isFriend: true,
+    friendUsernameQuery: 'al' });
+  assert.equal(corruptPicker.view, 'main');
+  assert.equal(corruptPicker.isFriend, false);
+  assert.equal(corruptPicker.friendUsernameQuery, 'al');
 });

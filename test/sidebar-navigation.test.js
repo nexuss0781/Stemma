@@ -76,6 +76,8 @@ function makeHarness() {
   };
   const context = vm.createContext({
     document, window, localStorage: storage, payments,
+    friends: { query: '', selectedBillId: '', clear() { this.query = ''; this.selectedBillId = ''; }, cancel() {} },
+    closeFriendPicker() {},
     closeHistoryDetails() { historyDialog.open = false; },
     showHistoryDetails(id) { calls.showHistoryDetails.push(id); historyDialog.open = true; historyDialog.dataset.historyId = id; },
     render() { calls.render += 1; },
@@ -92,6 +94,7 @@ function makeHarness() {
     let paymentDemoInterval = '15-days';
     let routeDirection = 0;
     let dashboardEntered = false;
+    let friendInteractionToken = 0;
   `, context, { filename: 'app-navigation-state.js' });
   vm.runInContext(controllerSource, context, { filename: 'app-navigation-controller.js' });
   return {
