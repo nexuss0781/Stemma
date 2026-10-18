@@ -59,7 +59,7 @@ const baseProfile = {
   firstName: 'Ada', middleName: 'Byron', lastName: 'Lovelace', studentId: 'ST-123', department: 'Mathematics'
 };
 
-function createHarness({ savedStudentProfile = { ...baseProfile }, googleAuthenticated = true, fetchImpl } = {}) {
+function createHarness({ savedStudentProfile = { ...baseProfile }, googleAuthenticated = true, fetchImpl, persistPhoto = async () => {}, initialProfileReadState = 'loading', refreshProfile = () => {} } = {}) {
   const fields = Object.fromEntries(['nickName', 'username', 'bio'].map(name => [name, new Element(name)]));
   fields.nickName.value = 'Ada';
   fields.username.value = 'ada_l';
@@ -90,6 +90,11 @@ function createHarness({ savedStudentProfile = { ...baseProfile }, googleAuthent
     personalizationAccept: accept,
     personalizationBack: back,
     personalizationSaving: false,
+    studentPhotoPendingURL: '',
+    studentPhotoButton: new Element('student-photo-button'),
+    persistSelectedProfilePhoto: persistPhoto,
+    profileReadState: initialProfileReadState,
+    refreshProfileIfVisible: refreshProfile,
     savedStudentProfile,
     googleAuthenticated,
     profileLoadFailed: false,
@@ -193,6 +198,35 @@ test('personalization save preserves base profile data, retains edits on errors,
   await rejected.form.dispatch('submit');
   assert.equal(rejected.dashboardCalls.length, 0);
   assert.deepEqual(Object.values(rejected.fields).map(field => field.value), ['Ada', 'ada_l', 'Mathematician']);
+});
+
+test('photo persistence failure keeps step four and truthfully reports that only profile text was saved', async () => {
+  const saveProfile = { ...baseProfile, nickName: 'Ada', username: 'ada_l', bio: 'Mathematician' };
+  const refreshCalls = [];
+  const h = createHarness({
+    persistPhoto: async () => { throw new Error('IndexedDB write failed'); },
+    refreshProfile: () => refreshCalls.push('refreshed'),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ profile: { ...saveProfile, isPersonalizationComplete: true } }) })
+  });
+  await h.form.dispatch('submit');
+
+  assert.equal(h.requests.length, 1, 'profile text is saved before local photo persistence is attempted');
+  const [, options] = h.requests[0];
+  assert.equal(options.method, 'PUT');
+  const sentProfile = JSON.parse(options.body);
+  assert.deepEqual(Object.keys(sentProfile).sort(), [
+    'bio', 'department', 'firstName', 'lastName', 'middleName', 'nickName', 'studentId', 'username'
+  ], 'the API payload contains exactly the eight text fields and never includes the image');
+  assert.equal(Object.hasOwn(sentProfile, 'photo'), false);
+  assert.equal(Object.hasOwn(sentProfile, 'photoURL'), false);
+  assert.deepEqual(sentProfile, saveProfile);
+  assert.equal(h.dashboardCalls.length, 0, 'photo persistence failure must not advance to the dashboard');
+  assert.equal(h.context.profileReadState, 'loading', 'the page must not claim profile/photo readiness on failed persistence');
+  assert.deepEqual(refreshCalls, [], 'the ready profile view is refreshed only after local persistence succeeds');
+  assert.match(h.feedback.textContent, /profile text was saved, but your photo could not be saved on this device/i);
+  assert.deepEqual(Object.values(h.fields).map(field => field.value), ['Ada', 'ada_l', 'Mathematician'],
+    'the user remains on step four with their edits intact');
+  assert.equal(h.accept.disabled, false, 'the text form remains retryable after photo storage failure');
 });
 
 

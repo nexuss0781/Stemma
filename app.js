@@ -311,6 +311,7 @@ function renderCards() {
   const grid = document.getElementById('dashboard-grid');
   const billView = activeRoute === 'cards' && payments.isBillOpen;
   const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;
+  grid.classList.toggle('profile-content-grid', activeRoute === 'profile');
   grid.classList.toggle('payment-carousel', paymentCarousel);
   grid.classList.toggle('bill-content-grid', billView);
   grid.classList.toggle('deposit-entry-grid', activeRoute === 'cards' && activeTabs.cards === 1 && !billView);
@@ -351,6 +352,13 @@ function renderCards() {
     grid.scrollTop = 0;
     return;
   }
+  if (activeRoute === 'profile') {
+    grid.setAttribute('role', 'region');
+    grid.setAttribute('aria-label', 'Your profile');
+    grid.tabIndex = 0;
+    grid.innerHTML = renderStudentProfile(savedStudentProfile, { state: profileReadState, photoURL: studentPhotoURL, photoNotice: profilePhotoNotice });
+    return;
+  }
   grid.setAttribute('aria-label', 'Content placeholders');
   grid.innerHTML = renderSkeletonCards();
 }
@@ -358,11 +366,13 @@ function renderCards() {
 function render() {
   const main = document.getElementById('app-main');
   const overview = activeRoute === 'overview';
+  const profileView = activeRoute === 'profile';
   const paymentView = activeRoute === 'cards';
   const billView = paymentView && payments.isBillOpen;
   const historyView = paymentView && activeTabs.cards === 2 && !billView;
   const depositView = paymentView && activeTabs.cards === 1 && !billView;
   const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
+  main.classList.toggle('profile-view', profileView);
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
   main.classList.toggle('payment-view', paymentView);
@@ -372,18 +382,18 @@ function render() {
   main.classList.remove('route-from-left', 'route-from-right');
   if (routeDirection) main.classList.add(routeDirection > 0 ? 'route-from-right' : 'route-from-left');
   main.querySelector('.hero-card').hidden = !overview;
-  main.querySelector('.page-title').hidden = billView || !paymentView;
-  main.querySelector('.page-title').textContent = 'Payment';
-  document.getElementById('page-tabs').hidden = billView;
-  main.querySelector('.section-intro').hidden = billView || historyView || depositView;
+  main.querySelector('.page-title').hidden = billView || (!paymentView && !profileView);
+  main.querySelector('.page-title').textContent = profileView ? 'Profile' : 'Payment';
+  document.getElementById('page-tabs').hidden = billView || profileView;
+  main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView;
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
-  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView ? 'page' : 'placeholders'}`);
+  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView ? 'page' : 'placeholders'}`);
   const currentCrumb = document.getElementById('breadcrumb-current');
   currentCrumb.dataset.route = activeRoute;
-  currentCrumb.textContent = paymentView ? 'Payment' : '';
-  currentCrumb.classList.toggle('is-label', paymentView);
-  currentCrumb.setAttribute('aria-hidden', String(!paymentView));
+  currentCrumb.textContent = profileView ? 'Profile' : paymentView ? 'Payment' : '';
+  currentCrumb.classList.toggle('is-label', paymentView || profileView);
+  currentCrumb.setAttribute('aria-hidden', String(!paymentView && !profileView));
   document.querySelector('.crumb-parent').dataset.route = activeRoute;
   renderTabs();
   renderCards();
@@ -445,6 +455,12 @@ document.addEventListener('click', event => {
   document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
     if (!picker.contains(event.target)) picker.open = false;
   });
+  if (event.target.closest('[data-setup-profile]')) { openProfileSetup(); return; }
+  if (event.target.closest('[data-retry-profile]')) { void restoreAuthenticationState(); return; }
+  if (event.target.closest('[data-profile-photo]')) {
+    if (googleAuthenticated && savedStudentProfile) { profilePhotoInput.value = ''; profilePhotoInput.click(); }
+    return;
+  }
   const historyEntry = event.target.closest('[data-history-entry]');
   if (historyEntry) { showHistoryDetails(historyEntry.dataset.historyEntry); return; }
   if (event.target.closest('[data-close-history-details]')) { closeHistoryDetails(); return; }
@@ -578,6 +594,15 @@ let dashboardEntered = false;
 let profileSaving = false;
 let profileLoadFailed = false;
 let savedStudentProfile = null;
+let profileReadState = 'loading';
+let profilePhotoAccountKey = '';
+let profilePhotoNotice = '';
+let deviceProfilePhotoStore = null;
+let preparedProfilePhoto = null;
+let selectedProfilePhotoChanged = false;
+let profilePhotoPreparationError = false;
+let profilePhotoPreparation = Promise.resolve();
+let profilePhotoRevision = 0;
 const studentFieldNames = ['firstName', 'middleName', 'lastName', 'studentId', 'department'];
 
 function updateOnboardingAccess() {
@@ -715,6 +740,7 @@ function resetStudentPhotoPreview() {
   studentPhotoButton.setAttribute('aria-label', 'Choose profile photo');
   studentPhotoLabel.textContent = 'Add photo';
   studentPhotoStatus.textContent = '';
+  if (typeof resetDevicePhotoDraft === 'function') resetDevicePhotoDraft();
 }
 function previewStudentPhoto(file) {
   if (!file) return;
@@ -723,6 +749,8 @@ function previewStudentPhoto(file) {
   const isImage = /^image\//i.test(file.type || '') || (!file.type && /\.(?:jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i.test(file.name || ''));
   if (!isImage || !file.size || file.size > 10 * 1024 * 1024) {
     studentPhotoStatus.textContent = 'Choose an image file up to 10 MB.';
+    if (typeof onStudentPhotoError === 'function') onStudentPhotoError(studentPhotoStatus.textContent);
+    if (typeof updatePersonalizationSubmit === 'function') updatePersonalizationSubmit();
     return;
   }
   const candidateURL = URL.createObjectURL(file);
@@ -740,12 +768,16 @@ function previewStudentPhoto(file) {
     studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
     studentPhotoLabel.textContent = 'Replace photo';
     studentPhotoStatus.textContent = 'Photo preview ready. Not uploaded.';
+    if (typeof onStudentPhotoReady === 'function') onStudentPhotoReady(candidateImage);
+    if (typeof updatePersonalizationSubmit === 'function') updatePersonalizationSubmit();
   };
   candidateImage.onerror = () => {
     if (studentPhotoPendingURL !== candidateURL) return;
     URL.revokeObjectURL(candidateURL);
     studentPhotoPendingURL = '';
     studentPhotoStatus.textContent = 'This image could not be previewed. Choose another image.';
+    if (typeof onStudentPhotoError === 'function') onStudentPhotoError(studentPhotoStatus.textContent);
+    if (typeof updatePersonalizationSubmit === 'function') updatePersonalizationSubmit();
   };
   candidateImage.src = candidateURL;
 }
@@ -756,10 +788,99 @@ studentPhotoButton.addEventListener('click', () => {
 studentPhotoInput.addEventListener('change', () => {
   const file = studentPhotoInput.files?.[0];
   if (file) previewStudentPhoto(file);
+  if (typeof updatePersonalizationSubmit === 'function') updatePersonalizationSubmit();
 });
 personalizationForm.addEventListener('reset', resetStudentPhotoPreview);
 window.addEventListener('pagehide', resetStudentPhotoPreview);
 // End onboarding photo preview.
+
+// Profile photo integration: image bytes stay on this device and are scoped to the signed-in account.
+function refreshProfileIfVisible() {
+  if (activeRoute === 'profile') renderCards();
+}
+function onStudentPhotoError(message) {
+  if (activeRoute === 'profile' && dashboardEntered) { profilePhotoNotice = message; renderCards(); }
+}
+function getDevicePhotoStore() {
+  if (!deviceProfilePhotoStore) deviceProfilePhotoStore = new DeviceProfilePhotoStore();
+  return deviceProfilePhotoStore;
+}
+function resetDevicePhotoDraft() {
+  profilePhotoRevision += 1;
+  selectedProfilePhotoChanged = false;
+  preparedProfilePhoto = null;
+  profilePhotoPreparationError = false;
+  profilePhotoPreparation = Promise.resolve();
+}
+function onStudentPhotoReady(image) {
+  profilePhotoRevision += 1;
+  selectedProfilePhotoChanged = true;
+  preparedProfilePhoto = null;
+  profilePhotoPreparationError = false;
+  const selectedURL = studentPhotoURL;
+  profilePhotoPreparation = DeviceProfilePhotoStore.prepare(image).then(blob => {
+    if (studentPhotoURL === selectedURL) preparedProfilePhoto = blob;
+  }).catch(() => {
+    if (studentPhotoURL === selectedURL) profilePhotoPreparationError = true;
+  });
+  if (activeRoute === 'profile' && dashboardEntered) void saveProfilePhotoFromPage();
+}
+async function persistSelectedProfilePhoto() {
+  if (!selectedProfilePhotoChanged) return;
+  if (!profilePhotoAccountKey) throw new Error('Sign in again before saving a photo on this device.');
+  const revision = profilePhotoRevision;
+  await profilePhotoPreparation;
+  if (revision !== profilePhotoRevision) return;
+  if (profilePhotoPreparationError || !preparedProfilePhoto) throw new Error('The selected photo could not be prepared.');
+  const key = profilePhotoAccountKey;
+  await getDevicePhotoStore().put(key, preparedProfilePhoto);
+  if (key !== profilePhotoAccountKey) throw new Error('The signed-in account changed.');
+  if (revision !== profilePhotoRevision) return;
+  selectedProfilePhotoChanged = false;
+  profilePhotoNotice = '';
+}
+async function restoreDeviceProfilePhoto() {
+  if (!profilePhotoAccountKey) return;
+  const key = profilePhotoAccountKey;
+  try {
+    const blob = await getDevicePhotoStore().get(key);
+    if (!blob || key !== profilePhotoAccountKey || selectedProfilePhotoChanged) return;
+    if (studentPhotoURL) URL.revokeObjectURL(studentPhotoURL);
+    studentPhotoURL = URL.createObjectURL(blob);
+    studentPhotoPreview.src = studentPhotoURL;
+    studentPhotoPreview.hidden = false;
+    studentPhotoPlaceholder.hidden = true;
+    studentPhotoButton.classList.add('has-photo');
+    studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
+    studentPhotoLabel.textContent = 'Replace photo';
+  } catch {
+    profilePhotoNotice = 'Device photo storage is unavailable. Profile text is still saved to your account.';
+  }
+}
+async function saveProfilePhotoFromPage() {
+  profilePhotoNotice = 'Saving photo on this device…';
+  if (activeRoute === 'profile') renderCards();
+  try {
+    await persistSelectedProfilePhoto();
+  } catch {
+    profilePhotoNotice = 'This photo is available for this session only. It could not be saved on this device.';
+  }
+  if (activeRoute === 'profile') renderCards();
+}
+function openProfileSetup() {
+  closeDrawer();
+  dashboardEntered = false;
+  document.getElementById('app-shell').hidden = true;
+  document.getElementById('onboarding-screen').hidden = false;
+  goToOnboardingSlide(googleAuthenticated ? (isStudentProfileComplete(savedStudentProfile) ? 3 : 2) : 1);
+}
+const profilePhotoInput = document.getElementById('profile-photo-file');
+profilePhotoInput.addEventListener('change', () => {
+  const file = profilePhotoInput.files?.[0];
+  if (file && googleAuthenticated && savedStudentProfile) previewStudentPhoto(file);
+});
+// End Profile photo integration.
+
 function isStudentProfileComplete(profile) {
   return studentFieldNames.every(name => typeof profile?.[name] === 'string' && profile[name].trim());
 }
@@ -786,6 +907,7 @@ async function loadStudentProfile() {
   });
   if (!response.ok) throw new Error('Profile could not be loaded.');
   const { profile } = await response.json();
+  profileLoadFailed = false;
   savedStudentProfile = profile || null;
   if (profile) {
     for (const name of studentFieldNames) {
@@ -849,10 +971,11 @@ function updatePersonalizationSubmit() {
   const complete = Boolean(nickName.value.trim()) && nickName.validity.valid &&
     /^[A-Za-z0-9_.]{3,30}$/.test(username.value.trim()) && username.validity.valid && bio.validity.valid;
   personalizationAccept.disabled = !googleAuthenticated || !isStudentProfileComplete(savedStudentProfile) ||
-    !complete || personalizationSaving || profileLoadFailed;
+    !complete || personalizationSaving || profileLoadFailed || Boolean(studentPhotoPendingURL);
   personalizationAccept.classList.toggle('is-ready', !personalizationAccept.disabled);
   personalizationAccept.textContent = personalizationSaving ? 'Saving…' : 'Accept';
   personalizationBack.disabled = personalizationSaving;
+  studentPhotoButton.disabled = personalizationSaving;
 }
 function showPersonalizationFeedback(message) {
   personalizationFeedback.textContent = message;
@@ -893,6 +1016,14 @@ personalizationForm.addEventListener('submit', async event => {
       throw new Error('Profile save was not confirmed.');
     }
     savedStudentProfile = result.profile;
+    try {
+      await persistSelectedProfilePhoto();
+    } catch {
+      showPersonalizationFeedback('Your profile text was saved, but your photo could not be saved on this device. Please try Accept again.');
+      return;
+    }
+    profileReadState = 'ready';
+    refreshProfileIfVisible();
     enterDashboard();
   } catch {
     showPersonalizationFeedback('Your profile could not be confirmed as saved. Please try Accept again.');
@@ -948,55 +1079,69 @@ googleContinue.addEventListener('click', async () => {
 
 async function restoreAuthenticationState() {
   const authReturn = new URLSearchParams(window.location.search).get('auth');
-  if (authReturn) goToOnboardingSlide(1);
+  if (authReturn && !dashboardEntered) goToOnboardingSlide(1);
+  profileReadState = 'loading';
+  refreshProfileIfVisible();
   try {
     const response = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    if (response.ok) {
-      const status = await response.json();
-      if (dashboardEntered) return;
-      googleAuthenticated = Boolean(status.authenticated && status.authProvider === 'google' && status.googleProfile);
-      updateStudentSubmit();
-      if (status.authenticated && status.authProvider === 'google' && !status.googleProfile) {
-        renderGoogleProfile(null);
+    if (!response.ok) throw new Error('Sign-in could not be confirmed.');
+    const status = await response.json();
+    googleAuthenticated = Boolean(status.authenticated && status.authProvider === 'google' && status.googleProfile);
+    const email = googleAuthenticated && typeof status.googleProfile.email === 'string' ? status.googleProfile.email.trim().toLowerCase() : '';
+    const nextPhotoKey = email ? `google:${email}` : '';
+    if (nextPhotoKey !== profilePhotoAccountKey) {
+      resetStudentPhotoPreview();
+      savedStudentProfile = null;
+      studentForm.reset();
+      personalizationForm.reset();
+      profilePhotoAccountKey = nextPhotoKey;
+      profilePhotoNotice = '';
+    }
+    updateStudentSubmit();
+    updatePersonalizationSubmit();
+    if (!status.authenticated) {
+      profileReadState = 'guest';
+      renderGoogleProfile(null);
+      if (!dashboardEntered && authReturn) faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
+      return;
+    }
+    if (!googleAuthenticated) {
+      profileReadState = status.authProvider === 'google' ? 'error' : 'guest';
+      renderGoogleProfile(null);
+      if (!dashboardEntered) {
         goToOnboardingSlide(1);
-        if (authReturn === 'failed' || authReturn === 'unavailable' || !status.googleConfigured) {
-          faydaFeedback.textContent = 'Google sign-in could not be completed. Please try again or use Skip as a guest.';
-        } else {
-          faydaFeedback.textContent = 'Please continue with Google again to grant profile access and load your name, email, and photo.';
-        }
-      } else if (status.authenticated) {
-        renderGoogleProfile(status.googleProfile);
-        if (status.authProvider === 'google') {
-          try {
-            const profile = await loadStudentProfile();
-            if (!isStudentProfileComplete(profile)) goToOnboardingSlide(2);
-            else if (!isPersonalizationComplete(profile)) goToOnboardingSlide(3);
-            else enterDashboard();
-          } catch {
-            profileLoadFailed = true;
-            updateStudentSubmit();
-            updatePersonalizationSubmit();
-            goToOnboardingSlide(2);
-            showStudentFeedback('Your saved profile could not be loaded. Please refresh before making changes.');
-          }
-        } else {
-          goToOnboardingSlide(1);
-          faydaFeedback.textContent = 'Continue with Google to set up your student profile, or use Skip as a guest.';
-        }
-      } else if (authReturn === 'failed') {
-        faydaFeedback.textContent = 'Sign-in could not be completed. Please try again or use Skip as a guest.';
-      } else if (authReturn === 'unavailable') {
-        faydaFeedback.textContent = 'Sign-in is not configured or is temporarily unavailable. You can still use Skip as a guest.';
-      } else if (authReturn === 'success') {
-        faydaFeedback.textContent = 'Your sign-in could not be confirmed. Please start again or use Skip as a guest.';
+        faydaFeedback.textContent = status.authProvider === 'google'
+          ? 'Please continue with Google again to grant profile access and load your name, email, and photo.'
+          : 'Continue with Google to set up your student profile, or use Skip as a guest.';
       }
-    } else if (authReturn) {
-      faydaFeedback.textContent = 'Sign-in could not be confirmed. Please try again or use Skip as a guest.';
+      return;
+    }
+    renderGoogleProfile(status.googleProfile);
+    try {
+      const profile = await loadStudentProfile();
+      await restoreDeviceProfilePhoto();
+      profileReadState = 'ready';
+      if (!dashboardEntered) {
+        if (!isStudentProfileComplete(profile)) goToOnboardingSlide(2);
+        else if (!isPersonalizationComplete(profile)) goToOnboardingSlide(3);
+        else enterDashboard();
+      }
+    } catch {
+      profileReadState = 'error';
+      profileLoadFailed = true;
+      updateStudentSubmit();
+      updatePersonalizationSubmit();
+      if (!dashboardEntered) {
+        goToOnboardingSlide(2);
+        showStudentFeedback('Your saved profile could not be loaded. Please refresh before making changes.');
+      }
     }
   } catch {
+    profileReadState = 'error';
     if (authReturn) faydaFeedback.textContent = 'Sign-in could not be confirmed. Please try again or use Skip as a guest.';
   } finally {
     if (authReturn) window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+    refreshProfileIfVisible();
   }
 }
 
