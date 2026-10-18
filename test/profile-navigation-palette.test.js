@@ -17,11 +17,17 @@ function luminance(hex) {
   return rgb.reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
 }
 
-test('Profile cards and navigation share darker gold with solid burgundy boundaries', () => {
-  assert.match(css, /\.app-shell:has\(\.app-main.profile-view\) \{ --profile-surface-gold: #c6a34f; \}/);
+function paletteHex(token) {
+  const match = css.match(new RegExp(`--${token}: #([a-f\\d]{6});`, 'i'));
+  assert.ok(match, `Missing existing palette token: ${token}`);
+  return match[1];
+}
+
+test('Profile cards and navigation share existing gold with burgundy boundaries and no new token', () => {
+  assert.doesNotMatch(css, /--profile-surface-gold|#c6a34f/i);
   for (const rule of [declarations('.bottom-nav'), declarations('.student-profile-section', ''), declarations('.student-profile-empty-card', '')]) {
-    assert.match(rule, /background: var\(--profile-surface-gold\);/);
-    assert.doesNotMatch(rule, /background: (?:rgba?\(|#|var\(--brand-gold(?:-light)?\)|var\(--brand-burgundy\))/);
+    assert.match(rule, /background: var\(--brand-gold\);/);
+    assert.doesNotMatch(rule, /background: (?:rgba?\(|#|var\(--brand-gold-light\)|var\(--brand-burgundy\))/);
   }
   assert.match(declarations('.bottom-nav'), /border-color: var\(--brand-burgundy\)/);
   for (const selector of ['.student-profile-section', '.student-profile-empty-card']) {
@@ -34,10 +40,13 @@ test('Profile cards and navigation share darker gold with solid burgundy boundar
   assert.match(declarations('.nav-item:focus-visible'), /outline: 2px solid var\(--brand-burgundy\)/);
 });
 
-test('darker Profile surfaces remain distinct from the page and keep normal text readable', () => {
-  const surface = luminance('c6a34f');
-  assert.ok(luminance('F2E49A') - surface > 0.25, 'surface must visibly darken the established page gold');
-  for (const text of ['49332e', '681b1d']) {
+test('existing burgundy boundaries distinguish gold surfaces from the page and retain readable text', () => {
+  const surface = luminance(paletteHex('brand-gold'));
+  const page = luminance(paletteHex('brand-cream'));
+  const boundary = luminance(paletteHex('brand-burgundy'));
+  assert.ok((page + 0.05) / (boundary + 0.05) >= 3, 'burgundy border contrasts against the page');
+  assert.ok((surface + 0.05) / (boundary + 0.05) >= 3, 'burgundy border contrasts against the card');
+  for (const text of ['49332e', paletteHex('brand-burgundy')]) {
     assert.ok((surface + 0.05) / (luminance(text) + 0.05) >= 4.5, 'Profile text meets WCAG AA contrast');
   }
   assert.match(declarations('.student-profile-detail dt', ''), /color: #49332e/);
@@ -50,6 +59,6 @@ test('the page stays the established gold and other routes retain their navigati
   assert.match(css, /html, body \{ background: var\(--brand-cream\); \}/);
   assert.match(css, /\.bottom-nav \{ border-color: rgba\(104,27,29,\.17\); background: rgba\(251,243,214,\.92\);/);
   const profileRules = css.split('\n').filter(line => line.startsWith(scope));
-  assert.equal(profileRules.length, 7);
+  assert.equal(profileRules.length, 6);
   assert.ok(profileRules.every(line => !/student-profile|html|body/.test(line)));
 });
