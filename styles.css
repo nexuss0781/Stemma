@@ -296,17 +296,26 @@ body { color: var(--brand-burgundy); }
 .drawer-foot { border-top-color: rgba(241,223,155,.22); }
 .drawer-avatar-skeleton { border-color: rgba(241,223,155,.55); background: rgba(241,223,155,.3); }
 .drawer-foot-line { background: rgba(241,223,155,.66); }
-/* Liquid glass is confined to the top college/profile image rectangle. */
+/* Near-black liquid glass stays inside the college/profile rectangle. */
 .drawer-college-card {
-  border-color: rgba(255,255,255,.82);
-  background: radial-gradient(ellipse at 18% 0%, rgba(255,255,255,.85), transparent 68%), linear-gradient(145deg, rgba(255,251,239,.96), rgba(238,220,180,.94));
-  box-shadow: 0 8px 20px rgba(35,5,8,.14), inset 0 1px 0 rgba(255,255,255,.94);
+  border-color: rgba(255,255,255,.42);
+  background: radial-gradient(ellipse at 0% 12%, rgba(255,255,255,.17), transparent 62%), linear-gradient(115deg, rgba(40,42,44,.96), rgba(8,9,10,.98) 76%);
+  box-shadow: 0 8px 20px rgba(0,0,0,.24), inset 0 0 0 2px rgba(0,0,0,.65), inset 0 3px 0 rgba(255,255,255,.12);
   -webkit-backdrop-filter: blur(26px) saturate(135%);
   backdrop-filter: blur(26px) saturate(135%);
 }
-.drawer-student-identity { background: linear-gradient(180deg, rgba(250,241,221,0), rgba(250,241,221,.8) 30%, rgba(250,241,221,.96)); }
-.drawer-student-name { color: var(--brand-burgundy); text-shadow: 0 1px 2px rgba(255,255,255,.85); }
-.drawer-student-username { color: #704333; text-shadow: 0 1px 1px rgba(255,255,255,.7); }
+.drawer-college-card::before { content: ""; position: absolute; z-index: 2; inset: 3px; border: 1px solid rgba(255,255,255,.18); border-radius: 15px; pointer-events: none; background: radial-gradient(ellipse 30px 3px at 82% 0%, rgba(255,255,255,.9), transparent), radial-gradient(ellipse 3px 24px at 0% 35%, rgba(255,255,255,.5), transparent), radial-gradient(ellipse 25px 3px at 17% 100%, rgba(255,255,255,.6), transparent); }
+.drawer-college-crest { position: relative; z-index: 1; filter: drop-shadow(0 0 1px rgba(241,223,155,.95)) drop-shadow(0 0 5px rgba(241,223,155,.14)); }
+.drawer-student-identity { background: linear-gradient(180deg, rgba(8,9,10,0), rgba(8,9,10,.32) 35%, rgba(8,9,10,.7)); }
+.drawer-student-name { color: var(--brand-gold-light); text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.drawer-student-username { color: var(--brand-gold); text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+/* Keep a 44px touch target around a visually slim, long active pill. */
+.drawer-link { position: relative; isolation: isolate; border-radius: 999px; font-size: 13px; }
+.drawer-link > * { position: relative; z-index: 1; }
+.drawer-link .icon { width: 16px; height: 16px; }
+.drawer-link[aria-current="page"] { background: transparent; border-color: transparent; color: var(--brand-burgundy); }
+.drawer-link[aria-current="page"]::before { content: ""; position: absolute; z-index: 0; inset: 5px 0; border-radius: 999px; background: var(--brand-gold); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 8px rgba(0,0,0,.1); pointer-events: none; }
+.drawer-link:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

@@ -303,3 +303,11 @@ test('drawer puts Overview first without changing the five-item bottom-nav order
   assert.match(theme, /\.drawer-college-card\s*\{[^}]*backdrop-filter:\s*blur\(26px\)/);
   assert.doesNotMatch(theme, /\.navigation-drawer\s*\{[^}]*backdrop-filter/);
 });
+
+test('college/profile card uses near-black glass and the selected drawer link uses the gold pill', () => {
+  assert.match(cssSource, /\/\*\s*Near-black liquid glass stays inside the college\/profile rectangle\.\s*\*\//);
+  assert.match(cssSource, /\.drawer-college-card\s*\{[^}]*background:\s*[^;}]*rgba\(8,9,10,\.98\)/s);
+  assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*color:\s*var\(--brand-gold-light\)/s);
+  assert.match(cssSource, /\.drawer-link\[aria-current="page"\]::before\s*\{[^}]*background:\s*var\(--brand-gold\)/s);
+  assert.match(cssSource, /\.drawer-link\[aria-current="page"\]\s*\{[^}]*color:\s*var\(--brand-burgundy\)/s);
+});
