@@ -304,9 +304,11 @@ test('drawer puts Overview first without changing the five-item bottom-nav order
   assert.doesNotMatch(theme, /\.navigation-drawer\s*\{[^}]*backdrop-filter/);
 });
 
-test('college/profile card uses near-black glass and the selected drawer link uses the gold pill', () => {
-  assert.match(cssSource, /\/\*\s*Near-black liquid glass stays inside the college\/profile rectangle\.\s*\*\//);
-  assert.match(cssSource, /\.drawer-college-card\s*\{[^}]*background:\s*[^;}]*rgba\(8,9,10,\.98\)/s);
+test('college/profile card uses warm-gold glass and the selected drawer link uses the gold pill', () => {
+  assert.match(cssSource, /\/\*\s*Deep gold glass and a soft crest reflection stay inside this rectangle\.\s*\*\//);
+  assert.match(cssSource, /\.drawer-college-card\s*\{[^}]*background:[^}]*color-mix\(in srgb,\s*var\(--brand-gold\)\s+30%,\s*black\)/s);
+  assert.match(cssSource, /\.drawer-college-card::after\s*\{[^}]*background:[^;}]*assets\/tafari-makonnen-college-logo\.png[^}]*filter:\s*blur\(10px\)/s);
+  assert.match(cssSource, /\.drawer-college-crest\s*\{[^}]*object-fit:\s*contain/s);
   assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*color:\s*var\(--brand-gold-light\)/s);
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]::before\s*\{[^}]*background:\s*var\(--brand-gold\)/s);
   assert.match(cssSource, /\.drawer-link\[aria-current="page"\]\s*\{[^}]*color:\s*var\(--brand-burgundy\)/s);

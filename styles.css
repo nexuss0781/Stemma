@@ -296,17 +296,20 @@ body { color: var(--brand-burgundy); }
 .drawer-foot { border-top-color: rgba(241,223,155,.22); }
 .drawer-avatar-skeleton { border-color: rgba(241,223,155,.55); background: rgba(241,223,155,.3); }
 .drawer-foot-line { background: rgba(241,223,155,.66); }
-/* Near-black liquid glass stays inside the college/profile rectangle. */
+/* Deep gold glass and a soft crest reflection stay inside this rectangle. */
 .drawer-college-card {
-  border-color: rgba(255,255,255,.42);
-  background: radial-gradient(ellipse at 0% 12%, rgba(255,255,255,.17), transparent 62%), linear-gradient(115deg, rgba(40,42,44,.96), rgba(8,9,10,.98) 76%);
+  height: clamp(190px, 27vh, 218px); min-height: 190px; padding: 8px 0 0;
+  border-color: rgba(241,223,155,.46);
+  background: linear-gradient(115deg, rgba(0,0,0,.62), rgba(0,0,0,.7)), var(--brand-gold);
+  background: radial-gradient(ellipse at 0% 12%, rgba(241,223,155,.15), transparent 62%), linear-gradient(115deg, color-mix(in srgb, var(--brand-gold) 38%, black), color-mix(in srgb, var(--brand-gold) 30%, black) 76%);
   box-shadow: 0 8px 20px rgba(0,0,0,.24), inset 0 0 0 2px rgba(0,0,0,.65), inset 0 3px 0 rgba(255,255,255,.12);
   -webkit-backdrop-filter: blur(26px) saturate(135%);
   backdrop-filter: blur(26px) saturate(135%);
 }
 .drawer-college-card::before { content: ""; position: absolute; z-index: 2; inset: 3px; border: 1px solid rgba(255,255,255,.18); border-radius: 15px; pointer-events: none; background: radial-gradient(ellipse 30px 3px at 82% 0%, rgba(255,255,255,.9), transparent), radial-gradient(ellipse 3px 24px at 0% 35%, rgba(255,255,255,.5), transparent), radial-gradient(ellipse 25px 3px at 17% 100%, rgba(255,255,255,.6), transparent); }
-.drawer-college-crest { position: relative; z-index: 1; filter: drop-shadow(0 0 1px rgba(241,223,155,.95)) drop-shadow(0 0 5px rgba(241,223,155,.14)); }
-.drawer-student-identity { background: linear-gradient(180deg, rgba(8,9,10,0), rgba(8,9,10,.32) 35%, rgba(8,9,10,.7)); }
+.drawer-college-card::after { content: ""; position: absolute; z-index: 0; inset: 18px 12px 0; background: url("assets/tafari-makonnen-college-logo.png") center / contain no-repeat; transform: translateY(34px) scaleY(-1) scale(1.1); opacity: .18; filter: blur(10px); pointer-events: none; }
+.drawer-college-crest { position: relative; z-index: 1; width: calc(100% - 24px); margin: 0 auto; height: 140px; min-height: 96px; max-height: none; object-fit: contain; flex: 1 1 auto; filter: drop-shadow(0 0 1px rgba(241,223,155,.95)) drop-shadow(0 0 5px rgba(241,223,155,.14)); }
+.drawer-student-identity { background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.35) 35%, rgba(0,0,0,.6)); }
 .drawer-student-name { color: var(--brand-gold-light); text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .drawer-student-username { color: var(--brand-gold); text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 /* Keep a 44px touch target around a visually slim, long active pill. */
