@@ -35,14 +35,14 @@ function makeGrid() {
   };
 }
 
-function createRenderHarness({ profile, state, photoURL, photoNotice }) {
+function createRenderHarness({ profile, state, photoURL, photoNotice, email = '' }) {
   const grid = makeGrid();
   const context = vm.createContext({
     document: { getElementById: id => id === 'dashboard-grid' ? grid : null },
     activeRoute: 'profile', activeTabs: { profile: 0, cards: 0 },
     payments: { isBillOpen: false, isReceiptOpen: false },
     paymentSlides: ['For You', 'For friend'],
-    savedStudentProfile: profile, profileReadState: state,
+    savedStudentProfile: profile, profileReadState: state, signedInEmail: email,
     studentPhotoURL: photoURL, profilePhotoNotice: photoNotice,
     renderForYou: () => '', renderSkeletonCards: () => '',
     renderDepositForm: () => '', renderPaymentHistory: () => ''
@@ -69,21 +69,41 @@ test('Profile remains the fifth and far-right existing route, without creating a
     'bottom navigation is rendered from the same existing sections array');
 });
 
-test('renderCards explicitly renders saved profile data with current read and photo state', () => {
+test('renderCards explicitly renders saved profile data, signed-in email, and current read/photo state', () => {
   const profile = { firstName: 'Ada', middleName: 'Byron', lastName: 'Lovelace', studentId: 'ST-123', department: 'Math', nickName: 'Ada', username: 'ada_l', bio: 'Math' };
-  const h = createRenderHarness({ profile, state: 'ready', photoURL: 'blob:profile-preview', photoNotice: 'Stored on this device.' });
+  const h = createRenderHarness({ profile, state: 'ready', photoURL: 'blob:profile-preview', photoNotice: 'Stored on this device.', email: 'ada@example.com' });
   h.context.renderCards();
   assert.equal(h.grid.attributes.get('aria-label'), 'Your profile');
   assert.equal(h.grid.tabIndex, 0);
   assert.match(h.grid.innerHTML, /id='student-profile-display-name'[^>]*>Ada<\/h1>/);
   assert.match(h.grid.innerHTML, /src='blob:profile-preview'/);
   assert.match(h.grid.innerHTML, /Stored on this device\./);
+  assert.match(h.grid.innerHTML, /<dt>Signed-in email<\/dt><dd>ada@example\.com<\/dd>/);
   assert.match(h.grid.innerHTML, /Identity|Student details|Account &amp; about/);
 
   const loading = createRenderHarness({ profile, state: 'loading', photoURL: '', photoNotice: '' });
   loading.context.renderCards();
   assert.match(loading.grid.innerHTML, /Loading your profile/);
   assert.doesNotMatch(loading.grid.innerHTML, /Ada|student-profile-section/);
+  assert.doesNotMatch(loading.grid.innerHTML, /Signed-in email|ada@example\.com/);
+});
+
+test('signed-in profile email is sourced from the verified auth session and passed into the renderer', () => {
+  const authStart = app.indexOf('async function restoreAuthenticationState() {');
+  const emailAssignmentStart = app.indexOf('signedInEmail = googleAuthenticated', authStart);
+  const photoKeyStart = app.indexOf('const email = signedInEmail.toLowerCase();', emailAssignmentStart);
+  assert.ok(authStart >= 0 && emailAssignmentStart > authStart && photoKeyStart > emailAssignmentStart,
+    'restoreAuthenticationState reads and validates email before deriving the existing photo key');
+  const authEmailSource = app.slice(authStart, photoKeyStart);
+  assert.match(authEmailSource, /fetch\('\/auth\/session'/);
+  assert.match(authEmailSource, /const status = await response\.json\(\);/);
+  assert.match(authEmailSource, /signedInEmail\s*=\s*googleAuthenticated\s*&&\s*typeof status\.googleProfile\.email === 'string'\s*\?\s*status\.googleProfile\.email\.trim\(\)\s*:\s*''/);
+  assert.doesNotMatch(authEmailSource, /savedStudentProfile\.email|studentProfile\.email|indexedDB|DeviceProfilePhotoStore/,
+    'profile fields and IndexedDB are not email identity sources');
+
+  const renderCardsSource = appBlock('function renderCards() {', 'function render() {');
+  assert.match(renderCardsSource, /renderStudentProfile\(savedStudentProfile,\s*\{[^}]*email:\s*signedInEmail/,
+    'renderCards passes the auth-session email as renderer options, not as profile data');
 });
 
 test('device photo account key is derived only from verified Google session email', () => {
@@ -94,7 +114,8 @@ test('device photo account key is derived only from verified Google session emai
   const accountKeyCode = app.slice(start, end + endMarker.length);
   assert.match(accountKeyCode, /status\.authProvider === 'google'/);
   assert.match(accountKeyCode, /status\.googleProfile\.email/);
-  assert.match(accountKeyCode, /trim\(\)\.toLowerCase\(\)/);
+  assert.match(accountKeyCode, /status\.googleProfile\.email\.trim\(\)/);
+  assert.match(accountKeyCode, /signedInEmail\.toLowerCase\(\)/);
   assert.match(accountKeyCode, /`google:\$\{email\}`/);
   assert.doesNotMatch(accountKeyCode, /studentId|username|nickName|localStorage|sessionStorage|window\./,
     'form data and ambient browser globals are not account-key fallbacks');

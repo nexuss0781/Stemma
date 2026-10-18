@@ -90,6 +90,7 @@ function renderStudentProfile(profile, options = {}) {
   ])}${section('Account &amp; about', [
     ['Nick Name', values.nickName],
     ['Username', values.username],
+    ['Signed-in email', typeof settings.email === 'string' && settings.email.trim() ? settings.email.trim() : 'Not available'],
     ['Bio', values.bio, true]
   ])}</article>`;
 }

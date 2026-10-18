@@ -356,7 +356,7 @@ function renderCards() {
     grid.setAttribute('role', 'region');
     grid.setAttribute('aria-label', 'Your profile');
     grid.tabIndex = 0;
-    grid.innerHTML = renderStudentProfile(savedStudentProfile, { state: profileReadState, photoURL: studentPhotoURL, photoNotice: profilePhotoNotice });
+    grid.innerHTML = renderStudentProfile(savedStudentProfile, { state: profileReadState, email: signedInEmail, photoURL: studentPhotoURL, photoNotice: profilePhotoNotice });
     return;
   }
   grid.setAttribute('aria-label', 'Content placeholders');
@@ -595,6 +595,7 @@ let profileSaving = false;
 let profileLoadFailed = false;
 let savedStudentProfile = null;
 let profileReadState = 'loading';
+let signedInEmail = '';
 let profilePhotoAccountKey = '';
 let profilePhotoNotice = '';
 let deviceProfilePhotoStore = null;
@@ -1087,7 +1088,8 @@ async function restoreAuthenticationState() {
     if (!response.ok) throw new Error('Sign-in could not be confirmed.');
     const status = await response.json();
     googleAuthenticated = Boolean(status.authenticated && status.authProvider === 'google' && status.googleProfile);
-    const email = googleAuthenticated && typeof status.googleProfile.email === 'string' ? status.googleProfile.email.trim().toLowerCase() : '';
+    signedInEmail = googleAuthenticated && typeof status.googleProfile.email === 'string' ? status.googleProfile.email.trim() : '';
+    const email = signedInEmail.toLowerCase();
     const nextPhotoKey = email ? `google:${email}` : '';
     if (nextPhotoKey !== profilePhotoAccountKey) {
       resetStudentPhotoPreview();
