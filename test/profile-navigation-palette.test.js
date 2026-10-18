@@ -23,10 +23,11 @@ function paletteHex(token) {
   return match[1];
 }
 
-test('Profile cards and navigation share existing gold with burgundy boundaries and no new token', () => {
+test('Profile cards and navigation share existing shaded soft light with burgundy boundaries and no new token', () => {
   assert.doesNotMatch(css, /--profile-surface-gold|#c6a34f/i);
   for (const rule of [declarations('.bottom-nav'), declarations('.student-profile-section', ''), declarations('.student-profile-empty-card', '')]) {
-    assert.match(rule, /background: var\(--brand-gold\);/);
+    assert.match(rule, /background: color-mix\(in srgb, var\(--paper-soft\) 94%, var\(--brand-burgundy\)\);/);
+    assert.doesNotMatch(rule, /white|#fff|255\s*,\s*255\s*,\s*255/i);
     assert.doesNotMatch(rule, /background: (?:rgba?\(|#|var\(--brand-gold-light\)|var\(--brand-burgundy\))/);
   }
   assert.match(declarations('.bottom-nav'), /border-color: var\(--brand-burgundy\)/);
@@ -40,8 +41,12 @@ test('Profile cards and navigation share existing gold with burgundy boundaries 
   assert.match(declarations('.nav-item:focus-visible'), /outline: 2px solid var\(--brand-burgundy\)/);
 });
 
-test('existing burgundy boundaries distinguish gold surfaces from the page and retain readable text', () => {
-  const surface = luminance(paletteHex('brand-gold'));
+test('existing burgundy boundaries distinguish soft-light surfaces from the page and retain readable text', () => {
+  const soft = paletteHex('paper-soft').match(/../g).map(value => parseInt(value, 16));
+  const burgundy = paletteHex('brand-burgundy').match(/../g).map(value => parseInt(value, 16));
+  const mixed = soft.map((value, index) => Math.round(value * .94 + burgundy[index] * .06).toString(16).padStart(2, '0')).join('');
+  const surface = luminance(mixed);
+  assert.ok(surface < luminance(paletteHex('paper-soft')), 'surface is slightly darker than existing soft light');
   const page = luminance(paletteHex('brand-cream'));
   const boundary = luminance(paletteHex('brand-burgundy'));
   assert.ok((page + 0.05) / (boundary + 0.05) >= 3, 'burgundy border contrasts against the page');
