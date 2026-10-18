@@ -143,7 +143,7 @@ test('payment history is 25 static, valid, descending transactions with monthly 
   const entries = historyEntries();
   assert.equal(entries.length, 25);
   for (const entry of entries) {
-    assert.deepEqual(Object.keys(entry).sort(), ['amount', 'date', 'label', 'title']);
+    assert.deepEqual(Object.keys(entry).sort(), ['amount', 'date', 'id', 'label', 'qrId', 'qrSrc', 'title']);
     assert.ok(['string'].every(type => [entry.title, entry.date, entry.label, entry.amount].every(value => typeof value === type)));
     assert.match(entry.date, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(new Date(`${entry.date}T00:00:00Z`).toISOString().slice(0, 10), entry.date, `valid date ${entry.date}`);

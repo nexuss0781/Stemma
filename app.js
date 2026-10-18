@@ -176,20 +176,53 @@ function paymentHistoryEntries() {
     ['Lab fee', '2026-01-12', '300'],
     ['Monthly fee', '2025-12-25', '1,250'],
     ['Monthly fee', '2025-11-25', '1,250']
-  ].map(([title, date, amount]) => ({ title, date, amount,
+  ].map(([title, date, amount], index) => ({ title, date, amount,
+    id: `STM-${date.replaceAll('-', '')}-${String(index + 1).padStart(3, '0')}`,
+    qrId: `STEMMA-RECEIPT-${date.replaceAll('-', '')}-${String(index + 1).padStart(3, '0')}`,
+    qrSrc: `/assets/history/receipt-${String(index + 1).padStart(3, '0')}.svg`,
     label: new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
   }));
 }
 
-function renderHistoryRows(entries) {
-  return entries.map(item => `<li><span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>ETB</span></span></li>`).join('');
+function renderHistoryRows(entries, { interactive = false } = {}) {
+  return entries.map(item => {
+    const details = `<span class="fee-history-detail"><strong>${item.title}</strong><time datetime="${item.date}">${item.label}</time></span><span class="fee-history-total"><strong>${item.amount}</strong><span>ETB</span></span>`;
+    return `<li>${interactive ? `<button class="history-transaction" type="button" data-history-entry="${item.id}" aria-haspopup="dialog" aria-controls="history-details-dialog" aria-label="View transaction: ${item.title}, ${item.label}, ${item.amount} ETB">${details}</button>` : details}</li>`;
+  }).join('');
+}
+
+function renderHistoryDetails(entry) {
+  return `<button class="history-details-close" type="button" data-close-history-details aria-label="Close transaction details" autofocus>${icon('close')}</button>
+    <h2 id="history-details-title">Transaction details</h2>
+    <figure class="history-details-qr"><img src="${entry.qrSrc}" width="200" height="200" alt="Transaction receipt QR code" data-qr-payload="${entry.qrId}" /><figcaption>Receipt QR</figcaption></figure>
+    <dl class="history-details-fields">
+      <div><dt>Transaction number</dt><dd>${entry.id}</dd></div>
+      <div><dt>Reason</dt><dd>${entry.title}</dd></div>
+      <div><dt>Amount</dt><dd class="history-details-amount">${entry.amount} <small>ETB</small></dd></div>
+      <div><dt>Date</dt><dd>${entry.label}</dd></div>
+    </dl>`;
+}
+
+function showHistoryDetails(id) {
+  if (activeRoute !== 'cards' || activeTabs.cards !== 2) return;
+  const entry = paymentHistoryEntries().find(item => item.id === id);
+  const dialog = document.getElementById('history-details-dialog');
+  if (!entry || !dialog || dialog.open) return;
+  dialog.innerHTML = renderHistoryDetails(entry);
+  dialog.showModal();
+}
+
+function closeHistoryDetails() {
+  const dialog = document.getElementById('history-details-dialog');
+  if (dialog?.open) dialog.close();
 }
 
 function renderPaymentHistory() {
   return `<article class="fee-history-card payment-history-panel" aria-labelledby="payment-history-title">
     <div class="fee-history-heading"><h2 id="payment-history-title">History</h2></div>
     <p class="payment-history-subtitle">Monthly payments and other fees · ETB</p>
-    <ul class="fee-history-list" aria-label="Payment transactions">${renderHistoryRows(paymentHistoryEntries())}</ul>
+    <ul class="fee-history-list" aria-label="Payment transactions">${renderHistoryRows(paymentHistoryEntries(), { interactive: true })}</ul>
+    <dialog class="history-details-dialog" id="history-details-dialog" aria-labelledby="history-details-title"></dialog>
   </article>`;
 }
 
@@ -376,6 +409,14 @@ document.addEventListener('click', event => {
   document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
     if (!picker.contains(event.target)) picker.open = false;
   });
+  const historyEntry = event.target.closest('[data-history-entry]');
+  if (historyEntry) { showHistoryDetails(historyEntry.dataset.historyEntry); return; }
+  if (event.target.closest('[data-close-history-details]')) { closeHistoryDetails(); return; }
+  if (event.target.id === 'history-details-dialog') {
+    const bounds = event.target.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeHistoryDetails();
+    return;
+  }
   const balanceToggle = event.target.closest('[data-balance-toggle]');
   if (balanceToggle) {
     setPreviewBalanceVisible(balanceToggle.getAttribute('aria-pressed') !== 'true');

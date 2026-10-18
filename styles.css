@@ -1106,3 +1106,24 @@ body { color: var(--brand-burgundy); }
 .payment-history-panel .fee-history-total > span { margin-top: 5px; font-size: 10px; }
 .payment-history-grid:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -3px; }
 .app-main.payment-history-view { grid-template-rows: 36px 42px minmax(0,1fr); }
+
+/* Native dialog provides focus containment, Escape dismissal, and focus restoration. */
+.payment-history-panel .fee-history-list li:has(.history-transaction) { padding: 0; }
+.history-transaction { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 66px; padding: 13px 0; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.history-transaction:hover { background: rgba(104,27,29,.045); }
+.history-transaction:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -2px; }
+.history-details-dialog { width: min(420px, calc(100vw - 28px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid rgba(174,131,56,.4); border-radius: 26px; background: var(--brand-gold-light); color: var(--brand-burgundy); box-shadow: 0 24px 80px rgba(51,9,13,.35); }
+.history-details-dialog::backdrop { background: rgba(51,9,13,.5); backdrop-filter: blur(5px); }
+.history-details-dialog h2 { margin: 0; padding-right: 34px; font-size: 21px; letter-spacing: -.04em; }
+.history-details-close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 44px; height: 44px; padding: 10px; border: 0; border-radius: 50%; background: transparent; color: var(--brand-burgundy); cursor: pointer; }
+.history-details-close:hover { background: rgba(104,27,29,.07); }
+.history-details-close:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -4px; }
+.history-details-qr { display: grid; justify-items: center; gap: 8px; margin: 22px 0 18px; }
+.history-details-qr img { display: block; width: min(200px, 100%); height: auto; aspect-ratio: 1; border-radius: 8px; image-rendering: pixelated; }
+.history-details-qr figcaption { font-size: 10px; color: rgba(104,27,29,.65); }
+.history-details-fields { margin: 0; }
+.history-details-fields > div { display: grid; grid-template-columns: minmax(95px, .85fr) minmax(0, 1.15fr); align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid rgba(104,27,29,.12); }
+.history-details-fields dt { font-size: 11px; color: rgba(104,27,29,.7); }
+.history-details-fields dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.history-details-fields .history-details-amount { font-size: 21px; }
+.history-details-amount small { font-size: 10px; }
