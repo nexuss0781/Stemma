@@ -35,6 +35,7 @@ function makeExperience({ dialogOpen = false } = {}) {
 
 function fireAppClick({ payments, dialog, selector, onRender = () => {} }) {
   let clickListener;
+  let navigationSaves = 0;
   vm.runInNewContext(clickHandlerSource, {
     document: {
       addEventListener: (_type, listener) => { clickListener = listener; },
@@ -45,12 +46,14 @@ function fireAppClick({ payments, dialog, selector, onRender = () => {} }) {
     activeRoute: 'cards',
     paymentSlideIndex: 0,
     payments,
+    queueNavigationSave() { navigationSaves += 1; },
     render: onRender,
     renderTabs() {}
   });
   assert.equal(typeof clickListener, 'function');
   const button = { closest: requested => requested === `[data-${selector}]` ? button : null };
   clickListener({ target: button });
+  return navigationSaves;
 }
 
 test('enabled visual Pay opens a successful receipt preview with safe illustrative details', () => {

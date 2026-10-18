@@ -8,6 +8,7 @@ const [paymentUi, appSource] = await Promise.all([
   readFile(new URL('payment-ui.js', root), 'utf8'),
   readFile(new URL('app.js', root), 'utf8')
 ]);
+const normalizeDepositAmount = vm.runInNewContext(`${paymentUi}\nnormalizeDepositAmount`);
 
 function makeExperience({ dialogOpen = false } = {}) {
   const effects = { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 };
@@ -70,7 +71,10 @@ function fireInput() {
   let listener;
   let cleared = 0;
   vm.runInNewContext(extractHandler(appSource, 'input'), {
-    document: { addEventListener: (_type, callback) => { listener = callback; } }
+    document: { addEventListener: (_type, callback) => { listener = callback; } },
+    normalizeDepositAmount,
+    payments: { depositAmount: '' },
+    queueNavigationSave() {}
   });
   assert.equal(typeof listener, 'function');
   listener({ target: { id: 'deposit-amount', setCustomValidity(value) { if (value === '') cleared += 1; } } });
@@ -81,6 +85,7 @@ function fireAppClick({ payments, activeTab = 1, selector, dialogOpen = false, s
   let listener;
   let renders = 0;
   let focused = 0;
+  let navigationSaves = 0;
   const input = { focus() { focused += 1; } };
   const dialog = sheetDialog ?? { open: dialogOpen };
   vm.runInNewContext(extractHandler(appSource, 'click'), {
@@ -94,13 +99,28 @@ function fireAppClick({ payments, activeTab = 1, selector, dialogOpen = false, s
     activeTabs: { cards: activeTab },
     paymentSlideIndex: 0,
     payments,
+    queueNavigationSave() { navigationSaves += 1; },
     render() { renders += 1; },
     renderTabs() {}
   });
   assert.equal(typeof listener, 'function');
   const target = { id: '', closest: requested => requested === `[data-${selector}]` ? target : null };
   listener({ target, preventDefault() {} });
-  return { dialog, focused, renders };
+  return { dialog, focused, renders, navigationSaves };
+}
+
+function fireDialogClose() {
+  const start = appSource.indexOf("document.addEventListener('close'");
+  const end = appSource.indexOf('\n}, true);', start) + '\n}, true);'.length;
+  assert.ok(start >= 0 && end > start, 'dialog close metadata handler exists');
+  let listener;
+  let navigationSaves = 0;
+  vm.runInNewContext(appSource.slice(start, end), {
+    document: { addEventListener: (_type, callback) => { listener = callback; } },
+    queueNavigationSave() { navigationSaves += 1; }
+  });
+  listener({ target: { matches: selector => selector.includes('#bill-payment-dialog') } });
+  return navigationSaves;
 }
 
 test('normalizeDepositAmount accepts only bounded decimal ETB values and canonicalizes exactly', () => {
@@ -174,10 +194,12 @@ test('deposit bill uses shared reference details with the entered amount and ena
   assert.equal(dialog.open, false);
   const continued = fireAppClick({ payments: instance, selector: 'review-bill', sheetDialog: dialog });
   assert.equal(dialog.open, true, 'Continue opens the wallet sheet after the reference bill is reviewed');
+  assert.equal(continued.navigationSaves, 1, 'opening the wallet sheet queues saved navigation metadata');
   assert.equal(continued.renders, 0, 'opening the sheet does not trigger a receipt or payment render');
   assert.equal(instance.isReceiptOpen, false);
   assert.match(instance.renderBill(), /<p class="bill-sheet-amount"><span>123\.45<\/span><small>ETB<\/small><\/p>/);
   assert.deepEqual(effects, { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 });
+  assert.equal(fireDialogClose(), 1, 'closing the wallet sheet queues saved navigation metadata');
 });
 
 test('Pay opens success receipt for regular and exact deposit amounts while guards prevent premature or duplicate actions', () => {

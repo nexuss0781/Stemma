@@ -14,7 +14,7 @@ const pageTabs = {
   profile: ['Personal', 'Security', 'Preferences']
 };
 
-let activeRoute = 'cards';
+let activeRoute = 'overview';
 const activeTabs = Object.fromEntries(sections.map(({ id }) => [id, 0]));
 let routeDirection = 0;
 let navIndicatorReady = false;
@@ -41,15 +41,17 @@ function renderBottomNav() {
 
   const drawerLinks = document.getElementById('drawer-links');
   if (!drawerLinks.children.length) {
-    drawerLinks.innerHTML = sections.map(item => `
+    const drawerSections = [sections.find(item => item.id === 'overview'), ...sections.filter(item => item.id !== 'overview')];
+    drawerLinks.innerHTML = drawerSections.map(item => `
       <button class="drawer-link" type="button" data-route="${item.id}" aria-current="false" aria-label="${item.label}">
-        ${icon(item.icon)}<span class="drawer-link-skeleton" aria-hidden="true"></span>
+        ${icon(item.icon)}<span class="drawer-link-label">${item.label}</span>
       </button>`).join('');
   }
   drawerLinks.querySelectorAll('.drawer-link').forEach(button => {
     button.setAttribute('aria-current', button.dataset.route === activeRoute ? 'page' : 'false');
   });
   updateNavIndicator();
+  renderSidebarIdentity();
 }
 
 function updateNavIndicator() {
@@ -209,7 +211,9 @@ function showHistoryDetails(id) {
   const dialog = document.getElementById('history-details-dialog');
   if (!entry || !dialog || dialog.open) return;
   dialog.innerHTML = renderHistoryDetails(entry);
+  dialog.dataset.historyId = entry.id;
   dialog.showModal();
+  queueNavigationSave();
 }
 
 function closeHistoryDetails() {
@@ -398,10 +402,12 @@ function render() {
   renderTabs();
   renderCards();
   renderBottomNav();
+  queueNavigationSave();
 }
 
 function navigate(route) {
   if (!pageTabs[route]) return;
+  closeHistoryDetails();
   setPreviewBalanceVisible(false);
   payments.closeSheet();
   const wasBillOpen = payments.isBillOpen;
@@ -448,7 +454,12 @@ document.addEventListener('submit', event => {
   render();
 });
 document.addEventListener('input', event => {
-  if (event.target.id === 'deposit-amount') event.target.setCustomValidity('');
+  if (event.target.id === 'deposit-amount') {
+    event.target.setCustomValidity('');
+    depositDraftAmount = normalizeDepositAmount(event.target.value) || '';
+    payments.depositAmount = depositDraftAmount;
+    queueNavigationSave();
+  }
 });
 
 document.addEventListener('click', event => {
@@ -492,8 +503,8 @@ document.addEventListener('click', event => {
     document.querySelector(wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
     return;
   }
-  if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); return; }
-  if (event.target.closest('[data-review-bill]')) { payments.showSheet(); return; }
+  if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); queueNavigationSave(); return; }
+  if (event.target.closest('[data-review-bill]')) { payments.showSheet(); queueNavigationSave(); return; }
   if (event.target.closest('[data-demo-pay]')) {
     // Visual simulation only: no payment, wallet, or persistence operation.
     if (payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
@@ -511,6 +522,7 @@ document.addEventListener('click', event => {
   if (intervalOption) {
     paymentDemoInterval = intervalOption.dataset.paymentInterval;
     renderCards();
+    queueNavigationSave();
     document.getElementById('payment-demo-interval')?.focus({ preventScroll: true });
     return;
   }
@@ -535,6 +547,7 @@ document.addEventListener('click', event => {
     } else {
       renderTabs();
     }
+    queueNavigationSave();
   }
 });
 document.addEventListener('keydown', event => {
@@ -567,11 +580,13 @@ document.addEventListener('focusout', event => {
 });
 const dashboardGrid = document.getElementById('dashboard-grid');
 dashboardGrid.addEventListener('scroll', () => {
+  queueNavigationSave();
   if (!dashboardGrid.classList.contains('payment-carousel')) return;
   if (paymentScrollFrame) window.cancelAnimationFrame(paymentScrollFrame);
   paymentScrollFrame = window.requestAnimationFrame(() => {
     updatePaymentProgress();
     paymentScrollFrame = 0;
+    queueNavigationSave();
   });
 }, { passive: true });
 dashboardGrid.addEventListener('keydown', event => {
@@ -609,6 +624,127 @@ let profilePhotoPreparation = Promise.resolve();
 let profilePhotoRevision = 0;
 const studentFieldNames = ['firstName', 'middleName', 'lastName', 'studentId', 'department'];
 
+// Account-scoped UI location only: never a payment, wallet, or profile record.
+const navigationMemory = new StemmaNavigationMemory();
+let navigationAccountKey = '';
+let navigationRestoredFor = null;
+let navigationRestoring = false;
+let navigationSaveFrame = 0;
+let navigationRestoreFrame = 0;
+let depositDraftAmount = '';
+let pendingNavigationRestore = null;
+
+function renderSidebarIdentity() {
+  const name = document.getElementById('drawer-student-name');
+  const username = document.getElementById('drawer-student-username');
+  if (!name || !username) return;
+  const profile = googleAuthenticated ? savedStudentProfile : null;
+  const fullName = profile ? ['firstName', 'middleName', 'lastName'].map(key => typeof profile[key] === 'string' ? profile[key].trim() : '').filter(Boolean).join(' ') : '';
+  const displayName = fullName || (typeof profile?.nickName === 'string' ? profile.nickName.trim() : '');
+  const handle = typeof profile?.username === 'string' ? profile.username.trim().replace(/^@+/, '') : '';
+  name.textContent = displayName;
+  username.textContent = handle ? `@${handle}` : '';
+  name.hidden = !displayName;
+  username.hidden = !handle;
+}
+
+function captureNavigationLocation() {
+  const grid = document.getElementById('dashboard-grid');
+  const history = document.getElementById('history-details-dialog');
+  const sheet = document.getElementById('bill-payment-dialog');
+  let view = 'main';
+  if (activeRoute === 'cards') {
+    if (payments.isBillOpen) view = payments.isReceiptOpen ? 'receipt' : sheet?.open ? 'sheet' : 'bill';
+    else if (activeTabs.cards === 2 && history?.open) view = 'history-details';
+  }
+  return {
+    version: 1, route: activeRoute, tabs: { ...activeTabs },
+    paymentSlide: paymentSlideIndex, interval: paymentDemoInterval, view,
+    isDeposit: payments.isDeposit,
+    depositAmount: payments.isDeposit ? payments.depositAmount : depositDraftAmount,
+    receiptTime: payments.demoReceiptTime || '',
+    historyId: view === 'history-details' ? history.dataset.historyId || '' : '',
+    scrollTop: Math.max(0, Math.round(grid?.scrollTop || 0))
+  };
+}
+
+function persistNavigationLocation() {
+  if (!dashboardEntered || navigationRestoring || !navigationAccountKey) return;
+  navigationMemory.save(navigationAccountKey, captureNavigationLocation());
+}
+
+function queueNavigationSave() {
+  if (navigationRestoring || navigationSaveFrame) return;
+  navigationSaveFrame = window.requestAnimationFrame(() => {
+    navigationSaveFrame = 0;
+    persistNavigationLocation();
+  });
+}
+
+function restoreNavigationLocation(accountKey) {
+  if (navigationRestoredFor === accountKey) return;
+  persistNavigationLocation();
+  if (navigationSaveFrame) window.cancelAnimationFrame(navigationSaveFrame);
+  if (navigationRestoreFrame) window.cancelAnimationFrame(navigationRestoreFrame);
+  navigationSaveFrame = 0;
+  navigationRestoring = true;
+  navigationAccountKey = accountKey;
+  navigationRestoredFor = accountKey;
+  const saved = navigationMemory.load(accountKey);
+  payments.closeSheet();
+  closeHistoryDetails();
+  activeRoute = saved?.route || 'overview';
+  for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
+  paymentSlideIndex = saved?.paymentSlide || 0;
+  paymentDemoInterval = saved?.interval || '15-days';
+  depositDraftAmount = saved?.depositAmount || '';
+  payments.depositAmount = saved?.depositAmount || '';
+  payments.isDeposit = Boolean(saved?.isDeposit);
+  payments.isBillOpen = Boolean(saved && ['bill', 'sheet', 'receipt'].includes(saved.view));
+  payments.isReceiptOpen = saved?.view === 'receipt';
+  payments.demoReceiptTime = saved?.receiptTime || '';
+  routeDirection = 0;
+  render();
+  if (window.location.hash !== `#${activeRoute}`) {
+    window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#${activeRoute}`);
+  }
+  pendingNavigationRestore = saved;
+  finishNavigationRestoration();
+}
+
+function finishNavigationRestoration() {
+  if (!dashboardEntered || !navigationRestoring || navigationRestoreFrame) return;
+  const saved = pendingNavigationRestore;
+  const accountKey = navigationAccountKey;
+  navigationRestoreFrame = window.requestAnimationFrame(() => {
+    navigationRestoreFrame = 0;
+    if (navigationAccountKey !== accountKey) return;
+    syncPaymentCarousel();
+    const grid = document.getElementById('dashboard-grid');
+    if (grid && saved) grid.scrollTop = saved.scrollTop;
+    if (saved?.view === 'sheet') {
+      document.querySelector('[data-review-bill]')?.focus({ preventScroll: true });
+      payments.showSheet();
+    }
+    if (saved?.view === 'history-details') {
+      Array.from(grid.querySelectorAll('[data-history-entry]')).find(button => button.dataset.historyEntry === saved.historyId)?.focus({ preventScroll: true });
+      showHistoryDetails(saved.historyId);
+    }
+    pendingNavigationRestore = null;
+    navigationRestoring = false;
+    persistNavigationLocation();
+  });
+}
+
+window.addEventListener('pagehide', persistNavigationLocation);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') persistNavigationLocation();
+});
+document.addEventListener('close', event => {
+  if (event.target.matches?.('#bill-payment-dialog, #history-details-dialog')) queueNavigationSave();
+}, true);
+
+
 function updateOnboardingAccess() {
   onboardingSlides.forEach((slide, index) => {
     slide.inert = index !== onboardingIndex;
@@ -640,6 +776,9 @@ function goToOnboardingSlide(index) {
 
 function enterDashboard() {
   dashboardEntered = true;
+  renderSidebarIdentity();
+  finishNavigationRestoration();
+  persistNavigationLocation();
   document.getElementById('onboarding-screen').hidden = true;
   document.getElementById('app-shell').hidden = false;
   document.getElementById('app-main').focus({ preventScroll: true });
@@ -1023,6 +1162,7 @@ async function loadStudentProfile() {
   }
   updateStudentSubmit();
   updatePersonalizationSubmit();
+  renderSidebarIdentity();
   return profile;
 }
 studentForm.addEventListener('submit', async event => {
@@ -1202,6 +1342,8 @@ async function restoreAuthenticationState() {
       profilePhotoAccountKey = nextPhotoKey;
       profilePhotoNotice = '';
     }
+    restoreNavigationLocation(nextPhotoKey);
+    renderSidebarIdentity();
     updateStudentSubmit();
     updatePersonalizationSubmit();
     if (!status.authenticated) {
@@ -1322,6 +1464,6 @@ window.addEventListener('resize', () => {
   updateNavIndicator();
   syncPaymentCarousel();
 });
-const requestedRoute = window.location.hash.slice(1);
-if (pageTabs[requestedRoute]) activeRoute = requestedRoute;
+// Authenticated account memory is restored only after /auth/session confirms its owner.
+// A stale hash from a different account must never select its initial screen.
 render();

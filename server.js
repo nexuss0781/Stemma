@@ -1005,7 +1005,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));

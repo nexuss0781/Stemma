@@ -272,6 +272,7 @@ test('Continue on the bill preview opens the payment sheet exactly once', () => 
   const listenerEnd = source.indexOf('\n});', listenerStart) + 4;
   let clickListener;
   let showSheetCalls = 0;
+  let navigationSaveCalls = 0;
   vm.runInNewContext(source.slice(listenerStart, listenerEnd), {
     document: { addEventListener: (_type, listener) => { clickListener = listener; }, querySelectorAll: () => [] },
     window: { matchMedia: () => ({ matches: false }) },
@@ -279,11 +280,13 @@ test('Continue on the bill preview opens the payment sheet exactly once', () => 
     paymentSlideIndex: 0,
     payments: { isBillOpen: true, showSheet: () => { showSheetCalls += 1; } },
     render: () => {},
+    queueNavigationSave: () => { navigationSaveCalls += 1; },
     renderTabs: () => {}
   });
   const button = { closest: selector => selector === '[data-review-bill]' ? button : null };
   clickListener({ target: button });
   assert.equal(showSheetCalls, 1);
+  assert.equal(navigationSaveCalls, 1);
 });
 
 test('Back from the bill preview closes it and renders the prior payment view', () => {

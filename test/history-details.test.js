@@ -31,6 +31,7 @@ function getAttributes(markup) {
 function createDialog() {
   return {
     innerHTML: '',
+    dataset: {},
     showModalCalls: 0,
     closeCalls: 0,
     showModal() { this.showModalCalls += 1; this.open = true; },
@@ -104,12 +105,16 @@ test('history detail opening is gated to cards history and known IDs; close uses
   const history = entries();
   const dialog = createDialog();
   const document = { getElementById: id => id === 'history-details-dialog' ? dialog : null };
+  let navigationSaves = 0;
   const open = (id, state = {}) => run('showHistoryDetails(id)', {
-    id, document, activeRoute: 'cards', activeTabs: { cards: 2 }, ...state
+    id, document, activeRoute: 'cards', activeTabs: { cards: 2 },
+    queueNavigationSave() { navigationSaves += 1; }, ...state
   });
 
   open(history[0].id);
   assert.equal(dialog.showModalCalls, 1);
+  assert.equal(dialog.dataset.historyId, history[0].id, 'open history metadata records the selected transaction id');
+  assert.equal(navigationSaves, 1, 'opening history details queues saved navigation metadata');
   assert.match(dialog.innerHTML, /Transaction details/);
   assert.match(dialog.innerHTML, new RegExp(history[0].id));
   for (const [id, state] of [
@@ -126,6 +131,7 @@ test('history detail opening is gated to cards history and known IDs; close uses
   const beforeAlreadyOpen = dialog.showModalCalls;
   open(history[3].id);
   assert.equal(dialog.showModalCalls, beforeAlreadyOpen);
+  assert.equal(navigationSaves, 1, 'gated and already-open dialogs do not queue metadata saves');
   run('closeHistoryDetails()', { document });
   assert.equal(dialog.closeCalls, 1);
 });
