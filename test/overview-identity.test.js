@@ -215,14 +215,17 @@ test('hero markup contains nickname and rear reflection before front photo, with
   const reflectionStyle = styles.match(/\.overview-photo-reflection\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(reflectionStyle, /filter:\s*[^;]*grayscale\(1\)[^;]*blur\(12px\)/);
   assert.match(reflectionStyle, /object-fit:\s*cover/);
+  assert.match(reflectionStyle, /z-index:\s*0/);
+  assert.match(reflectionStyle, /inset:\s*5px/);
+  assert.match(reflectionStyle, /width:\s*calc\(100% - 10px\)/);
+  assert.match(reflectionStyle, /clip-path:\s*inset\(0 round/, 'blur stays inside the inner layer instead of obscuring the warm outer ring');
   const photoFrameStyle = styles.match(/\.avatar-glass\.has-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.ok(photoFrameStyle, 'photo frame has a dedicated profile-photo state');
-  assert.match(photoFrameStyle, /background:\s*rgba\(236,205,151,\.23\)/);
+  assert.match(photoFrameStyle, /background:\s*linear-gradient\(145deg, rgba\(239,210,161,\.46\), rgba\(215,164,124,\.4\)\)/, 'narrow outer glass uses the existing golden-brown treatment');
   assert.doesNotMatch(photoFrameStyle, /(?:^|;)\s*filter\s*:/, 'glass frame must not grayscale the front layer');
   assert.match(photoFrameStyle, /backdrop-filter:\s*none/);
   const frontGlassStyle = styles.match(/\.avatar-glass\.has-profile-photo::after\s*\{([^}]*)\}/s)?.[1] ?? '';
-  assert.match(frontGlassStyle, /background:\s*linear-gradient\(145deg, rgba\(239,210,161,\.46\), rgba\(215,164,124,\.4\)\)/,
-    'front glass retains the original warm portrait palette');
+  assert.match(frontGlassStyle, /background:\s*transparent/, 'inner reflection is not covered by a golden-brown fill');
   assert.doesNotMatch(frontGlassStyle, /filter\s*:/);
   const fullColorPhotoStyle = styles.match(/\.avatar-glass\.has-profile-photo \.overview-profile-photo\s*\{([^}]*)\}/s)?.[1] ?? '';
   assert.match(fullColorPhotoStyle, /z-index:\s*1/, 'actual photo is above the warm glass, not tinted by it');
