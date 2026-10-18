@@ -9,13 +9,16 @@ test('Profile heading keeps its title and only one accessible notification butto
   const heading = html.match(/<div class="page-heading">([\s\S]*?)\n      <\/div>/)?.[1];
   assert.ok(heading);
   assert.match(heading, /<h1 class="page-title" id="page-title" hidden>Payment<\/h1>/);
-  assert.match(heading, /<button[^>]*id="profile-notifications-button"[^>]*type="button"[^>]*aria-label="Notifications"[^>]*aria-haspopup="dialog"[^>]*aria-controls="notifications-dialog"/);
+  assert.match(heading, /<button[^>]*id="profile-notifications-button"[^>]*type="button"[^>]*aria-label="Notifications"[^>]*aria-controls="notifications-page"/);
+  assert.doesNotMatch(heading, /id="profile-notifications-button"[^>]*aria-haspopup="dialog"/);
   assert.match(heading, /<use href="#i-bell"/);
   assert.equal((heading.match(/class="profile-heading-icon"/g) || []).length, 1);
   assert.doesNotMatch(heading, /About|#i-info|role="img"/);
-  assert.match(html, /<dialog[^>]*id="notifications-dialog"[^>]*aria-labelledby="notifications-title"/);
-  assert.match(html, /id="notifications-close"[^>]*aria-label="Close notifications"/);
-  assert.match(html, /src="notifications-ui.js\?v=1" defer/);
+  assert.match(html, /<main[^>]*id="notifications-page"[^>]*hidden/);
+  assert.match(html, /id="notifications-back"[^>]*aria-label="Back to previous page"/);
+  assert.match(html, /id="notifications-content"[^>]*aria-live="polite"/);
+  assert.doesNotMatch(html, /id="notifications-dialog"|id="notifications-close"/);
+  assert.match(html, /src="notifications-ui\.js\?v=\d+" defer/);
 });
 
 test('bell appears at far right only on Profile and other pages preserve their grid', () => {

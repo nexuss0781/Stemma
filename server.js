@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { validateProfileImage } from './profile-image.js';
 import { registerFriendBillsApi } from './friend-bills-api.js';
+import { createNotificationStore, registerNotificationsApi } from './notifications-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -469,7 +470,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -631,12 +632,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     return next();
   }
 
-  app.get('/api/notifications', requireGoogleSession, (_req, res) => {
-    res.set('Cache-Control', 'private, no-store, max-age=0');
-    // No notification source or delivery records exist in this app yet.
-    // Never reinterpret demo payments, profiles, or other students' data as received notifications.
-    res.json({ notifications: [], sourceAvailable: false });
-  });
+  registerNotificationsApi(app, { notificationStore, requireGoogleSession, config });
 
   function requireProfileStore(_req, res, next) {
     if (!studentProfileStore) return res.status(503).json({ error: 'Student profile service is unavailable.' });
@@ -1044,12 +1040,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
-    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo') {
+    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read') {
       if (error?.status === 413 || error?.type === 'entity.too.large') {
-        return res.status(413).json({ error: req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
+        return res.status(413).json({ error: req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
       }
       if (error?.status === 400 || error?.type === 'entity.parse.failed') {
-        return res.status(400).json({ error: req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
+        return res.status(400).json({ error: req.path === '/api/notifications/read' ? 'Notification read request is invalid.' : req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
       }
     }
     res.status(500).json({ error: 'The request could not be completed.' });
@@ -1065,6 +1061,7 @@ async function startServer() {
   let sessionStore;
   let googleIdentityStore;
   let studentProfileStore;
+  let notificationStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -1081,6 +1078,8 @@ async function startServer() {
     await googleIdentityStore.migrate();
     studentProfileStore = createStudentProfileStore(postgresPool);
     await studentProfileStore.migrate();
+    notificationStore = createNotificationStore(postgresPool);
+    await notificationStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,
@@ -1089,7 +1088,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });

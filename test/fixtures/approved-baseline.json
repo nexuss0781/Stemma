@@ -1,5 +1,5 @@
 {
-  "serverSha256": "faf88929226861ef3eced23660b1df9926354d9eced49b830a3e6a998b5cf425",
+  "serverSha256": "2200951de0e95aa28f36b0eb4a84d7b61b6308c7aedc5ecdc573bcc087341979",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -13,6 +13,10 @@
     {
       "name": "003_profile_images.sql",
       "sha256": "7c8c0dbdcb7dd228d4fed820ff4a1ce8fa50a6909382762301dbc799c409da41"
+    },
+    {
+      "name": "004_student_notifications.sql",
+      "sha256": "e40435ae24a1166b7d937c146609b391346745d81c0e08d6686dff4658ddee92"
     }
   ]
 }

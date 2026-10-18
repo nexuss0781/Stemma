@@ -56,7 +56,7 @@ function loadRenderer() {
       return elements.get(id);
     }
   };
-  const window = { addEventListener() {} };
+  const window = { addEventListener() {}, location: { hash: '#profile' } };
   vm.runInNewContext(notificationsSource, { window, document, fetch: async () => { throw new Error('Unexpected fetch'); }, AbortController });
   return window.StemmaNotifications.renderNotifications;
 }

@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=79" />
+  <link rel="stylesheet" href="styles.css?v=80" />
   <script src="payment-ui.js?v=14" defer></script>
   <script src="profile-photo.js?v=3"></script>
   <script src="profile-ui.js?v=2"></script>
   <script src="navigation-memory.js?v=2"></script>
   <script src="friend-ui.js?v=1" defer></script>
-  <script src="app.js?v=48" defer></script>
-  <script src="notifications-ui.js?v=1" defer></script>
+  <script src="app.js?v=49" defer></script>
+  <script src="notifications-ui.js?v=2" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -261,7 +261,7 @@
       <div class="page-heading">
         <h1 class="page-title" id="page-title" hidden>Payment</h1>
         <div class="profile-heading-icons">
-          <button class="profile-heading-icon" id="profile-notifications-button" type="button" aria-label="Notifications" title="Notifications" aria-haspopup="dialog" aria-controls="notifications-dialog" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></button>
+          <button class="profile-heading-icon" id="profile-notifications-button" type="button" aria-label="Notifications" title="Notifications" aria-controls="notifications-page"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></button>
         </div>
       </div>
       <nav class="page-tabs" id="page-tabs" role="tablist" aria-label="Page tabs"></nav>
@@ -276,12 +276,28 @@
       <section class="dashboard-grid" id="dashboard-grid" aria-label="Content placeholders"></section>
     </main>
 
+    <main id="notifications-page" class="notifications-page" aria-labelledby="notifications-title" hidden>
+      <header class="notifications-page-heading">
+        <div class="notifications-top-row">
+          <button id="notifications-back" class="notifications-back" type="button" aria-label="Back to previous page"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg><span>Back</span></button>
+          <div id="notifications-selection-tools" class="notifications-selection-tools" hidden>
+            <button id="notifications-mark-read" type="button" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 12 4 4L17 5M10 16l2 2L23 7"/></svg><span>Read</span></button>
+            <button id="notifications-select-all" type="button">Select all</button>
+          </div>
+        </div>
+        <div class="notifications-title-row"><h1 id="notifications-title">Notifications</h1><button id="notifications-select" type="button" aria-pressed="false" hidden>Select</button></div>
+        <div class="notifications-page-description"><p>All your updates, newest first.</p><span id="notifications-selection-count" aria-live="polite"></span></div>
+      </header>
+      <p id="notifications-feedback" class="notifications-feedback" role="status"></p>
+      <section id="notifications-content" class="notifications-content" aria-label="Your notifications" aria-live="polite" aria-busy="false" tabindex="0"></section>
+    </main>
+
     <nav class="bottom-nav" id="bottom-nav" aria-label="Main navigation"></nav>
   </div>
 
-  <dialog class="notifications-dialog" id="notifications-dialog" aria-labelledby="notifications-title" aria-describedby="notifications-description">
-    <header class="notifications-header"><div><h2 id="notifications-title">Notifications</h2><p id="notifications-description">All your updates, newest first.</p></div><button id="notifications-close" type="button" aria-label="Close notifications" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></header>
-    <div id="notifications-content" class="notifications-content" aria-live="polite" aria-busy="false"></div>
+  <dialog class="notification-detail-dialog" id="notification-detail-dialog" aria-labelledby="notification-detail-title">
+    <header class="notification-detail-header"><div><p>Notification</p><h2 id="notification-detail-title"></h2></div><button id="notification-detail-close" type="button" aria-label="Close notification details" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></header>
+    <div id="notification-detail-content" class="notification-detail-content" tabindex="0" aria-label="Full notification"></div>
   </dialog>
 
   <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>

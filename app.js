@@ -479,10 +479,12 @@ function render() {
   renderCards();
   renderBottomNav();
   queueNavigationSave();
+  window.StemmaNotifications?.syncRoute();
 }
 
 function navigate(route) {
   if (!pageTabs[route]) return;
+  window.StemmaNotifications?.leave();
   cancelPendingNavigationRestoration();
   closeFriendPicker();
   closeHistoryDetails();
@@ -833,7 +835,7 @@ function captureNavigationLocation() {
     depositAmount: payments.isDeposit ? payments.depositAmount : depositDraftAmount,
     receiptTime: payments.demoReceiptTime || '',
     historyId: view === 'history-details' ? history.dataset.historyId || '' : '',
-    scrollTop: Math.max(0, Math.round(grid?.scrollTop || 0))
+    scrollTop: window.StemmaNotifications?.underlyingScrollTop() ?? Math.max(0, Math.round(grid?.scrollTop || 0))
   };
 }
 
@@ -880,7 +882,8 @@ function restoreNavigationLocation(accountKey) {
   payments.demoReceiptTime = saved?.receiptTime || '';
   routeDirection = 0;
   render();
-  if (window.location.hash !== `#${activeRoute}`) {
+  window.StemmaNotifications?.setUnderlyingScrollTop(saved?.scrollTop || 0);
+  if (window.location.hash !== '#notifications' && window.location.hash !== `#${activeRoute}`) {
     window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#${activeRoute}`);
   }
   pendingNavigationRestore = saved;
