@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=52" />
+  <link rel="stylesheet" href="styles.css?v=53" />
   <script src="payment-ui.js?v=13" defer></script>
-  <script src="app.js?v=37" defer></script>
+  <script src="app.js?v=38" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -139,6 +139,19 @@
             <p class="student-form-eyebrow">PERSONALIZE YOUR SPACE</p>
             <h1 id="student-title">Your student profile</h1>
             <p class="student-form-intro">A few details help make Stemma feel like yours.</p>
+          </div>
+          <div class="student-photo-picker">
+            <button class="student-photo-button" id="student-photo-button" type="button" aria-label="Choose profile photo" aria-describedby="student-photo-note student-photo-status">
+              <span class="student-photo-avatar">
+                <img id="student-photo-preview" alt="Selected profile photo preview" hidden />
+                <span id="student-photo-placeholder" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="5"/><path d="M6 28v-3a10 10 0 0 1 20 0v3"/></svg></span>
+              </span>
+              <span class="student-photo-copy"><strong>Profile photo</strong><span id="student-photo-label">Add photo</span></span>
+              <svg class="student-photo-upload" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>
+            </button>
+            <input class="student-photo-file" id="student-photo-input" type="file" accept="image/*" aria-label="Profile image file" tabindex="-1" />
+            <p id="student-photo-note">Preview only · Images up to 10 MB</p>
+            <p id="student-photo-status" role="status" aria-live="polite"></p>
           </div>
           <form class="student-form" id="student-details-form" autocomplete="off">
             <div class="student-fields">

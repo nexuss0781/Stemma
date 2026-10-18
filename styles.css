@@ -1173,3 +1173,22 @@ body { color: var(--brand-burgundy); }
 .telebirr-sheet .bill-pay-button { width: calc(100% - 22 * var(--telebirr-unit)); min-height: max(40px, calc(40 * var(--telebirr-unit))); border-radius: calc(7 * var(--telebirr-unit)); font-size: calc(13 * var(--telebirr-unit)); }
 .telebirr-sheet .bill-sheet-note { margin-top: calc(5 * var(--telebirr-unit)); font-size: max(8px, calc(8 * var(--telebirr-unit))); }
 .telebirr-preview:has(.bill-customer) .bill-pay-button:disabled { background: #81b52b; color: rgba(255,255,255,.7); opacity: .72; box-shadow: none; cursor: not-allowed; }
+
+/* Onboarding-only photo selection; selected images remain local previews. */
+.student-photo-picker { position: relative; margin-top: 16px; }
+.student-photo-button { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 76px; padding: 10px 13px; border: 1px solid rgba(104,27,29,.24); border-radius: 17px; background: rgba(251,241,200,.76); color: var(--brand-burgundy); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); font: inherit; text-align: left; cursor: pointer; }
+.student-photo-button:hover { border-color: rgba(104,27,29,.5); background: var(--brand-gold-light); }
+.student-photo-button:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 3px; }
+.student-photo-avatar { flex: 0 0 54px; display: grid; place-items: center; width: 54px; height: 54px; overflow: hidden; border: 1px solid rgba(104,27,29,.16); border-radius: 15px; background: rgba(104,27,29,.07); }
+.student-photo-avatar img { width: 100%; height: 100%; object-fit: cover; }
+#student-photo-placeholder { display: grid; place-items: center; }
+#student-photo-placeholder svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.student-photo-avatar > [hidden] { display: none; }
+.student-photo-copy { display: grid; gap: 5px; min-width: 0; }
+.student-photo-copy strong { font-size: 13px; font-weight: 700; }
+#student-photo-label { color: rgba(104,27,29,.65); font-size: 11px; }
+.student-photo-upload { flex: 0 0 20px; width: 20px; height: 20px; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.student-photo-file { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; border: 0; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; }
+#student-photo-note, #student-photo-status { margin: 7px 2px 0; color: rgba(104,27,29,.65); font-size: 10px; line-height: 1.4; }
+#student-photo-status:empty { display: none; }
+@media (max-width: 760px) { .student-photo-picker { margin-top: 13px; } .student-photo-button { min-height: 70px; padding: 9px 11px; gap: 11px; } .student-photo-avatar { flex-basis: 50px; width: 50px; height: 50px; border-radius: 13px; } }

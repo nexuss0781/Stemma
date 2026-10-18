@@ -685,6 +685,71 @@ document.getElementById('skip-onboarding').addEventListener('click', enterDashbo
 const studentForm = document.getElementById('student-details-form');
 const studentFeedback = document.getElementById('student-form-feedback');
 const studentSubmit = studentForm.querySelector('[type="submit"]');
+// Onboarding photo preview: local only, outside the profile save payload.
+const studentPhotoButton = document.getElementById('student-photo-button');
+const studentPhotoInput = document.getElementById('student-photo-input');
+const studentPhotoPreview = document.getElementById('student-photo-preview');
+const studentPhotoPlaceholder = document.getElementById('student-photo-placeholder');
+const studentPhotoLabel = document.getElementById('student-photo-label');
+const studentPhotoStatus = document.getElementById('student-photo-status');
+let studentPhotoURL = '';
+let studentPhotoPendingURL = '';
+function resetStudentPhotoPreview() {
+  if (studentPhotoURL) URL.revokeObjectURL(studentPhotoURL);
+  if (studentPhotoPendingURL) URL.revokeObjectURL(studentPhotoPendingURL);
+  studentPhotoURL = '';
+  studentPhotoPendingURL = '';
+  studentPhotoInput.value = '';
+  studentPhotoPreview.removeAttribute('src');
+  studentPhotoPreview.hidden = true;
+  studentPhotoPlaceholder.hidden = false;
+  studentPhotoButton.classList.remove('has-photo');
+  studentPhotoButton.setAttribute('aria-label', 'Choose profile photo');
+  studentPhotoLabel.textContent = 'Add photo';
+  studentPhotoStatus.textContent = '';
+}
+function previewStudentPhoto(file) {
+  if (!file) return;
+  if (studentPhotoPendingURL) URL.revokeObjectURL(studentPhotoPendingURL);
+  studentPhotoPendingURL = '';
+  const isImage = /^image\//i.test(file.type || '') || (!file.type && /\.(?:jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i.test(file.name || ''));
+  if (!isImage || !file.size || file.size > 10 * 1024 * 1024) {
+    studentPhotoStatus.textContent = 'Choose an image file up to 10 MB.';
+    return;
+  }
+  const candidateURL = URL.createObjectURL(file);
+  studentPhotoPendingURL = candidateURL;
+  const candidateImage = new Image();
+  candidateImage.onload = () => {
+    if (studentPhotoPendingURL !== candidateURL) return;
+    if (studentPhotoURL) URL.revokeObjectURL(studentPhotoURL);
+    studentPhotoURL = candidateURL;
+    studentPhotoPendingURL = '';
+    studentPhotoPreview.src = candidateURL;
+    studentPhotoPreview.hidden = false;
+    studentPhotoPlaceholder.hidden = true;
+    studentPhotoButton.classList.add('has-photo');
+    studentPhotoButton.setAttribute('aria-label', 'Replace profile photo');
+    studentPhotoLabel.textContent = 'Replace photo';
+    studentPhotoStatus.textContent = 'Photo preview ready. Not uploaded.';
+  };
+  candidateImage.onerror = () => {
+    if (studentPhotoPendingURL !== candidateURL) return;
+    URL.revokeObjectURL(candidateURL);
+    studentPhotoPendingURL = '';
+    studentPhotoStatus.textContent = 'This image could not be previewed. Choose another image.';
+  };
+  candidateImage.src = candidateURL;
+}
+studentPhotoButton.addEventListener('click', () => studentPhotoInput.click());
+studentPhotoInput.addEventListener('change', () => {
+  const file = studentPhotoInput.files?.[0];
+  studentPhotoInput.value = '';
+  if (file) previewStudentPhoto(file);
+});
+studentForm.addEventListener('reset', resetStudentPhotoPreview);
+window.addEventListener('pagehide', resetStudentPhotoPreview);
+// End onboarding photo preview.
 function isStudentProfileComplete(profile) {
   return studentFieldNames.every(name => typeof profile?.[name] === 'string' && profile[name].trim());
 }
