@@ -214,29 +214,39 @@ export function createStudentProfileStore(pool) {
     async migrate() {
       const migration = await fs.readFile(path.join(ROOT, 'migrations', '002_student_profiles.sql'), 'utf8');
       await pool.query(migration);
+      await pool.query(`ALTER TABLE stemma_student_profiles
+        ADD COLUMN IF NOT EXISTS nick_name TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''`);
     },
     async upsertStudentProfile(subject, profile) {
       const result = await pool.query(
         `INSERT INTO stemma_student_profiles
-           (google_subject, first_name, middle_name, last_name, student_id, department)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           (google_subject, first_name, middle_name, last_name, student_id, department, nick_name, username, bio)
+         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, ''), COALESCE($8, ''), COALESCE($9, ''))
          ON CONFLICT (google_subject) DO UPDATE SET
            first_name = EXCLUDED.first_name,
            middle_name = EXCLUDED.middle_name,
            last_name = EXCLUDED.last_name,
            student_id = EXCLUDED.student_id,
            department = EXCLUDED.department,
+           nick_name = COALESCE($7, stemma_student_profiles.nick_name),
+           username = COALESCE($8, stemma_student_profiles.username),
+           bio = COALESCE($9, stemma_student_profiles.bio),
            updated_at = CURRENT_TIMESTAMP
          RETURNING first_name AS "firstName", middle_name AS "middleName",
-                   last_name AS "lastName", student_id AS "studentId", department`,
-        [subject, profile.firstName, profile.middleName, profile.lastName, profile.studentId, profile.department]
+                   last_name AS "lastName", student_id AS "studentId", department,
+                   nick_name AS "nickName", username, bio`,
+        [subject, profile.firstName, profile.middleName, profile.lastName, profile.studentId, profile.department,
+          profile.nickName ?? null, profile.username ?? null, profile.bio ?? null]
       );
       return result.rows[0] ?? null;
     },
     async getStudentProfile(subject) {
       const result = await pool.query(
         `SELECT first_name AS "firstName", middle_name AS "middleName",
-                last_name AS "lastName", student_id AS "studentId", department
+                last_name AS "lastName", student_id AS "studentId", department,
+                nick_name AS "nickName", username, bio
          FROM stemma_student_profiles
          WHERE google_subject = $1
          LIMIT 1`,
@@ -254,18 +264,30 @@ const STUDENT_PROFILE_LIMITS = Object.freeze({
   studentId: 64,
   department: 100
 });
+const OPTIONAL_STUDENT_PROFILE_FIELDS = Object.freeze(['nickName', 'username', 'bio']);
 
 function validateStudentProfile(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const allowed = Object.keys(STUDENT_PROFILE_LIMITS);
+  const required = Object.keys(STUDENT_PROFILE_LIMITS);
+  const allowed = [...required, ...OPTIONAL_STUDENT_PROFILE_FIELDS];
   const keys = Object.keys(value);
   if (keys.some(key => !allowed.includes(key)) ||
-      allowed.some(key => !Object.hasOwn(value, key))) return null;
+      required.some(key => !Object.hasOwn(value, key))) return null;
   const profile = {};
-  for (const key of allowed) {
+  for (const key of required) {
     if (typeof value[key] !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(value[key])) return null;
     const trimmed = value[key].trim();
     if ([...trimmed].length > STUDENT_PROFILE_LIMITS[key] || !trimmed) return null;
+    profile[key] = trimmed;
+  }
+  for (const key of OPTIONAL_STUDENT_PROFILE_FIELDS) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (typeof value[key] !== 'string') return null;
+    if (key === 'bio' && /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(value[key])) return null;
+    const trimmed = value[key].trim();
+    if (key === 'nickName' && (!trimmed || [...trimmed].length > 60)) return null;
+    if (key === 'username' && !/^[A-Za-z0-9_.]{3,30}$/.test(trimmed)) return null;
+    if (key === 'bio' && [...trimmed].length > 280) return null;
     profile[key] = trimmed;
   }
   return profile;
@@ -437,7 +459,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     formAction: ["'self'"],
     scriptSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", 'data:', 'https://*.googleusercontent.com'],
+    imgSrc: ["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com'],
     connectSrc: ["'self'"]
   };
   if (config.nodeEnv === 'production') cspDirectives.upgradeInsecureRequests = [];

@@ -577,6 +577,7 @@ let googleAuthenticated = false;
 let dashboardEntered = false;
 let profileSaving = false;
 let profileLoadFailed = false;
+let savedStudentProfile = null;
 const studentFieldNames = ['firstName', 'middleName', 'lastName', 'studentId', 'department'];
 
 function updateOnboardingAccess() {
@@ -593,11 +594,13 @@ function setOnboardingProgress() {
   document.getElementById('progress-dot-one').classList.toggle('is-active', currentIndex === 0);
   document.getElementById('progress-dot-two').classList.toggle('is-active', currentIndex === 1);
   document.getElementById('progress-dot-three').classList.toggle('is-active', currentIndex === 2);
+  document.getElementById('progress-dot-four').classList.toggle('is-active', currentIndex === 3);
 }
 
 function goToOnboardingSlide(index) {
   if (dashboardEntered) return;
-  const target = Math.max(0, Math.min(googleAuthenticated ? 2 : 1, index));
+  const target = Math.max(0, Math.min(googleAuthenticated ? 3 : 1, index));
+  if (target === 3 && !isStudentProfileComplete(savedStudentProfile)) return;
   onboardingIndex = target;
   updateOnboardingAccess();
   onboardingStage.scrollTo({
@@ -685,6 +688,11 @@ document.getElementById('skip-onboarding').addEventListener('click', enterDashbo
 const studentForm = document.getElementById('student-details-form');
 const studentFeedback = document.getElementById('student-form-feedback');
 const studentSubmit = studentForm.querySelector('[type="submit"]');
+const personalizationForm = document.getElementById('personalization-form');
+const personalizationFeedback = document.getElementById('personalization-feedback');
+const personalizationAccept = document.getElementById('personalization-accept');
+const personalizationBack = document.getElementById('personalization-back');
+let personalizationSaving = false;
 // Onboarding photo preview: local only, outside the profile save payload.
 const studentPhotoButton = document.getElementById('student-photo-button');
 const studentPhotoInput = document.getElementById('student-photo-input');
@@ -741,13 +749,15 @@ function previewStudentPhoto(file) {
   };
   candidateImage.src = candidateURL;
 }
-studentPhotoButton.addEventListener('click', () => studentPhotoInput.click());
+studentPhotoButton.addEventListener('click', () => {
+  studentPhotoInput.value = '';
+  studentPhotoInput.click();
+});
 studentPhotoInput.addEventListener('change', () => {
   const file = studentPhotoInput.files?.[0];
-  studentPhotoInput.value = '';
   if (file) previewStudentPhoto(file);
 });
-studentForm.addEventListener('reset', resetStudentPhotoPreview);
+personalizationForm.addEventListener('reset', resetStudentPhotoPreview);
 window.addEventListener('pagehide', resetStudentPhotoPreview);
 // End onboarding photo preview.
 function isStudentProfileComplete(profile) {
@@ -776,12 +786,17 @@ async function loadStudentProfile() {
   });
   if (!response.ok) throw new Error('Profile could not be loaded.');
   const { profile } = await response.json();
+  savedStudentProfile = profile || null;
   if (profile) {
     for (const name of studentFieldNames) {
       studentForm.elements.namedItem(name).value = typeof profile[name] === 'string' ? profile[name] : '';
     }
   }
+  for (const name of ['nickName', 'username', 'bio']) {
+    personalizationForm.elements.namedItem(name).value = typeof profile?.[name] === 'string' ? profile[name] : '';
+  }
   updateStudentSubmit();
+  updatePersonalizationSubmit();
   return profile;
 }
 studentForm.addEventListener('submit', async event => {
@@ -809,9 +824,11 @@ studentForm.addEventListener('submit', async event => {
       return;
     }
     const result = await response.json();
-    if (!result.profile) throw new Error('Save was not confirmed.');
-    studentForm.reset();
-    enterDashboard();
+    if (!isStudentProfileComplete(result.profile)) throw new Error('Save was not confirmed.');
+    savedStudentProfile = result.profile;
+    for (const name of studentFieldNames) studentForm.elements.namedItem(name).value = result.profile[name];
+    updatePersonalizationSubmit();
+    goToOnboardingSlide(3);
   } catch {
     showStudentFeedback('Your profile could not be confirmed as saved. Please try Finish again.');
   } finally {
@@ -820,6 +837,74 @@ studentForm.addEventListener('submit', async event => {
     studentForm.removeAttribute('aria-busy');
   }
 });
+// Fourth onboarding profile: save profile text only; the image remains a local preview.
+function isPersonalizationComplete(profile) {
+  return typeof profile?.nickName === 'string' && Boolean(profile.nickName.trim()) &&
+    typeof profile?.username === 'string' && /^[A-Za-z0-9_.]{3,30}$/.test(profile.username);
+}
+function updatePersonalizationSubmit() {
+  const nickName = personalizationForm.elements.namedItem('nickName');
+  const username = personalizationForm.elements.namedItem('username');
+  const bio = personalizationForm.elements.namedItem('bio');
+  const complete = Boolean(nickName.value.trim()) && nickName.validity.valid &&
+    /^[A-Za-z0-9_.]{3,30}$/.test(username.value.trim()) && username.validity.valid && bio.validity.valid;
+  personalizationAccept.disabled = !googleAuthenticated || !isStudentProfileComplete(savedStudentProfile) ||
+    !complete || personalizationSaving || profileLoadFailed;
+  personalizationAccept.classList.toggle('is-ready', !personalizationAccept.disabled);
+  personalizationAccept.textContent = personalizationSaving ? 'Saving…' : 'Accept';
+  personalizationBack.disabled = personalizationSaving;
+}
+function showPersonalizationFeedback(message) {
+  personalizationFeedback.textContent = message;
+  personalizationFeedback.hidden = !message;
+}
+personalizationForm.addEventListener('input', updatePersonalizationSubmit);
+personalizationForm.addEventListener('change', updatePersonalizationSubmit);
+personalizationForm.addEventListener('reset', () => queueMicrotask(updatePersonalizationSubmit));
+personalizationBack.addEventListener('click', () => {
+  if (!personalizationSaving) goToOnboardingSlide(2);
+});
+personalizationForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  updatePersonalizationSubmit();
+  if (personalizationAccept.disabled || !personalizationForm.reportValidity()) return;
+  personalizationSaving = true;
+  updatePersonalizationSubmit();
+  personalizationForm.setAttribute('aria-busy', 'true');
+  showPersonalizationFeedback('');
+  const profile = Object.fromEntries(studentFieldNames.map(name => [name, savedStudentProfile[name]]));
+  for (const name of ['nickName', 'username', 'bio']) {
+    profile[name] = personalizationForm.elements.namedItem(name).value.trim();
+  }
+  try {
+    const response = await fetch('/api/student-profile', {
+      method: 'PUT', credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile)
+    });
+    if (!response.ok) {
+      showPersonalizationFeedback(response.status === 400 || response.status === 422
+        ? 'Check your nick name and username, then try Accept again.'
+        : 'Your profile could not be saved. Please try Accept again.');
+      return;
+    }
+    const result = await response.json();
+    if (!isStudentProfileComplete(result.profile) || !isPersonalizationComplete(result.profile)) {
+      throw new Error('Profile save was not confirmed.');
+    }
+    savedStudentProfile = result.profile;
+    enterDashboard();
+  } catch {
+    showPersonalizationFeedback('Your profile could not be confirmed as saved. Please try Accept again.');
+  } finally {
+    personalizationSaving = false;
+    updatePersonalizationSubmit();
+    personalizationForm.removeAttribute('aria-busy');
+  }
+});
+updatePersonalizationSubmit();
+// End fourth onboarding profile.
+
 const faydaContinue = document.getElementById('fayda-continue');
 const googleContinue = document.getElementById('google-continue');
 const faydaFeedback = document.getElementById('fayda-feedback');
@@ -885,10 +970,12 @@ async function restoreAuthenticationState() {
           try {
             const profile = await loadStudentProfile();
             if (!isStudentProfileComplete(profile)) goToOnboardingSlide(2);
+            else if (!isPersonalizationComplete(profile)) goToOnboardingSlide(3);
             else enterDashboard();
           } catch {
             profileLoadFailed = true;
             updateStudentSubmit();
+            updatePersonalizationSubmit();
             goToOnboardingSlide(2);
             showStudentFeedback('Your saved profile could not be loaded. Please refresh before making changes.');
           }
@@ -926,7 +1013,7 @@ onboardingStage.addEventListener('keydown', event => {
   if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
   event.preventDefault();
   // Only Welcome and Sign in support manual navigation; authentication unlocks the form.
-  if (onboardingIndex === 2) return;
+  if (onboardingIndex >= 2) return;
   goToOnboardingSlide(Math.min(1, onboardingIndex + (event.key === 'ArrowRight' ? 1 : -1)));
 });
 let onboardingTouch = null;
@@ -945,7 +1032,7 @@ onboardingStage.addEventListener('touchend', event => {
 }, { passive: true });
 onboardingStage.addEventListener('touchcancel', () => { onboardingTouch = null; }, { passive: true });
 onboardingStage.addEventListener('wheel', event => {
-  if (onboardingIndex === 2 || Math.abs(event.deltaX) <= Math.abs(event.deltaY) || Math.abs(event.deltaX) < 20) return;
+  if (onboardingIndex >= 2 || Math.abs(event.deltaX) <= Math.abs(event.deltaY) || Math.abs(event.deltaX) < 20) return;
   goToOnboardingSlide(event.deltaX > 0 ? 1 : 0);
 }, { passive: true });
 window.addEventListener('resize', () => {

@@ -59,7 +59,7 @@ test('visual renderer contains no provider, network, payment endpoint, or URL-wr
   assert.doesNotMatch(paymentUi, /(?:subscribe|createPayment|submitPayment|initiatePayment)\s*\(/i);
 });
 
-test('server delta adds only the static payment-ui.js asset route', () => {
+test('server matches the reviewed onboarding-profile and static payment-asset baseline', () => {
   const route = "  app.get('/payment-ui.js', (_req, res) => {\n    res.set('Cache-Control', 'public, max-age=300');\n    res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));\n  });\n";
   assert.equal((server.match(/app\.get\('\/payment-ui\.js'/g) || []).length, 1);
   assert.ok(server.includes(route), 'static asset route is present exactly as reviewed');

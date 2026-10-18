@@ -83,12 +83,12 @@ function createPreviewHarness() {
   elements['student-photo-input'].type = 'file';
   elements['student-photo-label'].textContent = 'Add photo';
   elements['student-photo-button'].setAttribute('aria-label', 'Choose profile photo');
-  const form = new FakeElement('student-details-form');
+  const form = new FakeElement('personalization-form');
   const revoked = [];
   let nextUrl = 0;
   FakeImage.instances = [];
   const context = vm.createContext({
-    studentForm: form,
+    personalizationForm: form,
     document: { getElementById: id => elements[id] ?? null },
     window: new FakeElement('window'),
     Image: FakeImage,
@@ -127,9 +127,14 @@ test('student photo controls are native, accessible, local-only, and outside the
   const formEnd = html.indexOf('</form>', formStart);
   assert.ok(formStart >= 0 && formEnd > formStart, 'student details form exists');
   const formMarkup = html.slice(formStart, formEnd);
+  const personalizationStart = html.indexOf('id="personalization-slide"');
+  const personalizationEnd = html.indexOf('</section>', personalizationStart);
+  assert.ok(personalizationStart >= 0 && personalizationEnd > personalizationStart, 'personalization step exists');
+  const personalizationMarkup = html.slice(personalizationStart, personalizationEnd);
   const photoMarkupStart = html.indexOf('id="student-photo-button"');
   const photoMarkupEnd = html.indexOf('id="student-photo-note"', photoMarkupStart);
-  assert.ok(photoMarkupStart >= 0 && photoMarkupEnd > photoMarkupStart, 'photo controls and preview-only note exist');
+  assert.ok(photoMarkupStart >= personalizationStart && photoMarkupEnd > photoMarkupStart && photoMarkupEnd < personalizationEnd,
+    'photo controls and accessible note live on the personalization step');
   assert.ok(photoMarkupStart < formStart || photoMarkupStart > formEnd, 'photo controls are outside the student details form');
   assert.doesNotMatch(formMarkup, /type=["']file["']/i, 'native form submission cannot include a photo file');
   assert.match(html, /<button\b[^>]*id="student-photo-button"[^>]*type="button"[^>]*aria-label="Choose profile photo"/);
@@ -138,9 +143,20 @@ test('student photo controls are native, accessible, local-only, and outside the
     'the native file input is visually hidden while its button remains keyboard-operable');
   assert.match(html, /<img\b(?=[^>]*id="student-photo-preview")(?=[^>]*hidden)[^>]*>/);
   assert.match(html, /id="student-photo-placeholder"/);
-  assert.match(html, /id="student-photo-label">Add photo</);
+  assert.match(html, /<span\b(?=[^>]*id="student-photo-label")(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>Add photo</);
   assert.match(html, /id="student-photo-status"[^>]*role="status"[^>]*aria-live="polite"/);
-  assert.match(html, /id="student-photo-note"[^>]*>\s*Preview only\s*[·.]\s*Images up to 10 MB\s*</);
+  assert.match(html, /<p\b(?=[^>]*id="student-photo-note")(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>\s*Choose an image up to 10 MB\. Image preview only; not uploaded\.\s*</);
+  assert.match(personalizationMarkup, /<svg\b[^>]*>[\s\S]*?<\/svg>/,
+    'the photo picker presents an icon rather than visible Add photo copy');
+  const visiblePersonalizationMarkup = personalizationMarkup
+    .replace(/<span\b(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>[\s\S]*?<\/span>/g, '')
+    .replace(/<p\b(?=[^>]*class="[^"]*onboarding-visually-hidden[^"]*")[^>]*>[\s\S]*?<\/p>/g, '');
+  assert.doesNotMatch(visiblePersonalizationMarkup, /(?:Add photo|Preview only|Images up to 10 MB)/,
+    'the new step does not render photo instructions as visible copy');
+  assert.doesNotMatch(personalizationMarkup, /student-photo-preview[^>]*src=/,
+    'the new step has no stock or remote initial preview URL');
+  assert.match(styles, /\.onboarding-visually-hidden\s*,\s*\.student-photo-file\s*\{/,
+    'screen-reader-only helper text is visually hidden without being removed from accessibility APIs');
 
   const block = photoPreviewBlock();
   assert.doesNotMatch(block, /\bfetch\s*\(|XMLHttpRequest|sendBeacon|FormData|localStorage|sessionStorage/i,
@@ -149,6 +165,16 @@ test('student photo controls are native, accessible, local-only, and outside the
     'the existing student save payload remains derived from native student-form fields');
   assert.doesNotMatch(app, /FormData\([^)]*student-photo|student-photo-input[^\n]*name=/,
     'photo selection must not be added to the student save payload');
+  const saveStart = app.indexOf("studentForm.addEventListener('submit'");
+  const fourthStepStart = app.indexOf('// Fourth onboarding profile');
+  assert.ok(saveStart >= 0 && fourthStepStart > saveStart, 'base profile save handler precedes fourth-step logic');
+  const saveHandler = app.slice(saveStart, fourthStepStart);
+  assert.match(saveHandler, /savedStudentProfile\s*=\s*result\.profile/,
+    'the confirmed base profile is retained for the personalization update');
+  assert.match(saveHandler, /goToOnboardingSlide\(3\)/,
+    'saving the base profile advances to personalization instead of the dashboard');
+  assert.doesNotMatch(saveHandler, /enterDashboard\s*\(/,
+    'the base-profile save does not skip personalization');
 });
 
 test('photo preview validates selection, loads before swapping, replaces and revokes object URLs', () => {
@@ -156,11 +182,13 @@ test('photo preview validates selection, loads before swapping, replaces and rev
   const e = h.elements;
   assertReset(h);
 
+  e['student-photo-input'].value = 'C:\\fakepath\\portrait.png';
   e['student-photo-button'].click();
   assert.equal(e['student-photo-input'].clickCount, 1, 'the button opens the native file picker');
+  assert.equal(e['student-photo-input'].value, '', 'picker activation clears the old selection before opening the native picker');
 
   select(h, file('portrait.png', 'image/png', 2048));
-  assert.equal(e['student-photo-input'].value, '', 'clearing the input allows choosing the same file again');
+  assert.equal(e['student-photo-input'].value, 'C:\\fakepath\\portrait.png', 'change retains the native file selection for browser verification');
   assert.equal(h.images.length, 1);
   assert.equal(e['student-photo-preview'].hidden, true, 'unloaded images are not shown');
   assert.equal(e['student-photo-placeholder'].hidden, false);
@@ -230,6 +258,7 @@ test('decode errors and picker cancellation preserve the current photo; stale ra
   const successfulUrl = e['student-photo-preview'].src;
   h.form.dispatch('reset');
   assertReset(h);
+  assert.equal(e['student-photo-input'].value, '', 'form reset clears the retained native file selection');
   assert.ok(h.revoked.includes(successfulUrl), 'form reset revokes the successful preview URL');
 
   select(h, file('pagehide.png'));

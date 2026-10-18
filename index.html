@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#681B1D" />
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
-  <link rel="stylesheet" href="styles.css?v=53" />
+  <link rel="stylesheet" href="styles.css?v=54" />
   <script src="payment-ui.js?v=13" defer></script>
-  <script src="app.js?v=38" defer></script>
+  <script src="app.js?v=39" defer></script>
 </head>
 <body>
   <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -33,7 +33,7 @@
         <span>stemma</span>
       </div>
       <div class="onboarding-header-actions">
-        <span class="step-count" aria-live="polite"><span id="active-step">01</span><span class="step-count-divider">/ 03</span></span>
+        <span class="step-count" aria-live="polite"><span id="active-step">01</span><span class="step-count-divider">/ 04</span></span>
         <button class="skip-button" id="skip-onboarding" type="button">Skip</button>
       </div>
     </header>
@@ -135,23 +135,10 @@
         </div>
         <div class="student-form-card">
           <div class="student-form-heading">
-            <span class="student-form-step">03 <i></i> 03</span>
+            <span class="student-form-step">03 <i></i> 04</span>
             <p class="student-form-eyebrow">PERSONALIZE YOUR SPACE</p>
             <h1 id="student-title">Your student profile</h1>
             <p class="student-form-intro">A few details help make Stemma feel like yours.</p>
-          </div>
-          <div class="student-photo-picker">
-            <button class="student-photo-button" id="student-photo-button" type="button" aria-label="Choose profile photo" aria-describedby="student-photo-note student-photo-status">
-              <span class="student-photo-avatar">
-                <img id="student-photo-preview" alt="Selected profile photo preview" hidden />
-                <span id="student-photo-placeholder" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="5"/><path d="M6 28v-3a10 10 0 0 1 20 0v3"/></svg></span>
-              </span>
-              <span class="student-photo-copy"><strong>Profile photo</strong><span id="student-photo-label">Add photo</span></span>
-              <svg class="student-photo-upload" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>
-            </button>
-            <input class="student-photo-file" id="student-photo-input" type="file" accept="image/*" aria-label="Profile image file" tabindex="-1" />
-            <p id="student-photo-note">Preview only · Images up to 10 MB</p>
-            <p id="student-photo-status" role="status" aria-live="polite"></p>
           </div>
           <form class="student-form" id="student-details-form" autocomplete="off">
             <div class="student-fields">
@@ -183,10 +170,60 @@
           </form>
         </div>
       </section>
+
+      <section class="onboarding-slide student-slide personalization-slide" id="personalization-slide" aria-labelledby="personalization-title">
+        <div class="student-hero" aria-hidden="true">
+          <span class="student-hero-orbit student-hero-orbit-one"></span>
+          <span class="student-hero-orbit student-hero-orbit-two"></span>
+          <div class="student-hero-brand"><span class="student-hero-mark"><svg class="icon"><use href="#i-stemma-mark"/></svg></span><span>STEMMA · STUDENT EDITION</span></div>
+          <p class="student-hero-word">Make it<br /><em>your own.</em></p>
+          <span class="student-hero-caption">A LITTLE MORE YOU</span>
+        </div>
+        <div class="student-form-card personalization-card">
+          <div class="personalization-cover">
+            <span class="student-form-step">04 <i></i> 04</span>
+            <h1 id="personalization-title" tabindex="-1">Your profile</h1>
+          </div>
+          <div class="student-photo-picker">
+            <button class="student-photo-button" id="student-photo-button" type="button" aria-label="Choose profile photo" aria-describedby="student-photo-note student-photo-status">
+              <span class="student-photo-avatar">
+                <img id="student-photo-preview" alt="Selected profile photo preview" hidden />
+                <span id="student-photo-placeholder" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="5"/><path d="M6 28v-3a10 10 0 0 1 20 0v3"/></svg></span>
+              </span>
+              <span class="student-photo-camera" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M8.1 4a1.5 1.5 0 0 0-1.25.67L5.63 6.5H4A2.5 2.5 0 0 0 1.5 9v9A2.5 2.5 0 0 0 4 20.5h16a2.5 2.5 0 0 0 2.5-2.5V9A2.5 2.5 0 0 0 20 6.5h-1.63l-1.22-1.83A1.5 1.5 0 0 0 15.9 4H8.1ZM12 9a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm0 1.7a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z"/></svg></span>
+              <span class="onboarding-visually-hidden" id="student-photo-label">Add photo</span>
+            </button>
+            <input class="student-photo-file" id="student-photo-input" type="file" accept="image/*" aria-label="Profile image file" tabindex="-1" />
+            <p class="onboarding-visually-hidden" id="student-photo-note">Choose an image up to 10 MB. Image preview only; not uploaded.</p>
+            <p class="onboarding-visually-hidden" id="student-photo-status" role="status" aria-live="polite"></p>
+          </div>
+          <form class="student-form personalization-form" id="personalization-form" autocomplete="off">
+            <div class="personalization-fields">
+              <div class="student-field">
+                <label for="profile-nick-name">Nick Name</label>
+                <input id="profile-nick-name" name="nickName" type="text" placeholder="Your nick name" autocomplete="nickname" maxlength="60" required />
+              </div>
+              <div class="student-field">
+                <label for="profile-username">Username</label>
+                <input id="profile-username" name="username" type="text" placeholder="Choose a username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="30" pattern="[A-Za-z0-9_.]{3,30}" title="Use 3–30 letters, numbers, dots, or underscores" required />
+              </div>
+              <div class="student-field">
+                <label for="profile-bio">Bio</label>
+                <textarea id="profile-bio" name="bio" placeholder="A little about you" maxlength="280" rows="2"></textarea>
+              </div>
+            </div>
+            <p class="student-form-feedback" id="personalization-feedback" role="status" aria-live="polite" hidden></p>
+            <div class="student-form-actions personalization-actions">
+              <button class="personalization-back" id="personalization-back" type="button">Back</button>
+              <button class="student-submit-button personalization-accept" id="personalization-accept" type="submit" disabled>Accept</button>
+            </div>
+          </form>
+        </div>
+      </section>
     </div>
 
     <footer class="onboarding-footer" aria-hidden="true">
-      <div class="onboarding-progress"><span class="progress-dot is-active" id="progress-dot-one"></span><span class="progress-dot" id="progress-dot-two"></span><span class="progress-dot" id="progress-dot-three"></span></div>
+      <div class="onboarding-progress"><span class="progress-dot is-active" id="progress-dot-one"></span><span class="progress-dot" id="progress-dot-two"></span><span class="progress-dot" id="progress-dot-three"></span><span class="progress-dot" id="progress-dot-four"></span></div>
       <span class="footer-note">Made for your everyday</span>
     </footer>
   </main>

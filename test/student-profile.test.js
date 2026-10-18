@@ -46,8 +46,15 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     async getStudentProfile(subject) { return records.get(subject) ?? null; },
     async upsertStudentProfile(subject, profile) {
       writes.push({ subject, profile });
-      records.set(subject, { ...profile });
-      return { ...profile };
+      const previous = records.get(subject) ?? {};
+      const saved = {
+        ...profile,
+        nickName: profile.nickName ?? previous.nickName ?? '',
+        username: profile.username ?? previous.username ?? '',
+        bio: profile.bio ?? previous.bio ?? ''
+      };
+      records.set(subject, saved);
+      return { ...saved };
     }
   };
   const h = await createHarness({ studentProfileStore: store });
@@ -87,6 +94,20 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     { ...validProfile(), studentId: 'x'.repeat(65) },
     { ...validProfile(), firstName: 'x'.repeat(81) },
     { ...validProfile(), department: 'x'.repeat(101) },
+    { ...validProfile(), nickName: '' },
+    { ...validProfile(), nickName: 'x'.repeat(61) },
+    { ...validProfile(), nickName: 12 },
+    { ...validProfile(), username: 'ab' },
+    { ...validProfile(), username: 'user-name' },
+    { ...validProfile(), username: 'üsername' },
+    { ...validProfile(), username: 'x'.repeat(31) },
+    { ...validProfile(), username: null },
+    { ...validProfile(), bio: 'x'.repeat(281) },
+    { ...validProfile(), bio: 'bad\u0001value' },
+    { ...validProfile(), bio: 'bad\tvalue' },
+    { ...validProfile(), bio: '\tunsafe boundary' },
+    { ...validProfile(), bio: 12 },
+    { ...validProfile(), unexpected: 'reject me' },
     ...['firstName', 'middleName', 'lastName', 'studentId', 'department'].flatMap(key => [
       { ...validProfile(), [key]: '' },
       { ...validProfile(), [key]: '   ' }
@@ -121,18 +142,47 @@ test('student profile API enforces Google identity, same-origin, strict input, a
   });
   assert.equal(saved.status, 200);
   const expectedA = { firstName: 'Ada', middleName: 'Byron', lastName: 'Lovelace', studentId: 'ST-123', department: 'Mathematics' };
-  assert.deepEqual(await saved.json(), { profile: expectedA });
+  const expectedAWithOptionalDefaults = { ...expectedA, nickName: '', username: '', bio: '' };
+  assert.deepEqual(await saved.json(), { profile: expectedAWithOptionalDefaults });
   assert.deepEqual(writes[0], { subject: 'google-subject-A', profile: expectedA });
-  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedA });
+  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedAWithOptionalDefaults });
   assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleB } })).json(), { profile: null });
+
+  const completedProfile = {
+    ...expectedA,
+    nickName: '  Ada B.  ',
+    username: '  Ada.Lovelace_1  ',
+    bio: '  Mathematician\nand writer.  '
+  };
+  const completed = await fetch(endpoint, {
+    method: 'PUT', headers: { cookie: googleA, origin: h.origin, 'content-type': 'application/json' },
+    body: JSON.stringify(completedProfile)
+  });
+  const expectedCompleted = { ...expectedA, nickName: 'Ada B.', username: 'Ada.Lovelace_1', bio: 'Mathematician\nand writer.' };
+  assert.equal(completed.status, 200);
+  assert.deepEqual(await completed.json(), { profile: expectedCompleted });
+  assert.deepEqual(writes[1], { subject: 'google-subject-A', profile: expectedCompleted });
+
+  const legacyUpdate = await fetch(endpoint, {
+    method: 'PUT', headers: { cookie: googleA, origin: h.origin, 'content-type': 'application/json' },
+    body: JSON.stringify(validProfile({ firstName: 'Ada updated' }))
+  });
+  const expectedLegacyUpdate = { ...expectedCompleted, firstName: 'Ada updated' };
+  assert.equal(legacyUpdate.status, 200);
+  assert.deepEqual(await legacyUpdate.json(), { profile: expectedLegacyUpdate });
+  assert.deepEqual(writes[2], { subject: 'google-subject-A', profile: { ...expectedA, firstName: 'Ada updated' } });
+  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedLegacyUpdate });
 
   const savedB = await fetch(endpoint, {
     method: 'PUT', headers: { cookie: googleB, origin: h.origin, 'content-type': 'application/json' },
     body: JSON.stringify({ ...validProfile(), middleName: 'Grace' })
   });
   assert.equal(savedB.status, 200);
-  assert.equal(writes[1].subject, 'google-subject-B');
-  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedA });
+  assert.equal(writes[3].subject, 'google-subject-B');
+  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleB } })).json(), {
+    profile: { firstName: 'Ada', middleName: 'Grace', lastName: 'Lovelace', studentId: 'ST-123', department: 'Mathematics', nickName: '', username: '', bio: '' }
+  });
+  assert.deepEqual(await (await fetch(endpoint, { headers: { cookie: googleA } })).json(), { profile: expectedLegacyUpdate });
 });
 
 test('student profile API returns safe 503 responses when its store is missing or unavailable', async t => {
@@ -175,7 +225,7 @@ test('student profile API returns safe 503 responses when its store is missing o
 
 test('student profile migration is additive/idempotent and store queries parameterize subject and fields', async () => {
   const calls = [];
-  const profile = { firstName: 'Ada', middleName: '', lastName: 'Lovelace', studentId: 'S-1', department: 'Math' };
+  const profile = { firstName: 'Ada', middleName: '', lastName: 'Lovelace', studentId: 'S-1', department: 'Math', nickName: 'Ada', username: 'ada_1', bio: 'Hi\nthere' };
   const pool = {
     async query(text, values) {
       calls.push({ text, values });
@@ -186,15 +236,28 @@ test('student profile migration is additive/idempotent and store queries paramet
   };
   const store = createStudentProfileStore(pool);
   await store.migrate();
+  await store.migrate();
   assert.deepEqual(await store.upsertStudentProfile('google-subject-1', profile), profile);
+  const legacyProfile = { firstName: 'Ada', middleName: '', lastName: 'Lovelace', studentId: 'S-1', department: 'Math' };
+  assert.deepEqual(await store.upsertStudentProfile('google-subject-1', legacyProfile), profile);
   assert.deepEqual(await store.getStudentProfile('google-subject-1'), profile);
 
   assert.match(calls[0].text, /CREATE TABLE IF NOT EXISTS stemma_student_profiles/i);
   assert.match(calls[0].text, /REFERENCES stemma_google_identities\s*\(google_subject\)/i);
   assert.match(calls[0].text, /ON DELETE CASCADE/i);
   assert.doesNotMatch(calls[0].text, /\bDROP\s+(TABLE|SCHEMA|DATABASE)\b/i);
-  assert.match(calls[1].text, /ON CONFLICT \(google_subject\) DO UPDATE/i);
-  assert.deepEqual(calls[1].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math']);
-  assert.match(calls[2].text, /WHERE google_subject = \$1/);
-  assert.deepEqual(calls[2].values, ['google-subject-1']);
+  for (const call of [calls[1], calls[3]]) {
+    assert.match(call.text, /ALTER TABLE stemma_student_profiles/i);
+    for (const column of ['nick_name', 'username', 'bio']) {
+      assert.match(call.text, new RegExp(`ADD COLUMN IF NOT EXISTS ${column} TEXT NOT NULL DEFAULT ''`, 'i'));
+    }
+  }
+  assert.match(calls[4].text, /ON CONFLICT \(google_subject\) DO UPDATE/i);
+  assert.match(calls[4].text, /nick_name = COALESCE\(\$7, stemma_student_profiles\.nick_name\)/i);
+  assert.match(calls[4].text, /username = COALESCE\(\$8, stemma_student_profiles\.username\)/i);
+  assert.match(calls[4].text, /bio = COALESCE\(\$9, stemma_student_profiles\.bio\)/i);
+  assert.deepEqual(calls[4].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', 'Ada', 'ada_1', 'Hi\nthere']);
+  assert.deepEqual(calls[5].values, ['google-subject-1', 'Ada', '', 'Lovelace', 'S-1', 'Math', null, null, null]);
+  assert.match(calls[6].text, /WHERE google_subject = \$1/);
+  assert.deepEqual(calls[6].values, ['google-subject-1']);
 });
