@@ -4,15 +4,45 @@
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const sortRecords = records => [...records].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
   const isUnread = item => !item.readAt && item.read !== true && (item.readAt === null || item.read === false);
-  function renderMeta(item) {
+  function renderMeta(item, compact = false) {
     const date = new Date(item.createdAt);
     const validDate = Number.isFinite(date.getTime());
     const status = item.readAt || item.read === true ? 'Read' : isUnread(item) ? 'Unread' : '';
-    return `<span class="notification-meta">${validDate ? `<time datetime="${date.toISOString()}">${escape(date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}</time>` : ''}${status ? `<span class="notification-status${status === 'Unread' ? ' is-unread' : ''}">${status}</span>` : ''}</span>`;
+    return `<span class="notification-meta">${validDate ? `<time datetime="${date.toISOString()}"${compact ? ` title="${escape(date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}"` : ''}>${escape(date.toLocaleString(undefined, compact ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' } : { dateStyle: 'medium', timeStyle: 'short' }))}</time>` : ''}${status ? `<span class="notification-status${status === 'Unread' ? ' is-unread' : ''}">${status}</span>` : ''}</span>`;
+  }
+  function previewMessage(message) {
+    const text = String(message ?? '').replace(/\s+/g, ' ').trim();
+    const preview = text.split(' ').slice(0, 6).join(' ').slice(0, 48).trimEnd();
+    return preview.length < text.length ? preview.slice(0, 47).trimEnd() + '…' : preview;
+  }
+  function groupLabel(item, today, yesterday) {
+    if (isUnread(item)) return 'New';
+    const date = new Date(item.createdAt);
+    if (!Number.isFinite(date.getTime())) return 'Earlier';
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function renderAvatar(item) {
+    // Sender photos are optional metadata, never inferred from the recipient's profile.
+    const photo = item.type !== 'system' && typeof item.senderAvatarUrl === 'string'
+      && /^(https:\/\/|\/(?!\/))[^\s<>"'\\]+$/i.test(item.senderAvatarUrl) ? item.senderAvatarUrl : '';
+    return `<span class="notification-avatar" aria-hidden="true"><svg class="icon"><use href="#i-bell"/></svg>${photo ? `<img src="${escape(photo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />` : ''}</span>`;
   }
   function renderNotifications(records, selection = null) {
     if (!records.length) return '<div class="notifications-empty"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><h2>No notifications yet</h2><p>There are no saved notifications available for your account.</p></div>';
-    return '<ol class="notifications-list">' + sortRecords(records).map((item, index) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}><span class="notification-title-row">${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : ''}<span class="notification-title">${escape(item.title || 'Notification')}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</span>${item.message ? `<span class="notification-preview">${escape(item.message)}</span>` : ''}${renderMeta(item)}${selection ? '' : '<span class="notification-open-label">View notification <svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>'}</button></li>`).join('') + '</ol>';
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const groups = new Map();
+    sortRecords(records).forEach((item, index) => {
+      const label = groupLabel(item, today, yesterday);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push({ item, index });
+    });
+    // Unread first; indices still address the original date-sorted detail records.
+    const labels = [...groups.keys()].sort((a, b) => a === 'New' ? -1 : b === 'New' ? 1 : 0);
+    return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(item.title || 'Notification')}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
   }
   function renderNotificationDetail(item) {
     return `${renderMeta(item)}${item.message ? `<p class="notification-full-message">${escape(item.message)}</p>` : '<p class="notification-full-message">No additional details were provided.</p>'}`;
@@ -224,6 +254,9 @@
     if (button && event.shiftKey && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); toggleSelection(Number(button.dataset.notificationIndex)); }
     if (event.key === 'Escape' && selectionMode && !dialog.open) { event.preventDefault(); resetSelection(); renderList(); selectToggle.focus(); }
   });
+  content.addEventListener('error', event => {
+    if (event.target.matches?.('.notification-avatar img')) event.target.hidden = true;
+  }, true);
   content.addEventListener('click', event => {
     if (event.target.closest('.notifications-retry')) { void load(); return; }
     const button = event.target.closest('[data-notification-index]');
