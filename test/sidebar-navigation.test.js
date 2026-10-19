@@ -15,7 +15,7 @@ const controllerEnd = appSource.indexOf('function updateOnboardingAccess() {', c
 assert.ok(controllerStart >= 0 && controllerEnd > controllerStart, 'navigation controller block is present');
 const controllerSource = appSource.slice(controllerStart, controllerEnd);
 const PREFIX = 'stemma:navigation:v1:';
-const ROUTES = ['overview', 'cards', 'activity', 'goals', 'profile'];
+const ROUTES = ['overview', 'cards', 'pulse', 'activity', 'goals', 'profile'];
 
 function makeState(route, { tab = 0, view = 'main', ...rest } = {}) {
   const tabs = Object.fromEntries(ROUTES.map(key => [key, 0]));
@@ -88,7 +88,7 @@ function makeHarness() {
   });
   vm.runInContext(memorySource, context, { filename: 'navigation-memory.js' });
   vm.runInContext(`
-    const activeTabs = { overview: 0, cards: 0, activity: 0, goals: 0, profile: 0 };
+    const activeTabs = { overview: 0, cards: 0, pulse: 0, activity: 0, goals: 0, profile: 0 };
     let activeRoute = 'overview';
     let paymentSlideIndex = 0;
     let paymentDemoInterval = '15-days';
@@ -148,6 +148,16 @@ test('saved route, every tab index, and route-specific tab state are restored', 
   assert.deepEqual(JSON.parse(JSON.stringify(h.evaluate('activeTabs'))), saved.tabs);
   assert.equal(h.evaluate('paymentSlideIndex'), 1);
   assert.equal(h.evaluate('paymentDemoInterval'), '3-months');
+  h.flushFrames();
+});
+
+test('Pulse route and its highest category index are restored', () => {
+  const h = makeHarness();
+  const saved = makeState('pulse', { tab: 5 });
+  assert.equal(h.save('google:pulse@example.test', saved), true);
+  h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:pulse@example.test')");
+  assert.equal(h.evaluate('activeRoute'), 'pulse');
+  assert.equal(h.evaluate('activeTabs.pulse'), 5);
   h.flushFrames();
 });
 
@@ -279,11 +289,11 @@ test('sidebar identity prefers the trimmed saved nickname and keeps it as text',
   assert.equal(name.htmlWrites + username.htmlWrites, 0, 'nickname and username are never interpolated through HTML');
 });
 
-test('drawer puts Overview first without changing the five-item bottom-nav order; sidebar crest and bundled Fraunces remain local', async () => {
+test('drawer puts Overview first and Pulse follows Cards in bottom-nav order; sidebar assets remain local', async () => {
   const sectionsMatch = /^const sections = \[([\s\S]*?)^\];/m.exec(appSource);
   assert.ok(sectionsMatch, 'navigation section definition exists');
   assert.deepEqual([...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id),
-    ['cards', 'activity', 'overview', 'goals', 'profile'], 'bottom navigation retains the original order and Profile remains last');
+    ['cards', 'pulse', 'activity', 'overview', 'goals', 'profile'], 'Pulse follows Cards and Profile remains last');
   const bottomNav = appSource.match(/function renderBottomNav\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(bottomNav, /sections\.map\(item\s*=>/);
   assert.match(bottomNav, /const drawerSections = \[sections\.find\(item => item\.id === 'overview'\), \.\.\.sections\.filter\(item => item\.id !== 'overview'\)\]/);

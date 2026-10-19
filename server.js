@@ -1016,12 +1016,16 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js', 'notifications-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
     });
   }
+  app.get('/pulse.css', (_req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.type('text/css').sendFile(path.join(ROOT, 'pulse.css'));
+  });
   app.get('/styles.css', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
     res.type('text/css').sendFile(path.join(ROOT, 'styles.css'));

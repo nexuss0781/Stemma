@@ -55,15 +55,15 @@ function createRenderHarness({ profile, state, photoURL, photoNotice, email = ''
   return { context, grid };
 }
 
-test('Profile remains the fifth and far-right existing route, without creating a new bottom-nav item', () => {
+test('Profile remains far-right while Pulse sits immediately after Payment', () => {
   const routesStart = app.indexOf('const sections = [');
   const routesEnd = app.indexOf('];', routesStart);
   assert.ok(routesStart >= 0 && routesEnd > routesStart);
   const routeBlock = app.slice(routesStart, routesEnd + 2);
   const routeIds = [...routeBlock.matchAll(/\bid:\s*'([^']+)'/g)].map(match => match[1]);
-  assert.deepEqual(routeIds, ['cards', 'activity', 'overview', 'goals', 'profile']);
+  assert.deepEqual(routeIds, ['cards', 'pulse', 'activity', 'overview', 'goals', 'profile']);
   assert.match(routeBlock, /\{ id: 'profile', icon: 'user', label: 'Profile' \}\s*\];?$/,
-    'Profile occupies the existing fifth/far-right route position');
+    'Profile retains the far-right route position');
   assert.equal((app.match(/id:\s*'profile'/g) || []).length, 1, 'there is one Profile route, not an extra navigation tab');
   assert.match(app, /bottomNav\.innerHTML\s*=\s*`[\s\S]*?\$\{sections\.map\(item =>/,
     'bottom navigation is rendered from the same existing sections array');

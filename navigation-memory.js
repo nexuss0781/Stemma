@@ -2,8 +2,8 @@
 (function attachStemmaNavigationMemory(root) {
   'use strict';
 
-  const ROUTES = Object.freeze(['overview', 'cards', 'activity', 'goals', 'profile']);
-  const TAB_KEYS = Object.freeze(['overview', 'cards', 'activity', 'goals', 'profile']);
+  const ROUTES = Object.freeze(['overview', 'cards', 'pulse', 'activity', 'goals', 'profile']);
+  const TAB_KEYS = Object.freeze(['overview', 'cards', 'pulse', 'activity', 'goals', 'profile']);
   const INTERVALS = Object.freeze(['15-days', '1-month', '2-months', '3-months']);
   const VIEWS = Object.freeze(['main', 'bill', 'sheet', 'receipt', 'history-details', 'friend-picker']);
   const STORAGE_PREFIX = 'stemma:navigation:v1:';
@@ -13,7 +13,7 @@
     return {
       version: 1,
       route: 'overview',
-      tabs: { overview: 0, cards: 0, activity: 0, goals: 0, profile: 0 },
+      tabs: { overview: 0, cards: 0, pulse: 0, activity: 0, goals: 0, profile: 0 },
       paymentSlide: 0,
       interval: '15-days',
       view: 'main',
@@ -74,7 +74,8 @@
     result.route = state.route;
     const tabs = state.tabs && typeof state.tabs === 'object' && !Array.isArray(state.tabs) ? state.tabs : {};
     for (const key of TAB_KEYS) {
-      if (Number.isInteger(tabs[key]) && tabs[key] >= 0 && tabs[key] <= 2) result.tabs[key] = tabs[key];
+      const maxIndex = key === 'pulse' ? 5 : 2;
+      if (Number.isInteger(tabs[key]) && tabs[key] >= 0 && tabs[key] <= maxIndex) result.tabs[key] = tabs[key];
     }
     if (state.paymentSlide === 0 || state.paymentSlide === 1) result.paymentSlide = state.paymentSlide;
     if (typeof state.interval === 'string' && INTERVALS.includes(state.interval)) result.interval = state.interval;

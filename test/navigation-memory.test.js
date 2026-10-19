@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import '../navigation-memory.js';
 
 const { StemmaNavigationMemory } = globalThis;
-const ROUTES = ['overview', 'cards', 'activity', 'goals', 'profile'];
+const ROUTES = ['overview', 'cards', 'pulse', 'activity', 'goals', 'profile'];
+const EXISTING_ROUTES = ['overview', 'cards', 'activity', 'goals', 'profile'];
 const PREFIX = 'stemma:navigation:v1:';
 
 function makeStorage(overrides = {}) {
@@ -26,10 +27,10 @@ function state(route = 'overview', selectedTab = 0) {
   };
 }
 
-test('round-trips all five routes and each of their three tab indexes', () => {
+test('round-trips all existing routes and each of their three tab indexes', () => {
   const storage = makeStorage();
   const memory = new StemmaNavigationMemory(storage);
-  for (const route of ROUTES) {
+  for (const route of EXISTING_ROUTES) {
     for (let tab = 0; tab <= 2; tab += 1) {
       const input = state(route, tab);
       assert.equal(memory.save(`google:${route}-${tab}@example.test`, input), true);
@@ -37,6 +38,29 @@ test('round-trips all five routes and each of their three tab indexes', () => {
     }
   }
   assert.equal(storage.values.size, 15);
+});
+
+test('round-trips Pulse and each of its six category indexes', () => {
+  const memory = new StemmaNavigationMemory(makeStorage());
+  for (let category = 0; category <= 5; category += 1) {
+    const input = state('pulse', category);
+    assert.equal(memory.save(`google:pulse-${category}@example.test`, input), true);
+    assert.deepEqual(memory.load(`google:pulse-${category}@example.test`), input);
+  }
+});
+
+test('invalid Pulse and existing-route category indexes fall back to zero', () => {
+  const clean = StemmaNavigationMemory.sanitize;
+  for (const index of [-1, 6, 1.5, '5', null]) {
+    const sanitized = clean({ ...state('pulse'), tabs: { ...state('pulse').tabs, pulse: index } });
+    assert.equal(sanitized.tabs.pulse, 0, `Pulse index ${String(index)} is rejected`);
+  }
+  const pulseMaximum = clean({ ...state('pulse'), tabs: { ...state('pulse').tabs, pulse: 5 } });
+  assert.equal(pulseMaximum.tabs.pulse, 5);
+  const existingMaximum = clean({ ...state('cards'), tabs: { ...state('cards').tabs, cards: 2 } });
+  assert.equal(existingMaximum.tabs.cards, 2);
+  const existingOutOfRange = clean({ ...state('cards'), tabs: { ...state('cards').tabs, cards: 3 } });
+  assert.equal(existingOutOfRange.tabs.cards, 0);
 });
 
 test('cards dialog states retain safe deposit, receipt and history metadata', () => {
@@ -85,7 +109,7 @@ test('sanitizer rejects malformed, stale and invalid-route payloads and strips i
     tabs: { overview: 9, cards: -1, activity: 1.5, goals: 2, profile: 0, injected: 2 } };
   assert.equal(memory.save('google:test@example.test', injected), true);
   const loaded = memory.load('google:test@example.test');
-  assert.deepEqual(loaded.tabs, { overview: 0, cards: 0, activity: 0, goals: 2, profile: 0 });
+  assert.deepEqual(loaded.tabs, { overview: 0, cards: 0, pulse: 0, activity: 0, goals: 2, profile: 0 });
   assert.equal(Object.hasOwn(loaded, 'password'), false);
   assert.equal(Object.hasOwn(loaded, 'html'), false);
   assert.equal(Object.hasOwn(loaded.tabs, 'injected'), false);
@@ -210,6 +234,7 @@ test('friend-picker and friend bill/sheet states round-trip only on supported ca
 test('friend memory is a strict privacy whitelist and legacy v1 payloads receive safe defaults', () => {
   const clean = StemmaNavigationMemory.sanitize;
   const legacy = { ...state('cards', 0) };
+  delete legacy.tabs.pulse;
   delete legacy.isFriend;
   delete legacy.friendBillId;
   delete legacy.friendUsernameQuery;

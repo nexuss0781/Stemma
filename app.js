@@ -1,5 +1,6 @@
 const sections = [
   { id: 'cards', icon: 'card', label: 'Payment' },
+  { id: 'pulse', icon: 'pulse', label: 'Pulse' },
   { id: 'activity', icon: 'activity', label: 'Activity' },
   { id: 'overview', icon: 'grid', label: 'Overview' },
   { id: 'goals', icon: 'target', label: 'Goals' },
@@ -7,6 +8,7 @@ const sections = [
 ];
 
 const pageTabs = {
+  pulse: ['All', 'User', 'Group', 'Channel', 'App', 'Story'],
   overview: ['Snapshot', 'Cash flow', 'This month'],
   cards: ['Pay fee', 'Deposit', 'History'],
   activity: ['All activity', 'Incoming', 'Outgoing'],
@@ -396,6 +398,16 @@ function renderCards() {
   grid.classList.toggle('bill-content-grid', billView);
   grid.classList.toggle('deposit-entry-grid', activeRoute === 'cards' && activeTabs.cards === 1 && !billView);
   grid.classList.toggle('payment-history-grid', activeRoute === 'cards' && activeTabs.cards === 2 && !billView);
+  grid.classList.toggle('pulse-content-grid', activeRoute === 'pulse');
+  if (activeRoute === 'pulse') {
+    grid.removeAttribute('role');
+    grid.removeAttribute('aria-roledescription');
+    grid.removeAttribute('tabindex');
+    grid.setAttribute('aria-label', 'Pulse skeleton preview');
+    grid.innerHTML = StemmaPulse.render(activeTabs.pulse);
+    StemmaPulse.mount(grid, activeTabs.pulse, index => { activeTabs.pulse = index; queueNavigationSave(); });
+    return;
+  }
   if (billView) {
     grid.removeAttribute('role');
     grid.removeAttribute('aria-roledescription');
@@ -452,6 +464,7 @@ function render() {
   const historyView = paymentView && activeTabs.cards === 2 && !billView;
   const depositView = paymentView && activeTabs.cards === 1 && !billView;
   const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
+  main.classList.toggle('pulse-view', activeRoute === 'pulse');
   main.classList.toggle('profile-view', profileView);
   main.classList.toggle('overview-view', overview);
   main.classList.toggle('secondary-view', !overview);
@@ -464,8 +477,8 @@ function render() {
   main.querySelector('.hero-card').hidden = !overview;
   main.querySelector('.page-title').hidden = billView || (!paymentView && !profileView);
   main.querySelector('.page-title').textContent = profileView ? 'Profile' : 'Payment';
-  document.getElementById('page-tabs').hidden = billView || profileView;
-  main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView;
+  document.getElementById('page-tabs').hidden = billView || profileView || activeRoute === 'pulse';
+  main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView || activeRoute === 'pulse';
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
   main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView ? 'page' : 'placeholders'}`);
@@ -1656,7 +1669,7 @@ document.addEventListener('keydown', event => {
 function bindSwipeNavigation(element) {
   let start = null;
   element.addEventListener('touchstart', event => {
-    if (event.target.closest('.payment-carousel, .bill-page')) { start = null; return; }
+    if (event.target.closest('.payment-carousel, .bill-page, .pulse-shell')) { start = null; return; }
     if (event.touches.length !== 1) { start = null; return; }
     start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
   }, { passive: true });

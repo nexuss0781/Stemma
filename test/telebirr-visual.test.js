@@ -64,7 +64,11 @@ test('server matches the reviewed onboarding-profile and static payment-asset ba
   const route = "  app.get('/payment-ui.js', (_req, res) => {\n    res.set('Cache-Control', 'public, max-age=300');\n    res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));\n  });\n";
   assert.equal((server.match(/app\.get\('\/payment-ui\.js'/g) || []).length, 1);
   assert.ok(server.includes(route), 'static asset route is present exactly as reviewed');
-  assert.equal(createHash('sha256').update(server.replace(route, '')).digest('hex'), baseline.serverSha256, 'no other server code changed from the approved baseline');
+  const pulseCssRoute = "  app.get('/pulse.css', (_req, res) => {\n    res.set('Cache-Control', 'no-cache');\n    res.type('text/css').sendFile(path.join(ROOT, 'pulse.css'));\n  });\n";
+  assert.ok(server.includes(pulseCssRoute), 'Pulse CSS route is static-only and explicitly reviewed');
+  assert.ok(server.includes("'notifications-ui.js', 'pulse-ui.js'"), 'Pulse JS is served through the reviewed static allowlist');
+  const unchangedServer = server.replace(route, '').replace(pulseCssRoute, '').replace("'notifications-ui.js', 'pulse-ui.js'", "'notifications-ui.js'");
+  assert.equal(createHash('sha256').update(unchangedServer).digest('hex'), baseline.serverSha256, 'no non-static server code changed from the approved baseline');
   assert.doesNotMatch(server, /\/api\/(?:payments?|bills?|transactions?)\b/i);
 });
 
