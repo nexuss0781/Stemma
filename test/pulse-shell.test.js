@@ -19,7 +19,7 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.equal((markup.match(/role="tab"/g) || []).length, 5);
   assert.equal((markup.match(/role="tabpanel"/g) || []).length, 5);
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
-  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 4);
+  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 19);
   assert.doesNotMatch(markup, /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid/,
     'Story is not a category tab or panel');
   assert.match(markup, /class="pulse-stories"/);
@@ -65,7 +65,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=3" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=4" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {
@@ -97,13 +97,24 @@ test('Pulse source and styles are publicly served as static assets only', async 
   }
 });
 
-test('Pulse reveals four ordered full-height stages and retains a two-column skeleton grid', () => {
+test('Pulse reveals four ordered in-place pull stages and retains a two-column skeleton grid', () => {
   const markup = load().pulse.render();
   assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
   assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
-  assert.match(css, /scroll-snap-type: y mandatory/);
-  assert.match(css, /scroll-snap-stop: always/);
+  assert.match(css, /pulse-stage \{ position: absolute; inset: 0/);
+  assert.match(source, /gesture.dy > 0 \? 1 : -1/);
+  assert.match(source, /stage.inert = i !== next/);
+  assert.doesNotMatch(css, /scroll-snap-type: y/);
   assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(source, /event.target.closest\('\.pulse-stories'\)/);
   assert.match(source, /!event.target.closest\('\.pulse-tab'\)/);
+});
+
+test('Pulse announces layouts without visible content and safely handles capture transfer', () => {
+  assert.match(source, /role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(source, /announcement.textContent/);
+  assert.match(source, /event.target === viewport && drag/);
+  assert.match(css, /pulse-announcement \{[^}]*clip-path: inset\(50%\)/);
+  assert.match(css, /overflow: clip/);
+  assert.match(source, /wheelLocked/);
 });

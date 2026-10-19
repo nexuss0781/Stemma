@@ -11,13 +11,13 @@
 .dashboard-grid.pulse-content-grid { display: block; width: min(100%, 620px); min-width: 0; height: 100%; overflow: hidden; }
 .pulse-shell { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; min-width: 0; gap: 14px; }
 .pulse-bone { display: block; flex-shrink: 0; border-radius: 999px; background: var(--skeleton); }
-.pulse-stories { touch-action: pan-x pan-y pinch-zoom; scroll-snap-type: x proximity; display: flex; align-items: center; gap: 15px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.pulse-stories { touch-action: pan-x pinch-zoom; scroll-snap-type: x proximity; display: flex; align-items: center; gap: 15px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .pulse-stories::-webkit-scrollbar { display: none; }
 .pulse-story-ring { scroll-snap-align: start; display: grid; place-items: center; flex: 0 0 54px; width: 54px; height: 54px; border: 1.5px solid var(--brand-burgundy); border-radius: 50%; padding: 3px; }
 .pulse-story-own { border-style: dashed; opacity: .65; }
 .pulse-story-avatar { width: 100%; height: 100%; border-radius: 50%; }
 .pulse-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.pulse-preview-tile { position: relative; height: clamp(112px, 18vh, 158px); overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(150deg, var(--skeleton-light), var(--brand-gold)); }
+.pulse-preview-tile { position: relative; aspect-ratio: 1; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(150deg, var(--skeleton-light), var(--brand-gold)); }
 .pulse-preview-tile:nth-child(2) { background: linear-gradient(150deg, var(--brand-burgundy), var(--brand-burgundy-deep)); }
 .pulse-preview-tile:nth-child(3) { background: linear-gradient(160deg, var(--brand-gold), var(--skeleton)); }
 .pulse-tile-avatar { position: absolute; left: 10px; top: 10px; width: 25px; height: 25px; border: 2px solid var(--paper-soft); background: var(--brand-gold); border-radius: 50%; }
@@ -36,7 +36,7 @@
 .pulse-viewport { min-height: 0; overflow: hidden; touch-action: auto; }
 .pulse-track { display: flex; width: 100%; height: 100%; transition: transform .34s cubic-bezier(.22,.75,.2,1); will-change: transform; }
 .pulse-track.is-dragging { transition: none; }
-.pulse-panel { touch-action: auto; scroll-snap-type: y mandatory; flex: 0 0 100%; width: 100%; min-width: 0; height: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--skeleton) transparent; }
+.pulse-panel { position: relative; touch-action: auto; flex: 0 0 100%; width: 100%; min-width: 0; height: 100%; overflow: clip; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--skeleton) transparent; }
 .pulse-create-affordance { position: absolute; right: 16px; bottom: 16px; z-index: 2; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--brand-burgundy); color: var(--brand-gold-light); border: 1px solid var(--brand-gold); box-shadow: 0 6px 16px var(--line); pointer-events: none; }
 .pulse-create-affordance svg { display: block; width: 32px; height: 32px; }
 .pulse-create-plus { stroke: var(--brand-burgundy); }
@@ -62,9 +62,11 @@
 .pulse-app-icon { width: 52px; height: 52px; border-radius: 17px; }
 .pulse-app-tile .pulse-tile-copy { width: 100%; justify-items: center; }
 .pulse-app-tile .pulse-tile-line { background: var(--skeleton); }
-.pulse-stage { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 100%; overflow: hidden; scroll-snap-align: start; scroll-snap-stop: always; }
-/* Non-story surfaces reserve horizontal movement for the category carousel. */
-.pulse-stage-minimal, .pulse-conversations, .pulse-app-grid, .pulse-previews, .pulse-discovery-grid { touch-action: pan-y pinch-zoom; }
+.pulse-stage { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 100%; overflow: hidden; visibility: hidden; opacity: 0; transform: translate3d(0,-32px,0); pointer-events: none; transition: transform .3s cubic-bezier(.22,.75,.2,1), opacity .3s ease, visibility .3s; }
+/* Only this viewport changes: a downward pull reveals one story layout. */
+.pulse-stage.is-past { transform: translate3d(0,32px,0); }
+.pulse-stage.is-current { visibility: visible; opacity: 1; transform: translate3d(0,0,0); pointer-events: auto; }
+.pulse-stage-minimal, .pulse-conversations, .pulse-app-grid, .pulse-previews, .pulse-discovery-grid { touch-action: pinch-zoom; }
 .pulse-stage-stories { grid-template-rows: auto minmax(0, 1fr); }
 .pulse-stage-previews { grid-template-rows: auto auto minmax(0, 1fr); }
 .pulse-stage-previews .pulse-previews { padding: 0 16px 14px; }
@@ -80,11 +82,13 @@
   .pulse-shell { gap: 9px; }
   .pulse-stories { gap: 12px; padding-top: 4px; }
   .pulse-story-ring { flex-basis: 47px; width: 47px; height: 47px; }
-  .pulse-preview-tile { height: 100px; border-radius: 14px; }
+  .pulse-preview-tile { border-radius: 14px; }
   .pulse-conversation { gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pulse-panel { scroll-snap-type: y proximity; scroll-behavior: auto; }
-  .pulse-track, .pulse-tab { transition: none !important; }
+  .pulse-track, .pulse-tab, .pulse-stage { transition: none !important; }
   .pulse-shell .skeleton-shimmer::after, .pulse-topbar-mark .skeleton-shimmer::after { animation: none; }
 }
+
+/* Non-visual announcements preserve the text-free skeleton presentation. */
+.pulse-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
