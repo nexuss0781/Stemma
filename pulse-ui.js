@@ -38,13 +38,16 @@
         <span class="pulse-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
         <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'all'][i], i === 4)}</section>`).join('')}</div></div>
-        <div class="pulse-create-affordance" aria-hidden="true">
+        <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
+          ${[1, 2, 3].map(order => `<span class="pulse-create-preview" style="--preview-order:${order}">${bone('pulse-create-preview-icon')}${bone('pulse-create-preview-line')}</span>`).join('')}
+        </div>
+        <button type="button" class="pulse-create-affordance" aria-label="Toggle create previews" aria-expanded="false" aria-controls="pulse-create-previews">
           <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
             <path d="M29 10.5V25a4 4 0 0 1-4 4H10.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
             <rect x="3" y="3" width="22" height="22" rx="3.3" fill="currentColor" />
             <path class="pulse-create-plus" d="M14 9v10M9 14h10" fill="none" stroke-width="2" stroke-linecap="round" />
           </svg>
-        </div>
+        </button>
       </div>
     </section>`;
   }
@@ -61,6 +64,25 @@
     const abort = new AbortController();
     const listen = (target, type, fn, options = {}) => target.addEventListener(type, fn, { ...options, signal: abort.signal });
     const announcement = shell.querySelector('.pulse-announcement');
+    const createToggle = shell.querySelector('.pulse-create-affordance');
+    function setCreateOpen(open) {
+      shell.classList.toggle('is-create-open', open);
+      createToggle.setAttribute('aria-expanded', String(open));
+    }
+    listen(createToggle, 'click', () => setCreateOpen(createToggle.getAttribute('aria-expanded') !== 'true'));
+    listen(document, 'pointerdown', event => {
+      if (!createToggle.contains(event.target)) setCreateOpen(false);
+    });
+    listen(document, 'keydown', event => {
+      if (event.key === 'Escape' && createToggle.getAttribute('aria-expanded') === 'true') {
+        event.preventDefault();
+        setCreateOpen(false);
+        createToggle.focus({ preventScroll: true });
+      }
+    });
+    listen(shell, 'focusout', event => {
+      if (!shell.contains(event.relatedTarget)) setCreateOpen(false);
+    });
     const stageNames = ['Chat preview', 'Circular story previews', 'Story tile previews', 'Two-column preview grid'];
     let wheelTimer;
     let wheelLocked = false;
@@ -175,6 +197,7 @@
     function select(index, focus = false) {
       selected = Math.max(0, Math.min(categories.length - 1, index));
       states.forEach(state => { stop(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); resetVisual(state); });
+      setCreateOpen(false);
       drag = null;
       track.classList.remove('is-dragging');
       track.style.transform = `translate3d(-${selected * 100}%,0,0)`;

@@ -31,18 +31,50 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
-test('the layered create affordance is inline SVG and remains decorative, not interactive', () => {
+test('the create-preview toggle is accessible and retains its inline layered-plus SVG', () => {
   const markup = load().pulse.render();
-  const affordance = markup.match(/<(div|span)\b(?=[^>]*\bclass="[^"]*\bpulse-create-affordance\b)[^>]*>([\s\S]*?)<\/\1>/);
-  assert.ok(affordance, 'the create affordance is a non-control circle element');
-  assert.match(affordance[0], /aria-hidden="true"/,
-    'the visual-only affordance is hidden from assistive technology');
-  assert.doesNotMatch(affordance[0], /\b(?:role|tabindex|data-pulse-[\w-]+|onclick)=/i,
-    'the affordance exposes no interactive semantics or action hook');
-  assert.match(affordance[2], /<svg\b[^>]*>[\s\S]*?<\/(?:svg)>/,
+  const toggle = markup.match(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-create-affordance\b)[^>]*>([\s\S]*?)<\/button>/);
+  assert.ok(toggle, 'the create affordance is a button');
+  assert.match(toggle[0], /aria-label="Toggle create previews"/);
+  assert.match(toggle[0], /aria-expanded="false"/);
+  assert.match(toggle[0], /aria-controls="pulse-create-previews"/);
+  assert.match(toggle[1], /<svg\b[^>]*>[\s\S]*?<\/svg>/,
     'the layered-plus artwork is embedded as inline SVG');
-  assert.doesNotMatch(affordance[2], /<use\b/i,
+  assert.doesNotMatch(toggle[1], /<use\b/i,
     'the create artwork is inline rather than an external symbol reference');
+});
+test('create previews are three hidden, inert, decorative skeleton placeholders only', () => {
+  const markup = load().pulse.render();
+  const previews = markup.match(/<(div|section)\b(?=[^>]*\bclass="[^"]*\bpulse-create-previews\b)(?=[^>]*\bid="pulse-create-previews")[^>]*>([\s\S]*?)<\/\1>/);
+  assert.ok(previews, 'the preview container is present with the controlled id');
+  assert.match(previews[0], /aria-hidden="true"/);
+  assert.match(previews[0], /\binert(?:\s|>)/);
+  const items = [...previews[2].matchAll(/<span\b(?=[^>]*\bclass="(?:[^\"]*\s)?pulse-create-preview(?:\s[^\"]*)?")[^>]*>([\s\S]*?)<\/span>/g)];
+  assert.equal(items.length, 3, 'exactly three preview placeholders are rendered');
+  for (const [, content] of items) {
+    assert.equal(content.replace(/<[^>]*>/g, '').trim(), '', 'placeholders contain no visible labels');
+    assert.doesNotMatch(content, /<(?:a|button|input|select|textarea)\b|\b(?:role|tabindex|onclick|data-pulse-[\w-]+)=/i,
+      'placeholders expose no controls or action hooks');
+  }
+  assert.equal(markup.replace(/<[^>]*>/g, '').trim(), '', 'the Pulse shell remains text-free');
+});
+test('create previews toggle from the shell and support Escape and outside dismissal', () => {
+  assert.match(source, /classList\.toggle\(['"]is-create-open['"]/,
+    'mount behavior toggles the shell open class');
+  assert.match(source, /['"]Escape['"]/, 'Escape is handled by the Pulse source');
+  assert.match(source, /listen\((?:document|window),\s*['"](?:pointerdown|click)['"]/,
+    'outside interaction is observed at document or window scope');
+  assert.match(source, /listen\(document,\s*['"]pointerdown['"][\s\S]*?setCreateOpen\(false\)/,
+    'an outside pointer interaction closes the create previews');
+});
+test('create preview transitions stagger bottom-up and are disabled for reduced motion', () => {
+  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(3\)[^{]*\{[^}]*transition-delay:\s*0ms/);
+  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(2\)[^{]*\{[^}]*transition-delay:\s*70ms/);
+  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(1\)[^{]*\{[^}]*transition-delay:\s*140ms/);
+  const reducedMotion = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(reducedMotion, 'a reduced-motion media query is defined');
+  assert.match(reducedMotion[1], /\.pulse-create-preview[^{]*\{[^}]*transition:\s*none/,
+    'reduced motion disables the per-item preview transition');
 });
 test('each of the five categories renders as its selected panel without changing skeleton content', () => {
   const { pulse } = load();
@@ -65,7 +97,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=5" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=6" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {
