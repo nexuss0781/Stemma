@@ -15,6 +15,15 @@ function rule(selector, { last = false } = {}) {
   return matches[last ? matches.length - 1 : 0][1];
 }
 
+function effectiveValue(selector, property) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matches = [...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`, 'g'))];
+  const values = matches.flatMap(match => [...match[1].matchAll(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'g'))]
+    .map(declaration => declaration[1].trim()));
+  assert.ok(values.length, `stylesheet declares ${property} for ${selector}`);
+  return values.at(-1);
+}
+
 test('Pulse direct-chat markup exposes a compact peer identity and accessible private conversation shell', () => {
   const api = {};
   api.window = api;
@@ -95,6 +104,31 @@ test('conversation list omits ready-empty copy but keeps loading and error statu
   assert.match(paint, /conversationsState === 'loading' \? 'Loading conversations…' : conversationsState === 'error' \? 'Conversations could not be loaded\. Check your connection and try again\.' : ''/);
   assert.match(paint, /empty\.hidden = !message/,
     'the status element remains visible for loading/error text and hidden for ready-empty results');
+});
+
+test('direct conversation surfaces use existing soft-light palette and preserve bubble colors', () => {
+  const creamSurfaces = [
+    ['.pulse-direct-chat', 'background'],
+    ['.pulse-direct-header', 'background'],
+    ['.pulse-direct-history', 'background'],
+    ['.pulse-direct-compose', 'background'],
+    ['.pulse-direct-status:not(:empty)', 'background']
+  ];
+  for (const [selector, property] of creamSurfaces) {
+    assert.equal(effectiveValue(selector, property), 'var(--paper-soft)',
+      `${selector} uses paper-soft, including the final effective header background`);
+  }
+  assert.equal(effectiveValue('.pulse-direct-compose textarea', 'background'), 'var(--skeleton-light)');
+  assert.equal(effectiveValue('.pulse-direct-compose button', 'background'), 'var(--brand-gold)');
+
+  const incoming = rule('.pulse-direct-message', { last: true });
+  const outgoing = rule('.pulse-direct-message.is-mine', { last: true });
+  assert.match(incoming, /background:\s*var\(--brand-gold\)/);
+  assert.match(incoming, /color:\s*var\(--brand-burgundy-deep\)/);
+  assert.match(outgoing, /background:\s*var\(--brand-burgundy\)/);
+  assert.match(outgoing, /color:\s*var\(--brand-gold-light\)/);
+  assert.doesNotMatch(css, /(?:^|\n)\s*--[a-z][\w-]*\s*:/,
+    'the Pulse stylesheet consumes existing palette tokens and defines no new palette tokens');
 });
 
 test('Pulse chat bubbles retain gold incoming and burgundy outgoing colors from the existing palette', () => {
