@@ -9,6 +9,14 @@ const [paymentUi, appSource] = await Promise.all([
   readFile(new URL('app.js', root), 'utf8')
 ]);
 const normalizeDepositAmount = vm.runInNewContext(`${paymentUi}\nnormalizeDepositAmount`);
+const navigationHelperSource = appSource.slice(
+  appSource.indexOf('function enterParentNavigation('),
+  appSource.indexOf('function renderBottomNav()')
+);
+const closeHelperStart = appSource.indexOf('function closeBill()');
+const closeHelperEnd = appSource.indexOf("document.addEventListener('submit'", closeHelperStart);
+assert.ok(closeHelperStart >= 0 && closeHelperEnd > closeHelperStart, 'payment close helpers exist');
+const closeHelperSource = appSource.slice(closeHelperStart, closeHelperEnd);
 
 function makeExperience({ dialogOpen = false } = {}) {
   const effects = { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 };
@@ -49,11 +57,12 @@ function fireSubmit({ activeRoute = 'cards', activeTab = 1, amountValue = '24.60
     reportValidity() { reportValidityCalls += 1; return false; }
   };
   const form = { id: 'deposit-amount-form' };
-  vm.runInNewContext(extractHandler(appSource, 'submit'), {
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${extractHandler(appSource, 'submit')}`, {
     document: {
       addEventListener: (_type, callback) => { listener = callback; },
       getElementById: id => id === 'deposit-amount' ? input : null
     },
+    window: { StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } } },
     activeRoute,
     activeTabs: { cards: activeTab },
     payments: { openDeposit },
@@ -88,13 +97,17 @@ function fireAppClick({ payments, activeTab = 1, selector, dialogOpen = false, s
   let navigationSaves = 0;
   const input = { focus() { focused += 1; } };
   const dialog = sheetDialog ?? { open: dialogOpen };
-  vm.runInNewContext(extractHandler(appSource, 'click'), {
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${extractHandler(appSource, 'click')}`, {
     document: {
       addEventListener: (_type, callback) => { listener = callback; },
       querySelectorAll: () => [],
-      querySelector: query => query === '#deposit-amount' ? input : query === '#bill-payment-dialog' ? dialog : null
+      querySelector: query => query === '#deposit-amount' ? input : query === '#bill-payment-dialog' ? dialog : null,
+      getElementById: id => id === 'deposit-amount' ? input : id === 'bill-payment-dialog' ? dialog : null
     },
-    window: { matchMedia: () => ({ matches: false }) },
+    window: {
+      matchMedia: () => ({ matches: false }),
+      StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } }
+    },
     activeRoute: 'cards',
     activeTabs: { cards: activeTab },
     paymentSlideIndex: 0,
@@ -322,7 +335,8 @@ test('deposit form submit is delegated, route/tab guarded and validates without 
 
 test('deposit and regular bill navigation maintain their mutually exclusive state', () => {
   assert.match(appSource, /if\s*\(event\.target\.closest\('\[data-open-bill\]'\)\)\s*\{[\s\S]*?payments\.isDeposit\s*=\s*false/);
-  assert.match(appSource, /if\s*\(event\.target\.closest\('\[data-bill-back\]'\)\)\s*\{[\s\S]*?payments\.isDeposit\s*=\s*false/);
+  assert.match(appSource, /if\s*\(event\.target\.closest\('\[data-bill-back\]'\)\)\s*\{\s*backParentNavigation\('bill', closeBill\)/);
+  assert.match(closeHelperSource.match(/function closeBill\(\) \{[\s\S]*?\n\}/)?.[0] || '', /payments\.isDeposit\s*=\s*false/, 'closing a bill resets deposit mode in the shared close helper');
   assert.match(appSource, /payments\.isDeposit\s*=\s*false/);
   assert.match(appSource, /const wasDeposit = payments\.isDeposit;\s*const wasFriend = payments\.isFriend;\s*payments\.isFriend = false;\s*payments\.friendBill = null;\s*payments\.isDeposit = false;[\s\S]*?payments\.isBillOpen = false;\s*render\(\);\s*document\.querySelector\(wasFriend \? '#friend-username' : wasDeposit \? '#deposit-amount' : '\.fee-continue'\)/);
   assert.match(paymentUi, /renderBill\(\)\s*\{\s*if\s*\(this\.isDeposit\)\s*return this\.renderDeposit\(\)/);

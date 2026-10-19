@@ -6,7 +6,7 @@
       <header class="pulse-saved-header"><button type="button" class="pulse-search-close pulse-saved-back" aria-label="Back to Pulse"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button><div><h2>Saved Messages</h2><p>Only you can see these notes</p></div></header>
       <div class="pulse-saved-history" tabindex="0" role="region" aria-label="Saved notes"><button type="button" class="pulse-load-older" hidden>Load earlier notes</button><div class="pulse-saved-items" role="list" aria-label="Your saved messages"></div></div>
       <p class="pulse-data-status" role="status" aria-live="polite"></p>
-      <form class="pulse-saved-compose"><label class="pulse-announcement" for="pulse-saved-text">Message to save</label><textarea id="pulse-saved-text" rows="2" maxlength="4000" placeholder="Save a note…" required disabled></textarea><button type="submit" aria-label="Save message" disabled><svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button></form>
+      <form class="pulse-saved-compose">${root.StemmaChatAttachments?.control() || ''}<label class="pulse-announcement" for="pulse-saved-text">Message to save</label><textarea id="pulse-saved-text" rows="2" maxlength="4000" placeholder="Save a note…" required disabled></textarea><button type="submit" aria-label="Save message" disabled><svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button></form>
     </section>`;
   }
   function mount(shell, { listen, signal, closeSearch }) {
@@ -22,12 +22,15 @@
     const status = saved.querySelector('.pulse-data-status');
     const form = saved.querySelector('form');
     const text = saved.querySelector('textarea');
-    const send = form.querySelector('button');
+    const send = form.querySelector('button[type="submit"]');
     const older = saved.querySelector('.pulse-load-older');
     const more = shell.querySelector('.pulse-users-more');
     const announcement = shell.querySelector('.pulse-announcement');
     const conversationLists = [...shell.querySelectorAll('[data-pulse-conversations]')];
-    const directView = root.StemmaDirectChat?.mount(shell, { listen, signal, onClose: () => returnToFeed() });
+    let directParentSearch = false;
+    const directView = root.StemmaDirectChat?.mount(shell, { listen, signal, onClose: () => {
+      if (!root.StemmaParentNavigation?.back('pulse-chat')) returnToFeed();
+    } });
     let searchTimer, searchRequest, sequence = 0, offset = 0, busy = false, notes = [], loading = false;
     let previewRevision = 0, conversations = [], conversationsLoading = false, conversationsState = 'loading';
     let pollTimer = null, pollBusy = false, isDirectOpen = false;
@@ -95,6 +98,7 @@
           const row = node('button', 'pulse-conversation pulse-direct-row'); row.type = 'button';
           row.dataset.pulseConversation = conversation.id;
           const avatar = node('span', 'pulse-person-mark pulse-direct-avatar', initials(conversation)); avatar.setAttribute('aria-hidden', 'true');
+          root.StemmaDirectChat?.setAvatarPhoto(avatar, /^[1-9]\d{0,18}$/.test(String(conversation.id || '')) ? `/api/pulse/conversations/${conversation.id}/peer-photo` : '');
           const copy = node('span', 'pulse-copy');
           const peer = conversation.peer || conversation;
           const heading = node('span', 'pulse-direct-row-heading');
@@ -124,7 +128,10 @@
       conversationsLoading = true;
       try {
         const data = await request('/api/pulse/conversations');
-        if (!signal.aborted && Array.isArray(data.conversations)) { conversations = data.conversations; conversationsState = 'ready'; renderConversations(); }
+        if (!signal.aborted && Array.isArray(data.conversations)) {
+          const changed = conversationsState !== 'ready' || JSON.stringify(conversations) !== JSON.stringify(data.conversations);
+          conversations = data.conversations; conversationsState = 'ready'; if (changed) renderConversations();
+        }
       } catch (error) {
         if (!signal.aborted) { conversationsState = 'error'; renderConversations(); if (announcement) announcement.textContent = error.message; }
       }
@@ -133,10 +140,11 @@
     function returnToFeed() {
       isDirectOpen = false; if (directView) directView.closeView();
       if (saved) saved.hidden = true;
-      if (search) search.hidden = true;
-      feed.hidden = false; feed.inert = false;
+      if (search) search.hidden = !directParentSearch;
+      feed.hidden = directParentSearch; feed.inert = directParentSearch;
       schedulePoll();
-      shell.querySelector('.pulse-stage.is-current [data-pulse-conversation]')?.focus({ preventScroll: true });
+      if (directParentSearch) field.focus({ preventScroll: true });
+      else shell.querySelector('.pulse-stage.is-current [data-pulse-conversation]')?.focus({ preventScroll: true });
     }
     async function startConversation(username) {
       const normalized = String(username || '').trim().replace(/^@+/, '');
@@ -146,7 +154,6 @@
         const data = await request('/api/pulse/conversations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: normalized }) });
         if (signal.aborted || !data.conversation) return;
         await loadConversations();
-        closeSearch();
         openConversation(data.conversation);
       } catch (error) {
         if (signal.aborted) return;
@@ -157,7 +164,9 @@
     function openConversation(conversation) {
       if (!conversation?.id || !directView) return;
       isDirectOpen = true; clearTimeout(pollTimer);
-      closeSearch(); feed.hidden = true; feed.inert = true; if (saved) saved.hidden = true;
+      directParentSearch = !search.hidden;
+      root.StemmaParentNavigation?.enter('pulse-chat', returnToFeed, { signal });
+      search.hidden = true; feed.hidden = true; feed.inert = true; if (saved) saved.hidden = true;
       directView.open(conversation);
       schedulePoll();
     }
@@ -190,7 +199,8 @@
       items.replaceChildren();
       for (const message of [...notes].reverse()) {
         const item = node('article', 'pulse-saved-message'); item.setAttribute('role', 'listitem');
-        item.append(node('p', '', message.text));
+        const attachment = root.StemmaChatAttachments?.render(message.attachment);
+        item.append(attachment || node('p', '', message.text));
         const time = node('time', '', new Date(message.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })); time.dateTime = message.createdAt;
         item.append(time); items.append(item);
       }
@@ -212,16 +222,25 @@
       } catch (error) { if (!signal.aborted) status.textContent = error.message; }
       finally { loading = false; older.disabled = false; }
     }
-    function closeSaved() { saved.hidden = true; feed.hidden = feed.inert = false; shell.querySelector('.pulse-stage.is-current [data-pulse-saved]')?.focus({ preventScroll: true }); }
+    function closeSaved(restoring = false) {
+      if (!restoring && root.StemmaParentNavigation?.back('pulse-saved')) return;
+      saved.hidden = true; feed.hidden = feed.inert = false;
+      shell.querySelector('.pulse-stage.is-current [data-pulse-saved]')?.focus({ preventScroll: true });
+    }
     listen(shell, 'click', event => {
       if (!event.target.closest('[data-pulse-saved]')) return;
       closeSearch(); feed.hidden = feed.inert = true; saved.hidden = false;
+      root.StemmaParentNavigation?.enter('pulse-saved', () => closeSaved(true), { signal });
       saved.querySelector('.pulse-saved-back').focus({ preventScroll: true }); loadNotes();
     });
-    listen(saved.querySelector('.pulse-saved-back'), 'click', closeSaved);
+    listen(saved.querySelector('.pulse-saved-back'), 'click', () => closeSaved());
     listen(saved, 'keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeSaved(); } });
     listen(older, 'click', () => loadNotes(true));
     listen(text, 'input', () => { send.disabled = busy || !text.value.trim(); });
+    root.StemmaChatAttachments?.mount(form, { listen, signal, endpoint: () => '/api/pulse/saved/attachments', status,
+      ready: () => !text.disabled && !saved.hidden,
+      onMessage: message => { notes.unshift(message); paintNotes(); paintPreview(message.text); history.scrollTop = history.scrollHeight; }
+    });
     listen(form, 'submit', async event => {
       event.preventDefault(); const value = text.value.trim(); if (!value || busy || text.disabled) return;
       busy = true; send.disabled = true; status.textContent = 'Saving…';

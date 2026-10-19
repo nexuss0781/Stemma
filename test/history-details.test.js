@@ -14,6 +14,8 @@ function run(expression, values = {}) {
   return vm.runInNewContext(`${renderSource}\n${expression}`, {
     paymentDemoInterval: '15-days',
     icon,
+    enterParentNavigation: () => undefined,
+    forgetParentNavigation: () => undefined,
     activeRoute: 'cards',
     activeTabs: { cards: 2 },
     ...values
@@ -148,7 +150,8 @@ test('delegated clicks route history transaction buttons to open and close helpe
       querySelectorAll: () => []
     },
     showHistoryDetails: id => calls.push(['open', id]),
-    closeHistoryDetails: () => calls.push(['close'])
+    closeHistoryDetails: () => calls.push(['close']),
+    requestHistoryDetailsBack: () => calls.push(['back-close'])
   });
   const transaction = {
     dataset: { historyEntry: 'STM-20261015-001' },
@@ -159,7 +162,7 @@ test('delegated clicks route history transaction buttons to open and close helpe
   };
   clickListener({ target: transaction });
   clickListener({ target: close });
-  assert.deepEqual(calls, [['open', 'STM-20261015-001'], ['close']]);
+  assert.deepEqual(calls, [['open', 'STM-20261015-001'], ['back-close']]);
 });
 
 test('history rendering and details remain local read-only presentation helpers', () => {

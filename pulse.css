@@ -338,7 +338,51 @@
 @media (min-width: 760px) { .pulse-direct-history { padding: 28px 24px; } }
 @media (max-width: 360px), (max-height: 600px) {
   .pulse-direct-header { padding: 7px 10px 7px 6px; gap: 8px; }
-  .pulse-direct-peer { flex-basis: 38px; width: 38px; height: 38px; }
+  .pulse-direct-peer { flex-basis: 38px; width: 38px; }
   .pulse-direct-history { padding: 16px 12px; }
   .pulse-direct-compose { padding-top: 8px; }
 }
+.pulse-peer-photo-avatar { position: relative; overflow: hidden; }
+.pulse-peer-photo-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
+/* File controls sit immediately before the composer; preserve the cream glass palette. */
+.pulse-saved-compose .pulse-attach-button { position: relative; flex: 0 0 44px; width: 44px; height: 44px; background: transparent; color: var(--brand-burgundy); border: 0; box-shadow: none; }
+.pulse-attach-button svg { width: 24px; height: 24px; }
+.pulse-attachment-plus { position: absolute; right: 2px; bottom: 3px; width: 13px; height: 13px; border-radius: 50%; background: var(--brand-gold); color: var(--brand-burgundy); font: 700 12px/13px sans-serif; }
+.pulse-attach-input[hidden] { display: none !important; }
+.pulse-file-attachment { display: flex; align-items: center; gap: 9px; width: min(240px, 100%); min-width: 0; color: inherit; text-decoration: none; }
+.pulse-file-attachment.is-image { display: flex; flex-direction: column; align-items: stretch; gap: 7px; }
+.pulse-file-attachment img { display: block; width: 100%; max-height: 260px; object-fit: contain; border-radius: 10px; }
+.pulse-file-attachment img[hidden] { display: none; }
+.pulse-file-icon { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 38px; border: 1px solid currentColor; border-radius: 8px; opacity: .85; }
+.pulse-file-icon svg { width: 21px; height: 21px; }
+.pulse-file-copy { display: grid; gap: 4px; min-width: 0; }
+.pulse-file-copy strong { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.pulse-file-copy small { font-size: 10px; opacity: .75; }
+.pulse-file-attachment:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 5px; }
+@media (max-width: 360px) { .pulse-saved-compose { gap: 5px; padding-inline: 8px; } .pulse-saved-compose .pulse-attach-button { flex-basis: 40px; width: 40px; } }
+.pulse-direct-message-avatar.pulse-peer-photo-avatar { position: absolute; }
+
+/* A conversation is its own screen: no global chrome competes with the messages. */
+body.stemma-chat-focus #app-shell { visibility: hidden; pointer-events: none; }
+body.stemma-chat-focus > .pulse-direct-chat { position: fixed; inset: var(--chat-top, 0px) 0 auto; width: 100%; height: var(--chat-height, 100dvh); z-index: 100; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; border: 0; border-radius: 0; background: var(--paper-soft); color: var(--brand-burgundy); }
+body.stemma-chat-focus > .pulse-direct-chat[hidden] { display: none; }
+body.stemma-chat-focus .pulse-direct-header { padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 9px max(6px, env(safe-area-inset-left)); min-height: 66px; box-sizing: border-box; gap: 9px; box-shadow: 0 1px 8px var(--line); }
+body.stemma-chat-focus .pulse-direct-header .pulse-direct-peer { width: 42px; height: 42px; flex-basis: 42px; }
+body.stemma-chat-focus .pulse-direct-header .pulse-direct-private { margin-left: auto; font-size: 10px; }
+body.stemma-chat-focus .pulse-direct-history { padding: 20px max(16px, calc((100vw - 900px) / 2)); }
+.pulse-direct-composer-area { min-width: 0; background: color-mix(in srgb, var(--paper-soft) 78%, transparent); -webkit-backdrop-filter: blur(24px) saturate(120%); backdrop-filter: blur(24px) saturate(120%); }
+body.stemma-chat-focus .pulse-direct-compose { padding-left: max(10px, calc((100vw - 900px) / 2)); padding-right: max(10px, calc((100vw - 900px) / 2)); }
+.pulse-reply-composer { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 14px 7px 18px; border-left: 3px solid var(--brand-burgundy); margin: 8px max(14px, calc((100vw - 900px) / 2)) 0; background: color-mix(in srgb, var(--brand-gold) 22%, transparent); border-radius: 4px 9px 9px 4px; color: var(--brand-burgundy); }
+.pulse-reply-composer[hidden] { display: none; }
+.pulse-reply-composer > div { flex: 1; min-width: 0; }
+.pulse-reply-composer strong { display: block; font-size: 12px; line-height: 1.4; }
+.pulse-reply-composer p { margin: 3px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; opacity: .8; }
+.pulse-reply-cancel { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.pulse-message-quote { display: grid; gap: 3px; padding: 7px 9px; margin: 0 0 7px; border-left: 3px solid currentColor; border-radius: 3px 8px 8px 3px; background: color-mix(in srgb, currentColor 9%, transparent); font-size: 12px; line-height: 1.35; overflow: hidden; }
+.pulse-message-quote strong { font-size: 12px; }
+.pulse-message-quote span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; opacity: .85; }
+.pulse-reply-action { position: absolute; top: -14px; right: 5px; z-index: 1; min-height: 28px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--paper-soft); color: var(--brand-burgundy); font: inherit; font-size: 11px; opacity: 0; pointer-events: none; cursor: pointer; }
+.pulse-direct-message:hover .pulse-reply-action, .pulse-direct-message:focus-within .pulse-reply-action, .pulse-reply-action:focus-visible { opacity: 1; pointer-events: auto; }
+.pulse-direct-message:focus-visible, .pulse-reply-cancel:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { body.stemma-chat-focus .pulse-direct-chat { animation: none; } }

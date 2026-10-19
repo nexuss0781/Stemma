@@ -101,7 +101,7 @@ function safeCreatedAt(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-export function registerPulseApi(app, { pulseStore = null, requireGoogleSession, config }) {
+export function registerPulseApi(app, { pulseStore = null, attachmentStore = null, requireGoogleSession, config }) {
   if (typeof requireGoogleSession !== 'function') throw new TypeError('Google-session middleware is required.');
   const pulseLimiter = rateLimit({
     windowMs: 60_000,
@@ -150,7 +150,19 @@ export function registerPulseApi(app, { pulseStore = null, requireGoogleSession,
       const rows = await pulseStore.listSavedMessages(req.session.stemmaUser.subject, before, SAVED_PAGE_SIZE + 1);
       const validRows = (Array.isArray(rows) ? rows : []).filter(row => row && typeof row.id === 'string' && typeof row.text === 'string' && safeCreatedAt(row.createdAt));
       const hasMore = validRows.length > SAVED_PAGE_SIZE;
-      const messages = validRows.slice(0, SAVED_PAGE_SIZE).map(row => ({ id: row.id, text: row.text, createdAt: safeCreatedAt(row.createdAt) }));
+      const pageRows = validRows.slice(0, SAVED_PAGE_SIZE);
+      const attachmentRows = attachmentStore?.getAttachmentsForMessages
+        ? await attachmentStore.getAttachmentsForMessages(req.session.stemmaUser.subject, 'saved', pageRows.map(row => row.id))
+        : [];
+      const byMessage = new Map((Array.isArray(attachmentRows) ? attachmentRows : []).map(row => [row.messageId, row]));
+      const messages = pageRows.map(row => {
+        const metadata = byMessage.get(row.id);
+        const attachment = metadata && typeof metadata.id === 'string' && typeof metadata.name === 'string' &&
+          typeof metadata.mimeType === 'string' && Number.isSafeInteger(Number(metadata.size))
+          ? { id: metadata.id, url: `/api/pulse/attachments/${metadata.id}`, name: metadata.name, mimeType: metadata.mimeType, size: Number(metadata.size) }
+          : null;
+        return { id: row.id, text: row.text, createdAt: safeCreatedAt(row.createdAt), ...(attachment ? { attachment } : {}) };
+      });
       return res.json({ messages, hasMore });
     } catch {
       return res.status(503).json({ error: 'Pulse service is unavailable.' });

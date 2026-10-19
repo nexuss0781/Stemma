@@ -96,7 +96,9 @@
     const searchInput = shell.querySelector('#pulse-search-input');
     const searchTrigger = document.querySelector('.pulse-topbar-search');
     const searchTabs = [...shell.querySelectorAll('.pulse-search-tab')];
-    function setSearchOpen(open) {
+    function setSearchOpen(open, restoring = false) {
+      if (!open && !restoring && root.StemmaParentNavigation?.back('pulse-search')) return;
+      if (open && !restoring) root.StemmaParentNavigation?.enter('pulse-search', () => setSearchOpen(false, true), { signal: abort.signal });
       setCreateOpen(false);
       drag = null;
       track.classList.remove('is-dragging');
@@ -112,7 +114,7 @@
       else searchTrigger?.focus({ preventScroll: true });
     }
     if (searchTrigger) listen(searchTrigger, 'click', () => setSearchOpen(search.hidden));
-    listen(shell.querySelector('.pulse-search-close'), 'click', () => setSearchOpen(false));
+    listen(search.querySelector('.pulse-search-close'), 'click', () => setSearchOpen(false));
     listen(search, 'keydown', event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSearchOpen(false); }
     });
@@ -335,7 +337,7 @@
     });
     listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
-    root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false) });
+    root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true) });
     cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories, unmount: () => { cleanup(); cleanup = () => {}; } });

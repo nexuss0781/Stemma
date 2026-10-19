@@ -13,6 +13,14 @@ const clickStart = appSource.indexOf("document.addEventListener('click'");
 const clickEnd = appSource.indexOf('\n});', clickStart) + 4;
 assert.ok(clickStart >= 0 && clickEnd > clickStart, 'app click handler exists');
 const clickHandlerSource = appSource.slice(clickStart, clickEnd);
+const navigationHelperSource = appSource.slice(
+  appSource.indexOf('function enterParentNavigation('),
+  appSource.indexOf('function renderBottomNav()')
+);
+const closeHelperStart = appSource.indexOf('function closeBill()');
+const closeHelperEnd = appSource.indexOf("document.addEventListener('submit'", closeHelperStart);
+assert.ok(closeHelperStart >= 0 && closeHelperEnd > closeHelperStart, 'payment close helpers exist');
+const closeHelperSource = appSource.slice(closeHelperStart, closeHelperEnd);
 
 function makeExperience({ dialogOpen = false } = {}) {
   const effects = { fetch: 0, xhr: 0, localStorage: 0, sessionStorage: 0 };
@@ -36,13 +44,17 @@ function makeExperience({ dialogOpen = false } = {}) {
 function fireAppClick({ payments, dialog, selector, onRender = () => {} }) {
   let clickListener;
   let navigationSaves = 0;
-  vm.runInNewContext(clickHandlerSource, {
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${clickHandlerSource}`, {
     document: {
       addEventListener: (_type, listener) => { clickListener = listener; },
       querySelectorAll: () => [],
-      querySelector: query => query === '#bill-payment-dialog' ? dialog : null
+      querySelector: query => query === '#bill-payment-dialog' ? dialog : null,
+      getElementById: id => id === 'bill-payment-dialog' ? dialog : null
     },
-    window: { matchMedia: () => ({ matches: false }) },
+    window: {
+      matchMedia: () => ({ matches: false }),
+      StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } }
+    },
     activeRoute: 'cards',
     paymentSlideIndex: 0,
     payments,

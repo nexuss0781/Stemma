@@ -20,8 +20,9 @@ class Element {
     this.clientHeight = 100;
   }
   setAttribute(name, value) { this.attributes[name] = value; }
-  append(child) { this.children.push(child); }
-  replaceChildren(...children) { this.children = children; }
+  append(child) { child.parentNode = this; this.children.push(child); }
+  removeChild(child) { this.children = this.children.filter(item => item !== child); child.parentNode = null; }
+  replaceChildren(...children) { for (const child of this.children) child.parentNode = null; this.children = children; for (const child of children) child.parentNode = this; }
   focus() {}
 }
 
@@ -39,12 +40,12 @@ function createMountedChat(fetchImpl) {
     textarea: new Element('textarea')
   };
   const submit = new Element('button');
-  elements.form.querySelector = selector => selector === 'button' ? submit : null;
+  elements.form.querySelector = selector => selector === 'button[type="submit"]' ? submit : null;
   panel.querySelector = selector => elements[selector] || null;
   const shell = { querySelector: selector => selector === '.pulse-direct-chat' ? panel : null };
   const listeners = [];
   const controller = new AbortController();
-  const api = { fetch: fetchImpl, document: { createElement: tag => new Element(tag) } };
+  const api = { fetch: fetchImpl, setTimeout, clearTimeout, document: { createElement: tag => new Element(tag) } };
   api.window = api;
   vm.runInNewContext(source, api);
   const chat = api.StemmaDirectChat.mount(shell, {
@@ -134,30 +135,75 @@ test('late load, refresh, and send responses never paint into a different conver
   assert.equal(closeMounted.elements.textarea.disabled, true);
 });
 
-test('incoming avatars use only public identity and clear when leaving the conversation', async () => {
+test('participant avatars use the authorized peer-photo endpoint and retain initials on failure', async () => {
   const mounted = createMountedChat(async () => response({ messages: [
     { id: '1', text: 'Hello', createdAt: '2026-01-01T00:00:00Z' },
     { id: '2', text: 'Hi', createdAt: '2026-01-01T00:00:01Z', mine: true }
   ] }));
   const headerAvatar = new Element('span');
   mounted.elements['.pulse-direct-peer'] = headerAvatar;
-  mounted.chat.open({ id: 'avatar-peer', peer: { nickName: 'Robin', username: 'robin', firstName: 'Secret', photoUrl: '/private-photo' } });
+  mounted.chat.open({ id: '1', peer: { nickName: 'Robin', username: 'robin', firstName: 'Secret', photoUrl: '/private-photo' } });
   await flush();
   assert.equal(headerAvatar.textContent, 'R');
   const [incoming, outgoing] = mounted.elements['.pulse-direct-messages'].children;
-  assert.equal(incoming.children.length, 3);
+  assert.equal(incoming.children.length, 4);
   assert.equal(incoming.children[2].textContent, 'R');
   assert.equal(incoming.children[2].attributes['aria-hidden'], 'true');
-  assert.equal(incoming.children[2].className, 'pulse-person-mark pulse-direct-message-avatar');
-  assert.equal(outgoing.children.length, 2, 'outgoing messages have no duplicated participant avatar');
-  assert.equal(incoming.children.some(child => child.tagName === 'img'), false, 'private profile photos are not requested');
+  assert.match(incoming.children[2].className, /^pulse-person-mark pulse-direct-message-avatar/);
+  assert.equal(outgoing.children.length, 3, 'outgoing messages have no duplicated participant avatar');
+  assert.equal(incoming.children[2].children[0].tagName, 'img');
+  assert.equal(incoming.children[2].children[0].src, '/api/pulse/conversations/1/peer-photo');
+  assert.equal(incoming.children[2].children[0].alt, '', 'photos are decorative; the participant identity remains in surrounding text');
+  assert.match(headerAvatar.className, /pulse-peer-photo-avatar/);
+  headerAvatar.children[0].onerror();
+  assert.equal(headerAvatar.children.length, 0, 'broken images are removed');
+  assert.equal(headerAvatar.textContent, 'R', 'initial remains visible as fallback');
+  assert.doesNotMatch(headerAvatar.className, /pulse-peer-photo-avatar/);
   mounted.chat.closeView();
   assert.equal(headerAvatar.textContent, '');
   assert.equal(mounted.elements['.pulse-direct-title'].textContent, 'Chat');
   assert.equal(mounted.elements['.pulse-direct-handle'].textContent, '');
-  mounted.chat.open({ id: 'handle-peer', peer: { username: 'sparrow', firstName: 'Secret' } });
+  mounted.chat.open({ id: '2', peer: { username: 'sparrow', firstName: 'Secret' } });
   await flush();
   assert.equal(headerAvatar.textContent, 'S');
   assert.equal(mounted.elements['.pulse-direct-title'].textContent, '@sparrow');
   assert.equal(mounted.elements['.pulse-direct-messages'].children[0].children[2].textContent, 'S');
+  assert.equal(mounted.elements['.pulse-direct-messages'].children[0].children[2].children[0].src, '/api/pulse/conversations/2/peer-photo');
+});
+
+test('context Reply selection sends a real replyToId and clears only after successful send', async () => {
+  const bodies = [];
+  const mounted = createMountedChat(async (_url, options = {}) => {
+    if (options.method === 'POST') {
+      bodies.push(JSON.parse(options.body));
+      return response({ message: { id: String(bodies.length + 1), text: bodies.at(-1).text, createdAt: '2026-01-01T00:01:00Z', mine: true,
+        ...(bodies.at(-1).replyToId ? { replyTo: { id: '1', text: 'Original note', mine: false, available: true } } : {}) } });
+    }
+    return response({ messages: [{ id: '1', text: 'Original note', mine: false, createdAt: '2026-01-01T00:00:00Z' }] });
+  });
+  mounted.chat.open({ id: '9', nickName: 'Robin', username: 'robin' }); await flush();
+  let prevented = false;
+  const target = { closest: () => ({ dataset: { messageId: '1' } }) };
+  mounted.handler(mounted.elements['.pulse-direct-messages'], 'contextmenu')({ target, preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  mounted.elements.textarea.value = 'A reply';
+  await mounted.handler(mounted.elements.form, 'submit')({ preventDefault() {} });
+  assert.deepEqual(bodies[0], { text: 'A reply', replyToId: '1' });
+  const quoted = mounted.elements['.pulse-direct-messages'].children[1].children[0];
+  assert.equal(quoted.className, 'pulse-message-quote');
+  assert.equal(quoted.children[0].textContent, 'Robin');
+  assert.equal(quoted.children[1].textContent, 'Original note');
+  mounted.elements.textarea.value = 'An ordinary message';
+  await mounted.handler(mounted.elements.form, 'submit')({ preventDefault() {} });
+  assert.deepEqual(bodies[1], { text: 'An ordinary message' });
+});
+
+test('unavailable quoted messages render a graceful label without stale private text', async () => {
+  const mounted = createMountedChat(async () => response({ messages: [
+    { id: '3', text: 'A preserved reply', createdAt: '2026-01-01T00:00:00Z', mine: true, replyTo: { id: '2', available: false } }
+  ] }));
+  mounted.chat.open({ id: '9', nickName: 'Robin' }); await flush();
+  const quote = mounted.elements['.pulse-direct-messages'].children[0].children[0];
+  assert.equal(quote.children[0].textContent, 'Original message');
+  assert.equal(quote.children[1].textContent, 'Message unavailable');
 });

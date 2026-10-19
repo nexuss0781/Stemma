@@ -225,6 +225,8 @@
   }
   function leave() {
     if (!isRoute()) return;
+    window.StemmaParentNavigation?.forget('notification-detail');
+    window.StemmaParentNavigation?.forget('notifications');
     window.history.replaceState({}, '', returnHash);
     hidePage();
   }
@@ -236,10 +238,14 @@
     if (isRoute()) return;
     returnFocus = bell;
     returnHash = window.location.hash || routeHash();
-    window.history.pushState({ stemmaNotificationsReturn: returnHash, stemmaNotificationsEntry: true }, '', '#notifications');
+    if (window.StemmaParentNavigation) {
+      window.StemmaParentNavigation.enter('notifications', hidePage, { url: '#notifications' });
+      window.history.replaceState({ ...window.history.state, stemmaNotificationsReturn: returnHash, stemmaNotificationsEntry: true }, '', '#notifications');
+    } else window.history.pushState({ stemmaNotificationsReturn: returnHash, stemmaNotificationsEntry: true }, '', '#notifications');
     syncRoute();
   });
   back.addEventListener('click', () => {
+    if (window.StemmaParentNavigation?.back('notifications')) return;
     if (window.history.state?.stemmaNotificationsEntry) window.history.back(); else leave();
   });
   selectToggle.addEventListener('click', () => { selectionMode = !selectionMode; selected.clear(); renderList(); });
@@ -317,15 +323,21 @@
     detailContent.innerHTML = renderNotificationDetail(item);
     detailContent.scrollTop = 0;
     dialog.showModal();
+    window.StemmaParentNavigation?.enter('notification-detail', () => { if (dialog.open) dialog.close(); });
     if (isUnread(item)) void markIdsRead([String(item.id)]);
   });
-  document.getElementById('notification-detail-close').addEventListener('click', () => dialog.close());
+  function closeDetail() {
+    if (!window.StemmaParentNavigation?.back('notification-detail')) dialog.close();
+  }
+  document.getElementById('notification-detail-close').addEventListener('click', closeDetail);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeDetail(); });
   dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;
     const rect = dialog.getBoundingClientRect();
-    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDetail();
   });
   dialog.addEventListener('close', () => {
+    window.StemmaParentNavigation?.forget('notification-detail');
     detailTitle.textContent = '';
     detailContent.replaceChildren();
     if (active && detailIndex !== null) content.querySelector?.(`[data-notification-index="${detailIndex}"]`)?.focus({ preventScroll: true });

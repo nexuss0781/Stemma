@@ -14,6 +14,14 @@ const controllerStart = appSource.indexOf('// Account-scoped UI location only:')
 const controllerEnd = appSource.indexOf('function updateOnboardingAccess() {', controllerStart);
 assert.ok(controllerStart >= 0 && controllerEnd > controllerStart, 'navigation controller block is present');
 const controllerSource = appSource.slice(controllerStart, controllerEnd);
+const navigationHelperSource = appSource.slice(
+  appSource.indexOf('function enterParentNavigation('),
+  appSource.indexOf('function renderBottomNav()')
+);
+const closeHelperStart = appSource.indexOf('function closeBill()');
+const closeHelperEnd = appSource.indexOf("document.addEventListener('submit'", closeHelperStart);
+assert.ok(closeHelperStart >= 0 && closeHelperEnd > closeHelperStart, 'payment close helpers exist');
+const closeHelperSource = appSource.slice(closeHelperStart, closeHelperEnd);
 const PREFIX = 'stemma:navigation:v1:';
 const ROUTES = ['overview', 'cards', 'pulse', 'goals', 'profile'];
 
@@ -63,6 +71,7 @@ function makeHarness() {
   const window = {
     location: { hash: '#profile', pathname: '/dashboard', search: '?demo=1' },
     history: { replaceState(_state, _title, url) { window.location.hash = url.slice(url.indexOf('#')); } },
+    StemmaParentNavigation: { enter: key => key, forget() {}, reset() {}, back() { return false; } },
     addEventListener() {},
     requestAnimationFrame(callback) { const id = nextFrame++; scheduled.set(id, callback); return id; },
     cancelAnimationFrame(id) { scheduled.delete(id); }
@@ -96,7 +105,7 @@ function makeHarness() {
     let dashboardEntered = false;
     let friendInteractionToken = 0;
   `, context, { filename: 'app-navigation-state.js' });
-  vm.runInContext(controllerSource, context, { filename: 'app-navigation-controller.js' });
+  vm.runInContext(`${navigationHelperSource}\n${closeHelperSource}\n${controllerSource}`, context, { filename: 'app-navigation-controller.js' });
   return {
     context, storage, scheduled, calls, grid, historyDialog, sheetDialog, elements, window,
     evaluate(expression) { return vm.runInContext(expression, context); },

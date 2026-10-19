@@ -75,6 +75,10 @@ function makeApp({ authenticated = true, detail = async () => student() } = {}) 
     document, window, payments, activeRoute: 'cards', activeTabs: { cards: 0 }, paymentSlideIndex: 1,
     googleAuthenticated: authenticated, navigationAccountKey: 'google:test', friendInteractionToken: 0,
     queueNavigationSave() { saved.navigation += 1; }, render() { saved.render += 1; },
+    enterParentNavigation: key => key,
+    forgetParentNavigation() {},
+    backParentNavigation(_key, close) { close(); return false; },
+    closeBill() {},
     icon: () => '',
     normalizeDepositAmount: null
   });

@@ -14,6 +14,7 @@ import { registerFriendBillsApi } from './friend-bills-api.js';
 import { createNotificationStore, registerNotificationsApi } from './notifications-api.js';
 import { createPulseStore, registerPulseApi } from './pulse-api.js';
 import { createDirectChatStore, registerDirectChatApi } from './direct-chat-api.js';
+import { createAttachmentStore, registerAttachmentsApi } from './attachments-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -472,7 +473,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -635,8 +636,9 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   }
 
   registerNotificationsApi(app, { notificationStore, requireGoogleSession, config });
-  registerPulseApi(app, { pulseStore, requireGoogleSession, config });
-  registerDirectChatApi(app, { directChatStore, requireGoogleSession, config });
+  registerPulseApi(app, { pulseStore, attachmentStore, requireGoogleSession, config });
+  registerDirectChatApi(app, { directChatStore, attachmentStore, requireGoogleSession, config });
+  registerAttachmentsApi(app, { attachmentStore, requireGoogleSession, config });
 
   function requireProfileStore(_req, res, next) {
     if (!studentProfileStore) return res.status(503).json({ error: 'Student profile service is unavailable.' });
@@ -1020,9 +1022,9 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'direct-chat-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
-      res.set('Cache-Control', 'public, max-age=300');
+      res.set('Cache-Control', ['parent-navigation.js', 'direct-chat-ui.js', 'chat-attachments-ui.js'].includes(asset) ? 'no-store' : 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
     });
   }
@@ -1052,12 +1054,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
-    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read' || req.path === '/api/pulse/saved' || req.path === '/api/pulse/conversations' || /^\/api\/pulse\/conversations\/[^/]+\/messages$/.test(req.path)) {
+    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read' || req.path === '/api/pulse/saved' || req.path === '/api/pulse/conversations' || /^\/api\/pulse\/(?:saved\/attachments|attachments\/[^/]+|conversations\/[^/]+\/(?:messages|attachments))$/.test(req.path)) {
       if (error?.status === 413 || error?.type === 'entity.too.large') {
-        return res.status(413).json({ error: req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
+        return res.status(413).json({ error: req.path.includes('/attachments') ? 'Attachments must not exceed 5 MiB.' : req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
       }
       if (error?.status === 400 || error?.type === 'entity.parse.failed') {
-        return res.status(400).json({ error: req.path === '/api/notifications/read' ? 'Notification read request is invalid.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is invalid.' : req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
+        return res.status(400).json({ error: req.path.includes('/attachments') ? 'Attachment request is invalid.' : req.path === '/api/notifications/read' ? 'Notification read request is invalid.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is invalid.' : req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
       }
     }
     res.status(500).json({ error: 'The request could not be completed.' });
@@ -1076,6 +1078,7 @@ async function startServer() {
   let notificationStore;
   let pulseStore;
   let directChatStore;
+  let attachmentStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -1098,6 +1101,8 @@ async function startServer() {
     await pulseStore.migrate();
     directChatStore = createDirectChatStore(postgresPool);
     await directChatStore.migrate();
+    attachmentStore = createAttachmentStore(postgresPool);
+    await attachmentStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,
@@ -1106,7 +1111,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });

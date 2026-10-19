@@ -29,6 +29,25 @@ const friends = new FriendPaymentFlow();
 let friendInteractionToken = 0;
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 
+function enterParentNavigation(key, closeCallback) {
+  return window.StemmaParentNavigation?.enter(key, closeCallback) ?? key;
+}
+
+function forgetParentNavigation(key) {
+  window.StemmaParentNavigation?.forget(key);
+}
+
+function closeParentNavigationChild(key, closeCallback) {
+  forgetParentNavigation(key);
+  closeCallback();
+}
+
+function backParentNavigation(key, closeCallback) {
+  if (window.StemmaParentNavigation?.back(key)) return true;
+  closeParentNavigationChild(key, closeCallback);
+  return false;
+}
+
 function renderBottomNav() {
   const bottomNav = document.getElementById('bottom-nav');
   if (!bottomNav.querySelector('.nav-indicator')) {
@@ -205,12 +224,18 @@ function showHistoryDetails(id) {
   dialog.innerHTML = renderHistoryDetails(entry);
   dialog.dataset.historyId = entry.id;
   dialog.showModal();
+  enterParentNavigation('history-detail', closeHistoryDetails);
   queueNavigationSave();
 }
 
 function closeHistoryDetails() {
+  forgetParentNavigation('history-detail');
   const dialog = document.getElementById('history-details-dialog');
   if (dialog?.open) dialog.close();
+}
+
+function requestHistoryDetailsBack() {
+  backParentNavigation('history-detail', closeHistoryDetails);
 }
 
 function renderPaymentHistory() {
@@ -299,12 +324,18 @@ function updateFriendPicker(focusChoice = false) {
   }
 }
 function closeFriendPicker() {
+  forgetParentNavigation('friend-picker');
   friendInteractionToken += 1;
   friends.cancel();
   const dialog = document.getElementById('friend-student-dialog');
   if (dialog?.open) dialog.close();
   queueNavigationSave();
 }
+
+function requestFriendPickerBack() {
+  backParentNavigation('friend-picker', closeFriendPicker);
+}
+
 async function openFriendPicker(rawQuery, selectedBillId = '') {
   if (!friendContextActive()) return false;
   const query = normalizeFriendUsername(rawQuery);
@@ -321,8 +352,10 @@ async function openFriendPicker(rawQuery, selectedBillId = '') {
   updateFriendPicker();
   if (!dialog.open) {
     dialog.showModal();
+    enterParentNavigation('friend-picker', closeFriendPicker);
     dialog.addEventListener('close', () => {
       if (document.getElementById('friend-student-dialog') !== dialog) return;
+      forgetParentNavigation('friend-picker');
       friendInteractionToken += 1;
       friends.cancel();
       queueNavigationSave();
@@ -359,6 +392,7 @@ async function confirmFriendSelection() {
     if (!payments.openFriendBill(current)) throw new Error('Bill could not be verified.');
     closeFriendPicker();
     render();
+    enterParentNavigation('bill', closeBill);
   } catch (error) {
     if (operation !== friendInteractionToken || account !== navigationAccountKey || !dialog.open) return;
     friends.students = [];
@@ -501,6 +535,9 @@ function navigate(route) {
   closeFriendPicker();
   closeHistoryDetails();
   payments.closeSheet();
+  forgetParentNavigation('payment-review');
+  forgetParentNavigation('receipt');
+  forgetParentNavigation('bill');
   const wasBillOpen = payments.isBillOpen;
   payments.isBillOpen = false;
   payments.isReceiptOpen = false;
@@ -519,21 +556,82 @@ function navigate(route) {
   window.location.hash = route;
 }
 
+function syncRouteFromHash() {
+  const route = window.location.hash.replace(/^#/, '');
+  if (!pageTabs[route] || route === activeRoute) return;
+  window.StemmaParentNavigation?.reset();
+  cancelPendingNavigationRestoration();
+  closeFriendPicker();
+  closeHistoryDetails();
+  payments.closeSheet();
+  payments.isBillOpen = false;
+  payments.isReceiptOpen = false;
+  payments.isDeposit = false;
+  payments.isFriend = false;
+  payments.friendBill = null;
+  closeDrawer();
+  routeDirection = 0;
+  activeRoute = route;
+  render();
+}
+
+window.addEventListener('hashchange', syncRouteFromHash);
+window.addEventListener('popstate', syncRouteFromHash);
+
 function openDrawer() {
   cancelPendingNavigationRestoration();
   const drawer = document.getElementById('navigation-drawer');
+  if (drawer.classList.contains('open')) return;
   drawer.classList.add('open');
   drawer.setAttribute('aria-hidden', 'false');
   document.getElementById('drawer-backdrop').hidden = false;
   document.getElementById('menu-trigger').setAttribute('aria-expanded', 'true');
+  enterParentNavigation('drawer', closeDrawer);
 }
 
 function closeDrawer() {
+  forgetParentNavigation('drawer');
   const drawer = document.getElementById('navigation-drawer');
   drawer.classList.remove('open');
   drawer.setAttribute('aria-hidden', 'true');
   document.getElementById('drawer-backdrop').hidden = true;
   document.getElementById('menu-trigger').setAttribute('aria-expanded', 'false');
+}
+
+function requestDrawerBack() {
+  backParentNavigation('drawer', closeDrawer);
+}
+
+function closeBill() {
+  forgetParentNavigation('bill');
+  const wasDeposit = payments.isDeposit;
+  const wasFriend = payments.isFriend;
+  payments.isFriend = false;
+  payments.friendBill = null;
+  payments.isDeposit = false;
+  payments.closeSheet();
+  forgetParentNavigation('payment-review');
+  payments.isReceiptOpen = false;
+  forgetParentNavigation('receipt');
+  payments.isBillOpen = false;
+  render();
+  document.querySelector(wasFriend ? '#friend-username' : wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
+}
+
+function closeReceipt() {
+  forgetParentNavigation('receipt');
+  payments.isReceiptOpen = false;
+  render();
+}
+
+function closePaymentReview() {
+  forgetParentNavigation('payment-review');
+  payments.closeSheet();
+  queueNavigationSave();
+}
+
+function requestPaymentReviewBack() {
+  backParentNavigation('payment-review', closePaymentReview);
 }
 
 document.addEventListener('submit', event => {
@@ -546,6 +644,7 @@ document.addEventListener('submit', event => {
     return;
   }
   render();
+  enterParentNavigation('bill', closeBill);
 });
 document.addEventListener('input', event => {
   if (event.target.id === 'friend-username') {
@@ -589,11 +688,11 @@ document.addEventListener('click', event => {
     }
     return;
   }
-  if (event.target.closest('[data-close-friend-picker]')) { closeFriendPicker(); return; }
+  if (event.target.closest('[data-close-friend-picker]')) { requestFriendPickerBack(); return; }
   if (event.target.closest('[data-confirm-friend]')) { void confirmFriendSelection(); return; }
   if (event.target.id === 'friend-student-dialog') {
     const bounds = event.target.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeFriendPicker();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) requestFriendPickerBack();
     return;
   }
   if (event.target.closest('[data-setup-profile]')) { openProfileSetup(); return; }
@@ -604,10 +703,10 @@ document.addEventListener('click', event => {
   }
   const historyEntry = event.target.closest('[data-history-entry]');
   if (historyEntry) { showHistoryDetails(historyEntry.dataset.historyEntry); return; }
-  if (event.target.closest('[data-close-history-details]')) { closeHistoryDetails(); return; }
+  if (event.target.closest('[data-close-history-details]')) { requestHistoryDetailsBack(); return; }
   if (event.target.id === 'history-details-dialog') {
     const bounds = event.target.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeHistoryDetails();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) requestHistoryDetailsBack();
     return;
   }
   if (event.target.closest('[data-open-bill]')) {
@@ -618,34 +717,31 @@ document.addEventListener('click', event => {
     payments.isBillOpen = true;
     activeRoute = 'cards';
     render();
+    enterParentNavigation('bill', closeBill);
     return;
   }
   if (event.target.closest('[data-bill-back]')) {
-    const wasDeposit = payments.isDeposit;
-    const wasFriend = payments.isFriend;
-    payments.isFriend = false;
-    payments.friendBill = null;
-    payments.isDeposit = false;
-    payments.closeSheet();
-    payments.isReceiptOpen = false;
-    payments.isBillOpen = false;
-    render();
-    document.querySelector(wasFriend ? '#friend-username' : wasDeposit ? '#deposit-amount' : '.fee-continue')?.focus({ preventScroll: true });
+    backParentNavigation('bill', closeBill);
     return;
   }
-  if (event.target.closest('[data-close-bill-sheet]')) { payments.closeSheet(); queueNavigationSave(); return; }
-  if (event.target.closest('[data-review-bill]')) { payments.showSheet(); queueNavigationSave(); return; }
+  if (event.target.closest('[data-close-bill-sheet]')) { requestPaymentReviewBack(); return; }
+  if (event.target.closest('[data-review-bill]')) {
+    payments.showSheet();
+    if (document.getElementById('bill-payment-dialog')?.open) enterParentNavigation('payment-review', closePaymentReview);
+    queueNavigationSave();
+    return;
+  }
   if (event.target.closest('[data-demo-pay]')) {
     // Visual simulation only: no payment, wallet, or persistence operation.
     if (!payments.isFriend && payments.isBillOpen && !payments.isReceiptOpen && document.querySelector('#bill-payment-dialog')?.open) {
       payments.openDemoReceipt();
       render();
+      enterParentNavigation('receipt', closeReceipt);
     }
     return;
   }
   if (event.target.closest('[data-receipt-back]')) {
-    payments.isReceiptOpen = false;
-    render();
+    backParentNavigation('receipt', closeReceipt);
     return;
   }
   const intervalOption = event.target.closest('[data-payment-interval]');
@@ -867,6 +963,7 @@ function queueNavigationSave() {
 function restoreNavigationLocation(accountKey) {
   if (navigationRestoredFor === accountKey) return;
   persistNavigationLocation();
+  window.StemmaParentNavigation?.reset();
   if (navigationSaveFrame) window.cancelAnimationFrame(navigationSaveFrame);
   if (navigationRestoreFrame) window.cancelAnimationFrame(navigationRestoreFrame);
   navigationSaveFrame = 0;
@@ -921,6 +1018,8 @@ function finishNavigationRestoration() {
     syncPaymentCarousel();
     const grid = document.getElementById('dashboard-grid');
     if (grid && saved) grid.scrollTop = saved.scrollTop;
+    if (payments.isBillOpen) enterParentNavigation('bill', closeBill);
+    if (payments.isReceiptOpen) enterParentNavigation('receipt', closeReceipt);
     if (saved?.isFriend) {
       try {
         const current = await friends.resolve(saved.friendBillId);
@@ -928,14 +1027,21 @@ function finishNavigationRestoration() {
         if (googleAuthenticated && friendContextActive() && payments.openFriendBill(current)) {
           friends.students = [current]; friends.selectedBillId = current.billId; friends.status = 'ready';
           render();
-          if (saved.view === 'sheet') payments.showSheet();
+          if (saved.view === 'sheet') {
+            payments.showSheet();
+            if (document.getElementById('bill-payment-dialog')?.open) enterParentNavigation('payment-review', closePaymentReview);
+          }
         }
       } catch {
         if (navigationAccountKey !== accountKey || !navigationRestoring) return;
         friends.students = []; friends.selectedBillId = ''; friends.status = 'empty';
         friends.notice = 'The saved student bill is no longer available. Please search again.';
         const dialog = document.getElementById('friend-student-dialog');
-        if (dialog) { updateFriendPicker(); dialog.showModal(); }
+        if (dialog) {
+          updateFriendPicker();
+          dialog.showModal();
+          enterParentNavigation('friend-picker', closeFriendPicker);
+        }
       }
     } else if (saved?.view === 'friend-picker') {
       await openFriendPicker(saved.friendUsernameQuery, saved.friendBillId);
@@ -944,6 +1050,7 @@ function finishNavigationRestoration() {
       if (saved?.view === 'sheet') {
         document.querySelector('[data-review-bill]')?.focus({ preventScroll: true });
         payments.showSheet();
+        if (document.getElementById('bill-payment-dialog')?.open) enterParentNavigation('payment-review', closePaymentReview);
       }
       if (saved?.view === 'history-details') {
         Array.from(grid.querySelectorAll('[data-history-entry]')).find(button => button.dataset.historyEntry === saved.historyId)?.focus({ preventScroll: true });
@@ -961,7 +1068,22 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') persistNavigationLocation();
 });
 document.addEventListener('close', event => {
-  if (event.target.matches?.('#bill-payment-dialog, #history-details-dialog, #friend-student-dialog')) queueNavigationSave();
+  if (event.target.matches?.('#bill-payment-dialog, #history-details-dialog, #friend-student-dialog')) {
+    if (event.target.id === 'bill-payment-dialog') forgetParentNavigation('payment-review');
+    if (event.target.id === 'history-details-dialog') forgetParentNavigation('history-detail');
+    if (event.target.id === 'friend-student-dialog') forgetParentNavigation('friend-picker');
+    queueNavigationSave();
+  }
+}, true);
+document.addEventListener('cancel', event => {
+  const key = event.target.id === 'bill-payment-dialog' ? 'payment-review'
+    : event.target.id === 'history-details-dialog' ? 'history-detail'
+      : event.target.id === 'friend-student-dialog' ? 'friend-picker' : '';
+  if (!key) return;
+  event.preventDefault();
+  if (key === 'payment-review') requestPaymentReviewBack();
+  else if (key === 'history-detail') requestHistoryDetailsBack();
+  else requestFriendPickerBack();
 }, true);
 
 
@@ -1659,10 +1781,10 @@ window.addEventListener('resize', () => {
 });
 
 document.getElementById('menu-trigger').addEventListener('click', openDrawer);
-document.getElementById('drawer-close').addEventListener('click', closeDrawer);
-document.getElementById('drawer-backdrop').addEventListener('click', closeDrawer);
+document.getElementById('drawer-close').addEventListener('click', requestDrawerBack);
+document.getElementById('drawer-backdrop').addEventListener('click', requestDrawerBack);
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeDrawer();
+  if (event.key === 'Escape' && document.getElementById('navigation-drawer').classList.contains('open')) requestDrawerBack();
 });
 
 function bindSwipeNavigation(element) {

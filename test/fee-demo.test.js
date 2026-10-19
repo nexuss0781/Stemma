@@ -5,6 +5,14 @@ import vm from 'node:vm';
 
 const source = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+const navigationHelperSource = source.slice(
+  source.indexOf('function enterParentNavigation('),
+  source.indexOf('function renderBottomNav()')
+);
+const closeHelperStart = source.indexOf('function closeBill()');
+const closeHelperEnd = source.indexOf("document.addEventListener('submit'", closeHelperStart);
+assert.ok(closeHelperStart >= 0 && closeHelperEnd > closeHelperStart, 'payment close helpers exist');
+const closeHelperSource = source.slice(closeHelperStart, closeHelperEnd);
 const renderSource = source.slice(source.indexOf('function samplePaymentDeadline('), source.indexOf('function updatePaymentProgress()'));
 const frozenToday = new Date('2026-10-17T12:00:00');
 const intervals = ['1-month', '2-months', '3-months', '15-days'];
@@ -251,9 +259,9 @@ test('Continue to Pay opens the bill preview without opening the payment sheet',
     isReceiptOpen: true,
     showSheet: () => calls.push('showSheet')
   };
-  vm.runInNewContext(source.slice(listenerStart, listenerEnd), {
-    document: { addEventListener: (_type, listener) => { clickListener = listener; }, querySelectorAll: () => [] },
-    window: { matchMedia: () => ({ matches: false }) },
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${source.slice(listenerStart, listenerEnd)}`, {
+    document: { addEventListener: (_type, listener) => { clickListener = listener; }, querySelectorAll: () => [], getElementById: () => null },
+    window: { matchMedia: () => ({ matches: false }), StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } } },
     activeRoute: 'cards',
     paymentSlideIndex: 0,
     payments,
@@ -273,12 +281,13 @@ test('Continue on the bill preview opens the payment sheet exactly once', () => 
   let clickListener;
   let showSheetCalls = 0;
   let navigationSaveCalls = 0;
-  vm.runInNewContext(source.slice(listenerStart, listenerEnd), {
-    document: { addEventListener: (_type, listener) => { clickListener = listener; }, querySelectorAll: () => [] },
-    window: { matchMedia: () => ({ matches: false }) },
+  const dialog = { open: false };
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${source.slice(listenerStart, listenerEnd)}`, {
+    document: { addEventListener: (_type, listener) => { clickListener = listener; }, querySelectorAll: () => [], getElementById: () => dialog },
+    window: { matchMedia: () => ({ matches: false }), StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } } },
     activeRoute: 'cards',
     paymentSlideIndex: 0,
-    payments: { isBillOpen: true, showSheet: () => { showSheetCalls += 1; } },
+    payments: { isBillOpen: true, showSheet: () => { showSheetCalls += 1; dialog.open = true; } },
     render: () => {},
     queueNavigationSave: () => { navigationSaveCalls += 1; },
     renderTabs: () => {}
@@ -299,13 +308,14 @@ test('Back from the bill preview closes it and renders the prior payment view', 
     isReceiptOpen: true,
     closeSheet: () => { calls.push('closeSheet'); }
   };
-  vm.runInNewContext(source.slice(listenerStart, listenerEnd), {
+  vm.runInNewContext(`${navigationHelperSource}\n${closeHelperSource}\n${source.slice(listenerStart, listenerEnd)}`, {
     document: {
       addEventListener: (_type, listener) => { clickListener = listener; },
       querySelectorAll: () => [],
-      querySelector: () => ({ focus: () => { calls.push('focus'); } })
+      querySelector: () => ({ focus: () => { calls.push('focus'); } }),
+      getElementById: () => null
     },
-    window: { matchMedia: () => ({ matches: false }) },
+    window: { matchMedia: () => ({ matches: false }), StemmaParentNavigation: { enter: key => key, forget() {}, back() { return false; } } },
     activeRoute: 'cards',
     paymentSlideIndex: 0,
     payments,

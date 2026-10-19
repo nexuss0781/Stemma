@@ -115,9 +115,13 @@ test('PostgreSQL direct chat concurrent creation, persistence, pagination, valid
     assert.equal(convA.nickName, 'Beta');
     const conversationId = convA.id;
 
-    const sendA = (text, cookie = alpha) => jsonPost(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, cookie, harness.origin, { text });
-    assert.equal((await sendA(' first ')).status, 201);
-    assert.equal((await sendA('second', beta)).status, 201);
+    const sendA = (text, cookie = alpha, replyToId) => jsonPost(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, cookie, harness.origin, { text, ...(replyToId ? { replyToId } : {}) });
+    const firstReply = await sendA(' first ');
+    assert.equal(firstReply.status, 201);
+    const firstId = (await firstReply.json()).message.id;
+    const secondReply = await sendA('second', beta, firstId);
+    assert.equal(secondReply.status, 201);
+    assert.deepEqual((await secondReply.json()).message.replyTo, { id: firstId, text: 'first', mine: false, available: true });
     assert.equal((await sendA('not for outsider', outsider)).status, 404);
     assert.equal((await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, { headers: { cookie: outsider } })).status, 200);
     let response = await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, { headers: { cookie: outsider } });
@@ -125,12 +129,18 @@ test('PostgreSQL direct chat concurrent creation, persistence, pagination, valid
     response = await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, { headers: { cookie: alpha } });
     const page = await response.json();
     assert.deepEqual(page.messages.map(message => [message.text, message.mine]), [['second', false], ['first', true]]);
+    assert.deepEqual(page.messages[0].replyTo, { id: firstId, text: 'first', mine: true, available: true });
     response = await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages?before=${page.messages[0].id}`, { headers: { cookie: alpha } });
     assert.deepEqual((await response.json()).messages.map(message => message.text), ['first']);
     response = await fetch(`${harness.origin}/api/pulse/conversations`, { headers: { cookie: alpha } });
-    assert.equal((await response.json()).conversations[0].lastMessage.text, 'second');
+    assert.equal((await response.json()).conversations.find(conversation => conversation.id === conversationId).lastMessage.text, 'second');
+    const otherChatResponse = await create(alpha, 'outsider_user');
+    const otherChatId = (await otherChatResponse.json()).conversation.id;
+    const otherMessageResponse = await jsonPost(`${harness.origin}/api/pulse/conversations/${otherChatId}/messages`, alpha, harness.origin, { text: 'belongs elsewhere' });
+    const otherMessageId = (await otherMessageResponse.json()).message.id;
+    assert.equal((await sendA('cross-chat reply', alpha, otherMessageId)).status, 404, 'reply references from another chat are not accepted');
     assert.equal((await create(alpha, 'beta_user')).status, 201);
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_direct_chat_conversations')).rows[0].n, 1);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_direct_chat_conversations')).rows[0].n, 2);
 
     for (const text of ['', '  ', 'x'.repeat(4001)]) assert.equal((await sendA(text)).status, 400);
     await harness.close(); harness = null;
@@ -139,7 +149,13 @@ test('PostgreSQL direct chat concurrent creation, persistence, pagination, valid
     harness = await createHarness(store);
     const reopened = await harness.cookieFor('chat-alpha-reopened', google(subjects[0]));
     response = await fetch(`${harness.origin}/api/pulse/conversations`, { headers: { cookie: reopened } });
-    assert.equal((await response.json()).conversations[0].lastMessage.text, 'second', 'messages and conversations persist after store recreation');
+    assert.equal((await response.json()).conversations.find(conversation => conversation.id === conversationId).lastMessage.text, 'second', 'messages and conversations persist after store recreation');
+    response = await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, { headers: { cookie: reopened } });
+    const reopenedMessages = (await response.json()).messages;
+    assert.deepEqual(reopenedMessages[0].replyTo, { id: firstId, text: 'first', mine: true, available: true }, 'reply metadata survives store recreation');
+    await pool.query('DELETE FROM stemma_direct_chat_messages WHERE id = $1::bigint', [firstId]);
+    response = await fetch(`${harness.origin}/api/pulse/conversations/${conversationId}/messages`, { headers: { cookie: reopened } });
+    assert.deepEqual((await response.json()).messages[0].replyTo, { id: firstId, available: false }, 'deleted original message leaves an unavailable reply marker');
     await pool.query('DELETE FROM stemma_google_identities WHERE google_subject = $1', [subjects[0]]);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_direct_chat_conversations')).rows[0].n, 0, 'identity deletion cascades conversations');
   } finally {
