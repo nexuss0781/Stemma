@@ -1,4 +1,4 @@
-/* Pulse stages retain their visual previews; public handles and self notes are connected separately. */
+/* Pulse shows only real Saved Messages; public handles and self notes connect separately. */
 (function attachPulse(root) {
   'use strict';
   const categories = Object.freeze([
@@ -8,28 +8,15 @@
   ]);
   const glyph = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const bone = (classes = '') => `<span class="pulse-bone skeleton-shimmer ${classes}"></span>`;
+  // Match the supplied stacked-bookmark silhouette using the existing avatar palette.
+  const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
-    return `<div class="pulse-conversations">${Array.from({ length: 6 }, (_, i) => (i === 0 && ['all', 'user'].includes(kind)) ? `<button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${glyph('card')}</span><span class="pulse-copy"><strong>Saved Messages</strong><span>Your private notes</span></span></button>` : `
-      <div class="pulse-conversation pulse-kind-${kind}" aria-hidden="true">
-        <div class="pulse-avatar-wrap">${bone('pulse-avatar')}${kind === 'group' ? bone('pulse-avatar-secondary') : ''}</div>
-        <div class="pulse-copy">${bone(`pulse-name pulse-length-${i % 3}`)}${bone('pulse-preview')}${kind === 'channel' ? bone('pulse-preview-short') : ''}</div>
-        <div class="pulse-meta">${bone('pulse-time')}${i % 3 === 0 ? bone('pulse-dot') : ''}</div>
-      </div>`).join('')}</div>`;
+    if (kind !== 'all') return '';
+    return `<div class="pulse-conversations"><button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span></button></div>`;
   }
-  function tiles() {
-    return `<div class="pulse-app-grid" aria-hidden="true">${Array.from({ length: 9 }, () => `
-      <div class="pulse-app-tile">${bone('pulse-app-icon')}
-        <div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div>
-      </div>`).join('')}</div>`;
-  }
-  function stories() {
-    return `<div class="pulse-stories" tabindex="0" role="region" aria-label="Story previews, scroll horizontally">${Array.from({ length: 12 }, (_, i) => `<div class="pulse-story-ring${i === 0 ? ' pulse-story-own' : ''}" aria-hidden="true"><span class="pulse-story-avatar">${glyph(i === 0 ? 'user' : ['user', 'pulse-group', 'pulse-channel'][i % 3])}</span></div>`).join('')}</div>`;
-  }
-  function stages(kind, app) {
-    return `<section class="pulse-stage pulse-stage-minimal is-current" aria-label="Chat preview">${app ? tiles() : rows(kind)}</section>
-      <section class="pulse-stage pulse-stage-stories" inert aria-hidden="true" aria-label="Circular story previews">${stories()}${rows(app ? 'app' : kind)}</section>
-      <section class="pulse-stage pulse-stage-previews" inert aria-hidden="true" aria-label="Story tile previews">${stories()}<div class="pulse-previews" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="pulse-preview-tile">${bone('pulse-tile-avatar')}<div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div></div>`).join('')}</div>${rows(app ? 'app' : kind)}</section>
-      <section class="pulse-stage pulse-stage-grid" inert aria-hidden="true" aria-label="Two-column preview grid"><div class="pulse-discovery-grid" aria-hidden="true">${Array.from({ length: 4 }, () => `<div class="pulse-discovery-tile">${bone('pulse-discovery-image')}<div class="pulse-discovery-copy">${bone('pulse-avatar')}${bone('pulse-name')}</div></div>`).join('')}</div></section>`;
+  function stages(kind) {
+    // Keep gesture/stage state intact without showing unfinished stories or grids.
+    return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${kind === 'all' ? 'Saved Messages list' : 'Empty conversations'}">${rows(kind)}</section>`).join('');
   }
   function searchView() {
     return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search" hidden>
@@ -53,7 +40,7 @@
       <div class="pulse-feed">
         <span class="pulse-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
-        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'all'][i], i === 4)}</section>`).join('')}</div></div>
+        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'app'][i])}</section>`).join('')}</div></div>
         <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
           ${[1, 2, 3].map(order => `<span class="pulse-create-preview" style="--preview-order:${order}">${bone('pulse-create-preview-icon')}${bone('pulse-create-preview-line')}</span>`).join('')}
         </div>

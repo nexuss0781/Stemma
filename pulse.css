@@ -153,7 +153,7 @@
 
 /* Connected public-handle lookup and private self notes; existing palette only. */
 .pulse-shell [hidden] { display: none !important; }
-.pulse-saved-row { width: 100%; padding: 0; text-align: left; font: inherit; color: var(--brand-burgundy); background: transparent; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pulse-saved-row { width: 100%; flex: 0 0 auto; min-height: 76px; padding: 14px 0; text-align: left; font: inherit; color: var(--brand-burgundy); background: transparent; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 .pulse-saved-row .pulse-copy { gap: 5px; }
 .pulse-saved-row strong, .pulse-user-result strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .pulse-saved-row .pulse-copy > span, .pulse-user-result .pulse-copy > span { font-size: 12px; opacity: .75; overflow-wrap: anywhere; }
@@ -179,3 +179,8 @@
 .pulse-saved-compose button:disabled { opacity: .5; cursor: default; }
 .pulse-load-older, .pulse-users-more { display: block; margin: 12px auto; min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--brand-burgundy); background: var(--skeleton-light); font: inherit; font-size: 13px; cursor: pointer; }
 .pulse-saved-row:focus-visible, .pulse-saved-compose :focus-visible, .pulse-load-older:focus-visible, .pulse-users-more:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -2px; }
+
+/* Real feed rows stay compact in every retained gesture stage. */
+.pulse-panel .pulse-stage { grid-template-rows: minmax(0, 1fr); }
+.pulse-saved-preview { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pulse-person-mark .pulse-bookmark-stack { width: 27px; height: 27px; }

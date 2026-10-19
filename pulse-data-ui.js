@@ -26,6 +26,15 @@
     const older = saved.querySelector('.pulse-load-older');
     const more = shell.querySelector('.pulse-users-more');
     let searchTimer, searchRequest, sequence = 0, offset = 0, busy = false, notes = [], loading = false;
+    let previewRevision = 0;
+    const previews = [...shell.querySelectorAll('.pulse-saved-preview')];
+    function paintPreview(value = '') {
+      previewRevision++;
+      for (const preview of previews) {
+        preview.textContent = value.replace(/\s+/g, ' ').trim();
+        preview.hidden = !preview.textContent;
+      }
+    }
     function node(tag, className, value) { const el = document.createElement(tag); el.className = className; if (value !== undefined) el.textContent = value; return el; }
     async function request(url, options = {}) {
       const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', signal, ...options, headers: { Accept: 'application/json', ...options.headers } });
@@ -67,7 +76,12 @@
       } catch (error) { if (!signal.aborted && revision === sequence && error.name !== 'AbortError') searchStatus.textContent = error.message; }
       finally { if (revision === sequence) more.disabled = false; }
     }
-    listen(signal, 'abort', () => { resetSearch(); notes = []; items.replaceChildren(); text.value = ''; });
+    listen(signal, 'abort', () => { resetSearch(); notes = []; items.replaceChildren(); text.value = ''; paintPreview(); });
+    // Fetch afresh on every mount; never cache private note content in browser storage.
+    const initialPreviewRevision = previewRevision;
+    request('/api/pulse/saved').then(data => {
+      if (!signal.aborted && previewRevision === initialPreviewRevision) paintPreview(data.messages[0]?.text);
+    }).catch(() => { /* Signed-out/offline lists stay blank, never show a fake preview. */ });
     listen(field, 'input', () => { resetSearch(); searchTimer = setTimeout(() => lookup(), 220); });
     listen(field, 'keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(); } });
     listen(search, 'click', event => { if (event.target.closest('[data-pulse-search-tab]')) lookup(); });
@@ -94,7 +108,7 @@
         const data = await request('/api/pulse/saved' + before);
         if (signal.aborted) return;
         notes = append ? [...notes, ...data.messages] : data.messages;
-        paintNotes(); older.hidden = !data.hasMore;
+        paintNotes(); paintPreview(notes[0]?.text); older.hidden = !data.hasMore;
         text.disabled = false; send.disabled = !text.value.trim();
         status.textContent = notes.length ? '' : 'Notes, links, reminders—keep them here for yourself.';
         history.scrollTop = append ? top + history.scrollHeight - height : history.scrollHeight;
@@ -117,7 +131,7 @@
       try {
         const data = await request('/api/pulse/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: value }) });
         if (signal.aborted) return;
-        notes.unshift(data.message); paintNotes(); if (text.value.trim() === value) text.value = '';
+        notes.unshift(data.message); paintNotes(); paintPreview(data.message.text); if (text.value.trim() === value) text.value = '';
         status.textContent = 'Saved'; history.scrollTop = history.scrollHeight;
       } catch (error) { if (!signal.aborted) status.textContent = error.message; }
       finally { busy = false; send.disabled = !text.value.trim(); }

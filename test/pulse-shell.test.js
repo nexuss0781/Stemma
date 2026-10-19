@@ -6,15 +6,22 @@ import http from 'node:http';
 import { createApp, buildConfig } from '../server.js';
 const root = new URL('../', import.meta.url);
 const [source, dataSource, css, html, app] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js'].map(name => readFile(new URL(name, root), 'utf8')));
-function load() {
+function load(fetchImpl) {
   const effects = [];
-  const context = vm.createContext({ fetch: () => effects.push('fetch'), XMLHttpRequest: () => effects.push('xhr') });
+  const context = vm.createContext({ fetch: fetchImpl || (() => effects.push('fetch')), XMLHttpRequest: () => effects.push('xhr') });
   vm.runInContext(dataSource, context);
   vm.runInContext(source, context);
-  return { pulse: context.StemmaPulse, effects };
+  return { pulse: context.StemmaPulse, data: context.StemmaPulseData, effects };
 }
 function withoutSavedRowText(markup) {
   return markup.replace(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi, '');
+}
+function panelsFrom(markup) {
+  const starts = [...markup.matchAll(/<section class="pulse-panel"/g)].map(match => match.index);
+  return starts.map((start, index) => markup.slice(start, starts[index + 1] ?? markup.indexOf('</div>\n        <div class="pulse-create-previews"', start)));
+}
+function stagesFrom(panel) {
+  return [...panel.matchAll(/<section\b(?=[^>]*\bclass="pulse-stage\b)[^>]*>([\s\S]*?)<\/section>/g)].map(match => match[0]);
 }
 test('Pulse has five accessible icon-only categories, with All selected by default', () => {
   const { pulse, effects } = load();
@@ -24,27 +31,42 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.equal((markup.match(/role="tabpanel"/g) || []).length, 5);
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
   assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 19);
-  assert.doesNotMatch(markup, /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid/,
-    'Story is not a category tab or panel');
-  assert.match(markup, /class="pulse-stories"/);
-  assert.equal((markup.match(/class="pulse-story-ring/g) || []).length, 120,
-    'each category has two horizontally scrollable story stages');
-  assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 15,
-    'each category retains three preview tiles');
-  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'all non-saved feed content is skeletons, with no visible text');
+  const panels = panelsFrom(markup);
+  assert.doesNotMatch(panels.join(''), /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid|pulse-stories|pulse-story-ring|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/,
+    'the feed contains no story, discovery, app-grid, or skeleton placeholders');
+  assert.equal(panels.length, 5);
+  assert.equal((panels[0].match(/class="pulse-stage /g) || []).length, 4,
+    'All retains the four gesture-stage containers');
+  assert.equal((panels[0].match(/\bpulse-saved-row\b/g) || []).length, 4,
+    'the same actual Saved Messages row appears in each All stage');
+  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'there is no visible non-row feed copy');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
-test('All and User begin with a private Saved Messages row and self-only notes view', () => {
+test('All stages render only the Saved Messages row with an inline bookmark-stack icon and initially empty preview', () => {
   const markup = load().pulse.render();
-  const rows = [...markup.matchAll(/<button\b(?=[^>]*\bclass="pulse-conversation pulse-saved-row")[^>]*>[\s\S]*?<\/button>/gi)];
-  assert.equal(rows.length, 6, 'the first conversation in each All and User stage is Saved Messages');
-  assert.ok(markup.indexOf('pulse-saved-row') < markup.indexOf('pulse-kind-all'),
-    'Saved Messages precedes the remaining All skeleton conversations');
-  for (const row of rows) {
-    assert.match(row[0], /\bdata-pulse-saved(?:\s|=|>)/);
-    assert.match(row[0], /<strong>Saved Messages<\/strong>/);
-    assert.match(row[0], /Your private notes/);
+  const panels = panelsFrom(markup);
+  const allStages = stagesFrom(panels[0]);
+  assert.equal(allStages.length, 4);
+  for (const stage of allStages) {
+    const rows = [...stage.matchAll(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi)];
+    assert.equal(rows.length, 1, 'each retained All stage contains one Saved Messages row');
+    const row = rows[0][0];
+    assert.match(row, /\bdata-pulse-saved(?:\s|=|>)/);
+    assert.match(row, /<strong>Saved Messages<\/strong>/);
+    assert.doesNotMatch(row, /Your private notes/,
+      'the row does not use the former generic subtitle');
+    assert.match(row, /<svg\b(?=[^>]*\bclass="pulse-bookmark-stack")(?=[^>]*\bviewBox="0 0 32 32")[^>]*>[\s\S]*?<\/svg>/,
+      'the supplied stacked-bookmark artwork is inline SVG');
+    assert.match(row, /<path\b[^>]*\bfill="currentColor"/,
+      'the bookmark uses the existing foreground palette');
+    assert.match(row, /<path\b[^>]*\bstroke="currentColor"/,
+      'the stack detail uses the existing foreground palette');
+    assert.doesNotMatch(row, /<use\b/i, 'the bookmark is not an external symbol reference');
+    const preview = row.match(/<span\b(?=[^>]*\bclass="pulse-saved-preview")[^>]*>([\s\S]*?)<\/span>/);
+    assert.ok(preview, 'the message preview has its own semantic element');
+    assert.match(preview[0], /\bhidden(?:\s|>)/);
+    assert.equal(preview[1], '', 'the preview starts empty until the private note fetch resolves');
   }
   const saved = markup.match(/<section class="pulse-saved"[\s\S]*?<\/section>/);
   assert.ok(saved, 'the private Saved Messages view is rendered');
@@ -56,6 +78,50 @@ test('All and User begin with a private Saved Messages row and self-only notes v
     'notes are loaded from the signed-in user’s private saved-messages collection');
   assert.match(dataSource, /request\('\/api\/pulse\/saved', \{ method: 'POST'/,
     'the compose action saves notes only to that private collection');
+});
+test('User, Group, Channel, and App retain four empty stage containers with no feed content', () => {
+  const markup = load().pulse.render();
+  const panels = panelsFrom(markup);
+  assert.equal(panels.length, 5);
+  for (const [index, panel] of panels.entries()) {
+    const stages = stagesFrom(panel);
+    assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
+    if (index === 0) continue;
+    for (const stage of stages) {
+      assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `category ${index} has no visible feed content`);
+      assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
+        `category ${index} has no saved row, story, discovery, app-grid, or skeleton placeholder`);
+    }
+  }
+});
+test('saved-message preview paints the newest private note into each All stage and stays blank when none exist', async () => {
+  async function runPreview(messages) {
+    const previews = Array.from({ length: 4 }, () => ({ textContent: '', hidden: true }));
+    const listeners = [];
+    const target = () => ({ addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; }, replaceChildren() {}, append() {} });
+    const feed = target(), search = target(), saved = target(), field = target(), results = target(), searchStatus = target();
+    const history = target(), items = target(), status = target(), text = target(), send = target(), older = target(), more = target();
+    const form = { ...target(), querySelector: () => send };
+    saved.querySelector = selector => ({ '.pulse-saved-history': history, '.pulse-saved-items': items, '.pulse-data-status': status, 'form': form, 'textarea': text, '.pulse-load-older': older, '.pulse-saved-back': target() })[selector] || null;
+    const shell = {
+      querySelector: selector => ({ '.pulse-feed': feed, '.pulse-saved': saved, '.pulse-search': search, '#pulse-search-input': field, '.pulse-user-results': results, '.pulse-user-status': searchStatus, '.pulse-users-more': more, '.pulse-search-close': target() })[selector] || null,
+      querySelectorAll: selector => selector === '.pulse-saved-preview' ? previews : []
+    };
+    const controller = new AbortController();
+    const { data } = load(async () => ({ ok: true, status: 200, json: async () => ({ messages }) }));
+    data.mount(shell, { listen: (element, type, handler) => listeners.push({ element, type, handler }), signal: controller.signal, closeSearch() {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return { previews, listeners };
+  }
+  const latest = await runPreview([
+    { id: '2', text: '  latest\n saved   note  ' },
+    { id: '1', text: 'older note' }
+  ]);
+  assert.deepEqual(latest.previews.map(preview => preview.textContent), Array(4).fill('latest saved note'));
+  assert.deepEqual(latest.previews.map(preview => preview.hidden), Array(4).fill(false));
+  const empty = await runPreview([]);
+  assert.deepEqual(empty.previews.map(preview => preview.textContent), Array(4).fill(''));
+  assert.deepEqual(empty.previews.map(preview => preview.hidden), Array(4).fill(true));
 });
 test('the create-preview toggle is accessible and retains its inline layered-plus SVG', () => {
   const markup = load().pulse.render();
@@ -102,17 +168,18 @@ test('create preview transitions stagger bottom-up and are disabled for reduced 
   assert.match(reducedMotion[1], /\.pulse-create-preview[^{]*\{[^}]*transition:\s*none/,
     'reduced motion disables the per-item preview transition');
 });
-test('each of the five categories renders as its selected panel without changing skeleton content', () => {
+test('each of the five categories can be selected without changing the Saved Messages-only feed', () => {
   const { pulse } = load();
   for (let index = 0; index < 5; index++) {
     const markup = pulse.render(index);
     assert.match(markup, new RegExp(`id="pulse-tab-${index}"[^>]*aria-selected="true"`));
     assert.match(markup, new RegExp(`translate3d\\(-${index * 100}%,0,0\\)`));
     assert.equal((markup.split('<section class="pulse-search"')[0].match(/aria-selected="true"/g) || []).length, 1);
-    assert.match(markup, /pulse-app-grid/);
-    assert.match(markup, /class="pulse-stories"/);
-    assert.match(markup, /class="pulse-preview-tile"/);
-    assert.doesNotMatch(markup, /pulse-story-grid/);
+    const panels = panelsFrom(markup);
+    assert.equal(panels.length, 5);
+    assert.equal(stagesFrom(panels[index]).length, 4);
+    if (index === 0) assert.equal((panels[index].match(/\bpulse-saved-row\b/g) || []).length, 4);
+    else assert.doesNotMatch(panels[index], /pulse-saved-row|pulse-stories|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/);
   }
 });
 test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduced motion', () => {
@@ -156,15 +223,15 @@ test('Pulse source and styles are publicly served as static assets only', async 
   }
 });
 
-test('Pulse reveals four ordered in-place pull stages and retains a two-column skeleton grid', () => {
+test('Pulse retains four ordered in-place pull stages while hiding all story and grid placeholders', () => {
   const markup = load().pulse.render();
   assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
   assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
+  assert.doesNotMatch(panelsFrom(markup).join(''), /pulse-stories|pulse-story-ring|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/);
   assert.match(css, /pulse-stage \{ position: absolute; inset: 0/);
   assert.match(source, /gesture.dy > 0 \? 1 : -1/);
   assert.match(source, /stage.inert = i !== next/);
   assert.doesNotMatch(css, /scroll-snap-type: y/);
-  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(source, /event.target.closest\('\.pulse-stories'\)/);
   assert.match(source, /!event.target.closest\('\.pulse-tab'\)/);
 });
