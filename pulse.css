@@ -11,7 +11,7 @@
 .dashboard-grid.pulse-content-grid { display: block; width: min(100%, 620px); min-width: 0; height: 100%; overflow: hidden; }
 .pulse-shell { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; min-width: 0; gap: 14px; }
 .pulse-bone { display: block; flex-shrink: 0; border-radius: 999px; background: var(--skeleton); }
-.pulse-stories { touch-action: pan-x pinch-zoom; scroll-snap-type: x proximity; display: flex; align-items: center; gap: 15px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.pulse-stories { touch-action: pan-x pinch-zoom; scroll-snap-type: x proximity; scroll-padding-inline: 16px; display: flex; align-items: center; gap: 15px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .pulse-stories::-webkit-scrollbar { display: none; }
 .pulse-story-ring { position: relative; scroll-snap-align: start; display: grid; place-items: center; flex: 0 0 62px; width: 62px; height: 62px; border: 0; border-radius: 50%; padding: 3px; background: repeating-conic-gradient(from -25deg, var(--brand-burgundy) 0deg 83deg, var(--paper-soft) 83deg 90deg); box-shadow: 0 3px 8px var(--line); }
 .pulse-story-ring:nth-child(3n) { background: conic-gradient(from 25deg, var(--brand-burgundy-deep), var(--brand-burgundy) 55%, var(--brand-gold) 56% 64%, var(--brand-burgundy) 65%); }
@@ -68,6 +68,7 @@
 .pulse-app-tile .pulse-tile-line { background: var(--skeleton); }
 .pulse-stage { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 100%; overflow: hidden; visibility: hidden; opacity: 0; transform: translate3d(0,-32px,0); pointer-events: none; transition: none; }
 .pulse-panel.is-interacting .pulse-stage { transition: none; }
+.pulse-panel.is-interacting .pulse-stories { scroll-snap-type: none; }
 .pulse-panel.is-interacting .pulse-stage > * { transform-origin: center top; will-change: transform, opacity; }
 .pulse-panel.is-interacting .skeleton-shimmer::after { animation-play-state: paused; }
 /* Only this viewport changes: a downward pull reveals one story layout. */
