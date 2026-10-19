@@ -16,7 +16,7 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   const { pulse, effects } = load();
   const markup = pulse.render();
   assert.deepEqual(Array.from(pulse.categories, item => item.label), ['All', 'User', 'Group', 'Channel', 'App']);
-  assert.equal((markup.match(/role="tab"/g) || []).length, 5);
+  assert.equal((markup.match(/class="pulse-tab" role="tab"/g) || []).length, 5);
   assert.equal((markup.match(/role="tabpanel"/g) || []).length, 5);
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
   assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 19);
@@ -27,7 +27,7 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
     'each category has two horizontally scrollable story stages');
   assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 15,
     'each category retains three preview tiles');
-  assert.equal(markup.replace(/<[^>]*>/g, '').trim(), '', 'all content is skeletons, with no visible text');
+  assert.equal(markup.split('<section class="pulse-search"')[0].replace(/<[^>]*>/g, '').trim(), '', 'all content is skeletons, with no visible text');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
@@ -56,7 +56,7 @@ test('create previews are three hidden, inert, decorative skeleton placeholders 
     assert.doesNotMatch(content, /<(?:a|button|input|select|textarea)\b|\b(?:role|tabindex|onclick|data-pulse-[\w-]+)=/i,
       'placeholders expose no controls or action hooks');
   }
-  assert.equal(markup.replace(/<[^>]*>/g, '').trim(), '', 'the Pulse shell remains text-free');
+  assert.equal(markup.split('<section class="pulse-search"')[0].replace(/<[^>]*>/g, '').trim(), '', 'the Pulse shell remains text-free');
 });
 test('create previews toggle from the shell and support Escape and outside dismissal', () => {
   assert.match(source, /classList\.toggle\(['"]is-create-open['"]/,
@@ -82,7 +82,7 @@ test('each of the five categories renders as its selected panel without changing
     const markup = pulse.render(index);
     assert.match(markup, new RegExp(`id="pulse-tab-${index}"[^>]*aria-selected="true"`));
     assert.match(markup, new RegExp(`translate3d\\(-${index * 100}%,0,0\\)`));
-    assert.equal((markup.match(/aria-selected="true"/g) || []).length, 1);
+    assert.equal((markup.split('<section class="pulse-search"')[0].match(/aria-selected="true"/g) || []).length, 1);
     assert.match(markup, /pulse-app-grid/);
     assert.match(markup, /class="pulse-stories"/);
     assert.match(markup, /class="pulse-preview-tile"/);
@@ -97,7 +97,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=6" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=7" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {

@@ -112,3 +112,41 @@
 
 /* Non-visual announcements preserve the text-free skeleton presentation. */
 .pulse-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Dedicated visual-only Search view; the feed stays mounted to retain its stage. */
+.pulse-shell > [hidden] { display: none !important; }
+.pulse-search { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: hidden; background: var(--paper-soft); }
+.pulse-search-header { display: flex; align-items: center; gap: 8px; margin: 10px 16px 12px; padding: 3px 5px 3px 14px; min-width: 0; border: 1px solid var(--line); border-radius: 999px; background: var(--skeleton-light); color: var(--brand-burgundy); }
+.pulse-search-field { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.pulse-search-field > .icon { flex-shrink: 0; width: 21px; height: 21px; }
+.pulse-search-field input { width: 100%; min-width: 0; height: 42px; padding: 0; border: 0; border-radius: 0; outline: none; background: transparent; color: var(--brand-burgundy); font: inherit; font-size: 16px; }
+.pulse-search-field input::placeholder { color: var(--brand-burgundy); opacity: .65; }
+.pulse-search-field input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.pulse-search-header:focus-within { outline: 2px solid var(--brand-burgundy); outline-offset: 2px; }
+.pulse-search-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--brand-burgundy); cursor: pointer; }
+.pulse-search-close .icon { width: 22px; height: 22px; }
+.pulse-search-tabs { margin: 0 16px; background: var(--skeleton-light); }
+.pulse-search-body { min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom; }
+.pulse-search-suggestions { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x pinch-zoom; }
+.pulse-search-suggestions::-webkit-scrollbar { display: none; }
+.pulse-search-suggestions > div { display: flex; gap: 18px; width: max-content; padding: 20px 16px; }
+.pulse-search-suggestion { display: grid; justify-items: center; gap: 10px; width: 62px; }
+.pulse-search-circle { width: 62px; height: 62px; border-radius: 50%; }
+.pulse-search-caption { width: 38px; height: 6px; background: var(--skeleton-light); }
+.pulse-search-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: var(--skeleton-light); border-block: 1px solid var(--line); }
+.pulse-search-recent-heading h2 { margin: 0; color: var(--brand-burgundy); font-size: 14px; font-weight: 600; }
+.pulse-search-clear { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--brand-burgundy); font: inherit; font-size: 13px; }
+.pulse-search-clear:disabled, .pulse-search-remove:disabled { opacity: .65; cursor: default; }
+.pulse-search-recents { padding: 0 16px 12px; }
+.pulse-search-recent-row { display: flex; align-items: center; gap: 10px; min-height: 78px; border-bottom: 1px solid var(--line); }
+.pulse-search-recent-row:last-child { border-bottom: 0; }
+.pulse-search-row-skeleton { display: flex; align-items: center; gap: 13px; flex: 1; min-width: 0; }
+.pulse-search-remove { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 10px; border: 0; background: transparent; color: var(--brand-burgundy); }
+.pulse-search-remove .icon { width: 24px; height: 24px; padding: 4px; border: 1px solid currentColor; border-radius: 50%; }
+.pulse-search-close:focus-visible, .pulse-search-suggestions:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -2px; }
+@media (max-width: 360px), (max-height: 700px) {
+  .pulse-search-suggestions > div { padding-block: 14px; gap: 16px; }
+  .pulse-search-suggestion { width: 52px; }
+  .pulse-search-circle { width: 52px; height: 52px; }
+  .pulse-search-recent-row { min-height: 72px; }
+}

@@ -31,6 +31,21 @@
       <section class="pulse-stage pulse-stage-previews" inert aria-hidden="true" aria-label="Story tile previews">${stories()}<div class="pulse-previews" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="pulse-preview-tile">${bone('pulse-tile-avatar')}<div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div></div>`).join('')}</div>${rows(kind)}</section>
       <section class="pulse-stage pulse-stage-grid" inert aria-hidden="true" aria-label="Two-column preview grid"><div class="pulse-discovery-grid" aria-hidden="true">${Array.from({ length: 4 }, () => `<div class="pulse-discovery-tile">${bone('pulse-discovery-image')}<div class="pulse-discovery-copy">${bone('pulse-avatar')}${bone('pulse-name')}</div></div>`).join('')}</div></section>`;
   }
+  function searchView() {
+    return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search preview" hidden>
+      <div class="pulse-search-header">
+        <label class="pulse-search-field">${glyph('pulse-search')}<input id="pulse-search-input" type="search" placeholder="Search Pulse" aria-label="Search Pulse" aria-describedby="pulse-search-hint" autocomplete="off" spellcheck="false"></label>
+        <button type="button" class="pulse-search-close" aria-label="Close Pulse search">${glyph('close')}</button>
+      </div>
+      <span id="pulse-search-hint" class="pulse-announcement">Visual preview only. Search and recent history are not connected yet.</span>
+      <nav class="pulse-search-tabs pulse-tabs" role="tablist" aria-label="Search categories">${categories.map((item, i) => `<button type="button" class="pulse-search-tab pulse-tab" role="tab" aria-label="Search ${item.label}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-pulse-search-tab="${i}" aria-controls="pulse-search-results">${glyph(item.icon)}</button>`).join('')}</nav>
+      <div class="pulse-search-body" id="pulse-search-results" role="region" aria-label="Skeleton search results">
+        <div class="pulse-search-suggestions" tabindex="0" role="region" aria-label="Suggested previews, scroll horizontally"><div aria-hidden="true">${Array.from({ length: 8 }, () => `<div class="pulse-search-suggestion">${bone('pulse-search-circle')}${bone('pulse-search-caption')}</div>`).join('')}</div></div>
+        <div class="pulse-search-recent-heading"><h2>Recent</h2><button type="button" class="pulse-search-clear" disabled title="Recent history is coming later">Clear All</button></div>
+        <div class="pulse-search-recents" role="list" aria-label="Recent search placeholders">${Array.from({ length: 6 }, (_, i) => `<div class="pulse-search-recent-row" role="listitem" aria-label="Recent search placeholder ${i + 1}"><div class="pulse-search-row-skeleton" aria-hidden="true">${bone('pulse-avatar')}<div class="pulse-copy">${bone(`pulse-name pulse-length-${i % 3}`)}${bone('pulse-preview')}</div></div><button type="button" class="pulse-search-remove" aria-label="Remove recent search placeholder ${i + 1}" disabled title="Recent history is coming later">${glyph('close')}</button></div>`).join('')}</div>
+      </div>
+    </section>`;
+  }
   function render(selected = 0) {
     selected = Math.max(0, Math.min(categories.length - 1, selected));
     return `<section class="pulse-shell" aria-label="Pulse visual preview">
@@ -49,6 +64,7 @@
           </svg>
         </button>
       </div>
+      ${searchView()}
     </section>`;
   }
   let cleanup = () => {};
@@ -82,6 +98,45 @@
     });
     listen(shell, 'focusout', event => {
       if (!shell.contains(event.relatedTarget)) setCreateOpen(false);
+    });
+    const feed = shell.querySelector('.pulse-feed');
+    const search = shell.querySelector('.pulse-search');
+    const searchInput = shell.querySelector('#pulse-search-input');
+    const searchTrigger = document.querySelector('.pulse-topbar-search');
+    const searchTabs = [...shell.querySelectorAll('.pulse-search-tab')];
+    function setSearchOpen(open) {
+      setCreateOpen(false);
+      drag = null;
+      track.classList.remove('is-dragging');
+      track.style.transform = `translate3d(-${selected * 100}%,0,0)`;
+      states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); });
+      search.hidden = !open;
+      feed.hidden = open;
+      feed.inert = open;
+      searchTrigger?.setAttribute('aria-expanded', String(open));
+      if (open) searchInput.focus({ preventScroll: true });
+      else searchTrigger?.focus({ preventScroll: true });
+    }
+    if (searchTrigger) listen(searchTrigger, 'click', () => setSearchOpen(search.hidden));
+    listen(shell.querySelector('.pulse-search-close'), 'click', () => setSearchOpen(false));
+    listen(search, 'keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSearchOpen(false); }
+    });
+    function selectSearch(index, focus = false) {
+      index = (index + searchTabs.length) % searchTabs.length;
+      searchTabs.forEach((tab, i) => { tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1; });
+      if (focus) searchTabs[index].focus();
+    }
+    listen(search, 'click', event => {
+      const tab = event.target.closest('[data-pulse-search-tab]');
+      if (tab) selectSearch(Number(tab.dataset.pulseSearchTab));
+    });
+    listen(search, 'keydown', event => {
+      const tab = event.target.closest('[data-pulse-search-tab]');
+      if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const index = Number(tab.dataset.pulseSearchTab);
+      selectSearch(event.key === 'Home' ? 0 : event.key === 'End' ? searchTabs.length - 1 : index + (event.key === 'ArrowRight' ? 1 : -1), true);
     });
     const stageNames = ['Chat preview', 'Circular story previews', 'Story tile previews', 'Two-column preview grid'];
     let wheelTimer;
@@ -211,6 +266,7 @@
       if (tab) select(Number(tab.dataset.pulseTab));
     });
     listen(shell, 'keydown', event => {
+      if (event.target.closest('.pulse-search')) return;
       if (!event.target.closest('.pulse-tab') || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? categories.length - 1 : selected + (event.key === 'ArrowRight' ? 1 : -1);
@@ -285,7 +341,7 @@
     });
     listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
-    cleanup = () => { abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
+    cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories });
 })(typeof window !== 'undefined' ? window : globalThis);

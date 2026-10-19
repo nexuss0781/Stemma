@@ -7,13 +7,13 @@
   <meta name="description" content="A calm, clear way to get started with Stemma." />
   <title>Welcome to Stemma</title>
   <link rel="stylesheet" href="styles.css?v=82" />
-  <link rel="stylesheet" href="pulse.css?v=6" />
+  <link rel="stylesheet" href="pulse.css?v=7" />
   <script src="payment-ui.js?v=14" defer></script>
   <script src="profile-photo.js?v=3"></script>
   <script src="profile-ui.js?v=2"></script>
   <script src="navigation-memory.js?v=5"></script>
   <script src="friend-ui.js?v=1" defer></script>
-  <script src="pulse-ui.js?v=6" defer></script>
+  <script src="pulse-ui.js?v=7" defer></script>
   <script src="app.js?v=52" defer></script>
   <script src="notifications-ui.js?v=3" defer></script>
 </head>
@@ -256,7 +256,7 @@
         </nav>
       </div>
       <div class="pulse-topbar-mark" aria-hidden="true"><svg class="icon"><use href="#i-pulse"/></svg><span class="pulse-bone skeleton-shimmer"></span></div>
-      <span class="pulse-topbar-search" aria-hidden="true"><svg class="icon"><use href="#i-pulse-search"/></svg></span>
+      <button type="button" class="pulse-topbar-search icon-button" aria-label="Open Pulse search" aria-controls="pulse-search" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-pulse-search"/></svg></button>
     </header>
 
     <main id="app-main" class="app-main overview-view" tabindex="-1" aria-label="Dashboard">
