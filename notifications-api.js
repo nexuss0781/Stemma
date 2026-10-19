@@ -25,7 +25,8 @@ export function createNotificationStore(pool) {
         [subject, WELCOME_KEY, WELCOME_TITLE, WELCOME_MESSAGE]
       );
       const result = await pool.query(
-        `SELECT id::text AS id, title, message, created_at AS "createdAt", read_at AS "readAt"
+        `SELECT id::text AS id, title, message, created_at AS "createdAt", read_at AS "readAt",
+                CASE WHEN notification_key = 'app-welcome-v1' THEN 'system' ELSE NULL END AS type
          FROM stemma_student_notifications
          WHERE google_subject = $1
          ORDER BY created_at DESC, id DESC`,

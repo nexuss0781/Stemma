@@ -33,10 +33,11 @@ function createMemoryPool() {
         return { rows: [] };
       }
       if (/^\s*SELECT id::text AS id/i.test(sql)) {
+        assert.match(sql, /CASE WHEN notification_key = 'app-welcome-v1' THEN 'system' ELSE NULL END AS type/);
         const [subject] = params;
         return { rows: records.filter(row => row.subject === subject)
           .sort((left, right) => right.createdAt - left.createdAt)
-          .map(row => ({ id: row.id, title: row.title, message: row.message, createdAt: row.createdAt, readAt: row.readAt })) };
+          .map(row => ({ id: row.id, title: row.title, message: row.message, createdAt: row.createdAt, readAt: row.readAt, type: row.key === 'app-welcome-v1' ? 'system' : null })) };
       }
       if (/^\s*UPDATE stemma_student_notifications/i.test(sql)) {
         const [subject, ids] = params;
@@ -79,6 +80,7 @@ test('store seeds one long welcome notice per subject and lists only that subjec
   assert.equal(other.length, 1);
   assert.notEqual(first[0].id, other[0].id);
   assert.match(first[0].title, /welcome/i);
+  assert.equal(first[0].type, 'system');
   assert.ok(first[0].message.length > 250);
   assert.match(first[0].message, /payment examples in this demo do not move real money/i);
   assert.match(first[0].message, /does not add any sample or past transactions/i);
@@ -211,7 +213,13 @@ test('PostgreSQL migration, backfill, idempotence, subject isolation and read pe
     assert.equal(migrationBackfill.rows[0].count, 1);
     const seeded = await store.listNotifications('existing-google-user');
     assert.equal(seeded.length, 1);
-    assert.equal((await store.listNotifications('existing-google-user')).length, 1);
+    assert.equal(seeded[0].type, 'system');
+    await scopedPool.query("UPDATE stemma_student_notifications SET title = 'Renamed welcome' WHERE google_subject = $1", ['existing-google-user']);
+    await scopedPool.query("INSERT INTO stemma_student_notifications (google_subject, notification_key, title, message) VALUES ($1, $2, $3, $4)", ['existing-google-user', 'personal-invitation', 'Welcome to Stemma', 'Personal message']);
+    const classified = await store.listNotifications('existing-google-user');
+    assert.equal(classified.find(item => item.title === 'Renamed welcome').type, 'system');
+    assert.equal(classified.find(item => item.title === 'Welcome to Stemma').type, null);
+    assert.equal((await store.listNotifications('existing-google-user')).length, 2);
 
     const userA = await store.listNotifications('new-google-user-A');
     const userB = await store.listNotifications('new-google-user-B');

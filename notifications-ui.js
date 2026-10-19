@@ -4,6 +4,7 @@
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const sortRecords = records => [...records].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
   const isUnread = item => !item.readAt && item.read !== true && (item.readAt === null || item.read === false);
+  const notificationTitle = item => item.type === 'system' ? 'System Notification' : item.title || 'Notification';
   function renderMeta(item, compact = false) {
     const date = new Date(item.createdAt);
     const validDate = Number.isFinite(date.getTime());
@@ -42,7 +43,7 @@
     });
     // Unread first; indices still address the original date-sorted detail records.
     const labels = [...groups.keys()].sort((a, b) => a === 'New' ? -1 : b === 'New' ? 1 : 0);
-    return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(item.title || 'Notification')}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
+    return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(notificationTitle(item))}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
   }
   function renderNotificationDetail(item) {
     return `${renderMeta(item)}${item.message ? `<p class="notification-full-message">${escape(item.message)}</p>` : '<p class="notification-full-message">No additional details were provided.</p>'}`;
@@ -268,7 +269,7 @@
     const item = records[index];
     if (!item || dialog.open) return;
     detailIndex = index;
-    detailTitle.textContent = item.title || 'Notification';
+    detailTitle.textContent = notificationTitle(item);
     detailContent.innerHTML = renderNotificationDetail(item);
     detailContent.scrollTop = 0;
     dialog.showModal();

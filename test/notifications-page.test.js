@@ -7,7 +7,7 @@ const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const source = await readFile(new URL('../notifications-ui.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 
-function createHarness() {
+function createHarness(customRecords) {
   const elements = new Map();
   const windowListeners = new Map();
   const hashStack = [{ hash: '#payment', state: null }];
@@ -85,7 +85,7 @@ function createHarness() {
       return elements.get(id);
     }
   };
-  const records = [
+  const records = customRecords || [
     { id: 'older', title: 'Older update', message: 'An earlier update', createdAt: '2025-02-01T10:00:00Z', readAt: null },
     { id: 'newer', title: 'Latest update', message: 'Details <and> more', createdAt: '2026-03-02T11:30:00Z', readAt: null }
   ];
@@ -181,4 +181,35 @@ test('unread dots clear after read acknowledgement, and bulk selection does not 
   assert.equal(document.getElementById('notifications-feedback').textContent, 'Selected notifications marked as read.');
   document.getElementById('notifications-select').click();
   assert.equal(document.getElementById('notifications-selection-tools').hidden, true);
+});
+
+test('system titles are identical in feed and detail without changing personal titles or record content', async () => {
+  const message = 'Original notification message with all of its words and details unchanged.';
+  for (const item of [
+    { type: 'system', title: 'Welcome to Stemma', senderAvatarUrl: 'https://example.com/photo.jpg' },
+    { type: 'system', title: '' },
+    { type: 'personal', title: 'A personal invitation', senderAvatarUrl: '/assets/stemma-brand.svg' },
+    { type: 'user', title: '<b>User title</b>', senderAvatarUrl: 'https://example.com/photo.jpg' },
+    { title: 'Legacy title' },
+    { type: 'personal', title: '' }
+  ]) {
+    const record = { id: 'notice', message, createdAt: '2026-10-19T10:00:00Z', readAt: '2026-10-19T11:00:00Z', ...item };
+    const before = JSON.stringify(record);
+    const { document, requests } = createHarness([record]);
+    document.getElementById('profile-notifications-button').click();
+    await new Promise(resolve => setImmediate(resolve));
+    const content = document.getElementById('notifications-content');
+    const title = item.type === 'system' ? 'System Notification' : item.title || 'Notification';
+    const escapedTitle = title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    assert.ok(content.innerHTML.includes(`<span class="notification-title">${escapedTitle}</span>`));
+    assert.match(content.innerHTML, /Original notification message with all of…/);
+    assert.match(content.innerHTML, /href="#i-bell"/);
+    assert.equal(/<img\b/.test(content.innerHTML), item.type !== 'system' && Boolean(item.senderAvatarUrl));
+    const row = { dataset: { notificationIndex: '0' } };
+    content.click({ closest: selector => selector === '[data-notification-index]' ? row : null });
+    assert.equal(document.getElementById('notification-detail-title').textContent, title);
+    assert.ok(document.getElementById('notification-detail-content').innerHTML.includes(message));
+    assert.equal(requests.length, 1, 'opening an already-read record does not write read state');
+    assert.equal(JSON.stringify(record), before, 'rendering does not rewrite stored notification content');
+  }
 });
