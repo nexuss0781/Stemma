@@ -214,15 +214,15 @@ test('system titles are identical in feed and detail without changing personal t
   }
 });
 
-test('centered toolbar keeps Back and conditional Read left, selection and accessible sort right', () => {
+test('centered toolbar keeps Back alone left, conditional Read, selection and accessible sort right', () => {
   const toolbar = html.match(/<div class="notifications-top-row">([\s\S]*?)<div id="notifications-selection-tools"/)?.[1];
   assert.ok(toolbar);
   const leading = toolbar.match(/<div class="notifications-leading-actions">([\s\S]*?)<\/div>/)?.[1];
   const trailing = toolbar.match(/<div class="notifications-trailing-actions">([\s\S]*)/)?.[1];
   assert.ok(leading && trailing);
   assert.match(leading, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg[\s\S]*?<\/svg><\/button>/);
-  assert.match(leading, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
-  assert.doesNotMatch(leading, /notifications-select|notifications-sort/);
+  assert.match(trailing, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
+  assert.doesNotMatch(leading, /notifications-mark-read|notifications-select|notifications-sort/);
   assert.match(toolbar, /<h1 id="notifications-title">Notifications<\/h1>/);
   assert.match(trailing, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg/);
   assert.match(trailing, /id="notifications-select"[\s\S]*?<\/button>\s*<div class="notifications-sort-control">/);

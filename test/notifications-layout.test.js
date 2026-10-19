@@ -89,8 +89,10 @@ test('Notifications title is centered in the toolbar, with Back left and checkbo
   const trailing = toolbar.match(/<div class="notifications-trailing-actions">([\s\S]*)$/)?.[1];
   assert.ok(leading && title && trailing, 'toolbar has leading actions, one title and trailing actions');
   assert.match(leading, /id="notifications-back"[^>]*aria-label="Back to previous page"/);
-  assert.doesNotMatch(leading, /notifications-select|notifications-sort/);
-  assert.match(leading, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
+  assert.doesNotMatch(leading, /notifications-mark-read|notifications-select|notifications-sort/);
+  assert.equal((leading.match(/<button\b/g) || []).length, 1, 'Back is alone on the left');
+  assert.match(trailing, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
+  assert.ok(trailing.indexOf('notifications-mark-read') < trailing.indexOf('notifications-select'));
   assert.match(toolbar, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg/);
   assert.match(trailing, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg[\s\S]*?<\/button>\s*<div class="notifications-sort-control">/,
     'the selection checkbox directly precedes the sort control');

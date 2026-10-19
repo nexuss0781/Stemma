@@ -1448,7 +1448,7 @@ body { color: var(--brand-burgundy); }
 .notifications-selection-tools { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 0 5px 4px; }
 .notifications-selection-tools button { padding: 4px 0; border: 0; background: transparent; color: var(--brand-burgundy); font: inherit; font-size: 12px; cursor: pointer; }
 .notifications-selection-tools[hidden], #notifications-mark-read[hidden], #notifications-select[hidden], .notifications-sort-menu[hidden] { display: none; }
-#notifications-mark-read { display: flex; align-items: center; gap: 2px; min-width: 0; padding-inline: 2px; font-size: 11px; }
+#notifications-mark-read { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 4px 2px; font-size: 11px; line-height: 1; }
 .notifications-leading-actions button { min-width: 32px; padding-inline: 6px; }
 @media (max-width: 360px) {
   .notifications-top-row button { min-width: 32px; padding-inline: 5px; }
