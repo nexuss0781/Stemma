@@ -11,12 +11,14 @@
   // Match the supplied stacked-bookmark silhouette using the existing avatar palette.
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
-    if (kind !== 'all') return '';
-    return `<div class="pulse-conversations"><button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span></button></div>`;
+    if (kind !== 'all' && kind !== 'user') return '';
+    const saved = kind === 'all' ? `<button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span></button>` : '';
+    return `<div class="pulse-conversations">${saved}<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div></div>`;
   }
   function stages(kind) {
     // Keep gesture/stage state intact without showing unfinished stories or grids.
-    return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${kind === 'all' ? 'Saved Messages list' : 'Empty conversations'}">${rows(kind)}</section>`).join('');
+    const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : 'Empty conversations';
+    return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${label}">${rows(kind)}</section>`).join('');
   }
   function searchView() {
     return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search" hidden>
@@ -52,6 +54,7 @@
           </svg>
         </button>
       </div>
+      ${root.StemmaDirectChat ? root.StemmaDirectChat.view() : ''}
       ${searchView()}
       ${root.StemmaPulseData ? root.StemmaPulseData.savedView() : ''}
     </section>`;

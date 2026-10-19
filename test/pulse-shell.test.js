@@ -79,7 +79,7 @@ test('All stages render only the Saved Messages row with an inline bookmark-stac
   assert.match(dataSource, /request\('\/api\/pulse\/saved', \{ method: 'POST'/,
     'the compose action saves notes only to that private collection');
 });
-test('User, Group, Channel, and App retain four empty stage containers with no feed content', () => {
+test('User retains four empty direct-conversation containers while Group, Channel, and App stay empty', () => {
   const markup = load().pulse.render();
   const panels = panelsFrom(markup);
   assert.equal(panels.length, 5);
@@ -87,10 +87,17 @@ test('User, Group, Channel, and App retain four empty stage containers with no f
     const stages = stagesFrom(panel);
     assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
     if (index === 0) continue;
-    for (const stage of stages) {
+    for (const [stageIndex, stage] of stages.entries()) {
       assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `category ${index} has no visible feed content`);
-      assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
-        `category ${index} has no saved row, story, discovery, app-grid, or skeleton placeholder`);
+      if (index === 1) {
+        assert.match(stage, /aria-label="Direct conversations"/);
+        assert.match(stage, /<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"><\/div>/,
+          'each User stage mounts the empty direct-conversation list for async population');
+        assert.doesNotMatch(stage, /pulse-saved-row|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/);
+      } else {
+        assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation|pulse-direct-list|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
+          `category ${index} stage ${stageIndex} has no saved row, chat, story, discovery, app-grid, or skeleton placeholder`);
+      }
     }
   }
 });
@@ -190,7 +197,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-data-ui.js\?v=1" defer><\/script>\s*<script src="pulse-ui.js\?v=8" defer/,
+  assert.match(html, /src="direct-chat-ui.js\?v=2" defer><\/script>\s*<script src="pulse-data-ui.js\?v=2" defer><\/script>\s*<script src="pulse-ui.js\?v=9" defer/,
     'the data client loads before Pulse rendering');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });

@@ -184,3 +184,33 @@
 .pulse-panel .pulse-stage { grid-template-rows: minmax(0, 1fr); }
 .pulse-saved-preview { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse-person-mark .pulse-bookmark-stack { width: 27px; height: 27px; }
+
+
+/* Live direct-message rows and the private chat panel. */
+.pulse-direct-list { touch-action: pinch-zoom; display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.pulse-direct-row { width: 100%; flex: 0 0 auto; min-height: 76px; padding: 12px 0; color: var(--brand-burgundy); background: transparent; text-align: left; font: inherit; cursor: pointer; }
+.pulse-direct-row:hover, .pulse-user-result:hover { background: var(--skeleton-light); }
+.pulse-direct-row:focus-visible, .pulse-user-result:focus-visible, .pulse-direct-back:focus-visible, .pulse-direct-compose :focus-visible, .pulse-direct-older:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -2px; }
+.pulse-direct-row .pulse-copy { gap: 5px; }
+.pulse-direct-preview { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pulse-direct-meta { flex: 0 0 auto; align-self: flex-start; padding-top: 3px; font-size: 11px; opacity: .7; }
+.pulse-list-empty { padding: 18px 0; margin: 0; color: var(--brand-burgundy); opacity: .7; font-size: 13px; }
+.pulse-user-result { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; font: inherit; cursor: pointer; }
+.pulse-direct-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; min-width: 0; overflow: hidden; background: var(--paper-soft); }
+.pulse-direct-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--brand-burgundy); }
+.pulse-direct-header h2 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.pulse-direct-header p { margin: 4px 0 0; font-size: 12px; opacity: .75; }
+.pulse-direct-back .icon { transform: rotate(180deg); }
+.pulse-direct-history { min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom; padding: 14px 16px; }
+.pulse-direct-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.pulse-direct-message { max-width: min(86%, 440px); min-width: 0; padding: 10px 13px; border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; background: var(--paper-soft); color: var(--brand-burgundy); }
+.pulse-direct-message.is-mine { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: var(--skeleton-light); }
+.pulse-direct-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.pulse-direct-message time { display: block; margin-top: 7px; font-size: 10px; opacity: .7; }
+.pulse-direct-older { display: block; min-height: 44px; margin: 0 auto 12px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--brand-burgundy); background: var(--skeleton-light); font: inherit; font-size: 13px; cursor: pointer; }
+.pulse-direct-compose { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.pulse-direct-compose textarea { min-height: 44px; max-height: 140px; resize: none; overflow-y: auto; }
+.pulse-direct-compose button:disabled, .pulse-direct-older:disabled { opacity: .5; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .pulse-direct-chat *, .pulse-direct-row { scroll-behavior: auto !important; transition: none !important; }
+}

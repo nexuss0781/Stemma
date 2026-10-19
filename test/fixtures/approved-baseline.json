@@ -1,5 +1,5 @@
 {
-  "serverSha256": "d384817b866c77c75ddacc64dcde4613759b9793ceedc5e1c422d2792fa05430",
+  "serverSha256": "5fbd8a88314c452b4f60516aa9302266e4392de5f00f3ed830223954799bac82",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -21,6 +21,10 @@
     {
       "name": "005_pulse_saved_messages.sql",
       "sha256": "cf03ee41a5818cda72a08721392df1e17406a53f7dd4be21456fbd53f35361c0"
+    },
+    {
+      "name": "006_direct_chat.sql",
+      "sha256": "d66dfba8f2189757003f1bfa177d069043e95565cef3a8585b9df2d42a7f3a3f"
     }
   ]
 }
