@@ -133,3 +133,31 @@ test('late load, refresh, and send responses never paint into a different conver
   assert.deepEqual(texts(closeMounted.elements['.pulse-direct-messages']), []);
   assert.equal(closeMounted.elements.textarea.disabled, true);
 });
+
+test('incoming avatars use only public identity and clear when leaving the conversation', async () => {
+  const mounted = createMountedChat(async () => response({ messages: [
+    { id: '1', text: 'Hello', createdAt: '2026-01-01T00:00:00Z' },
+    { id: '2', text: 'Hi', createdAt: '2026-01-01T00:00:01Z', mine: true }
+  ] }));
+  const headerAvatar = new Element('span');
+  mounted.elements['.pulse-direct-peer'] = headerAvatar;
+  mounted.chat.open({ id: 'avatar-peer', peer: { nickName: 'Robin', username: 'robin', firstName: 'Secret', photoUrl: '/private-photo' } });
+  await flush();
+  assert.equal(headerAvatar.textContent, 'R');
+  const [incoming, outgoing] = mounted.elements['.pulse-direct-messages'].children;
+  assert.equal(incoming.children.length, 3);
+  assert.equal(incoming.children[2].textContent, 'R');
+  assert.equal(incoming.children[2].attributes['aria-hidden'], 'true');
+  assert.equal(incoming.children[2].className, 'pulse-person-mark pulse-direct-message-avatar');
+  assert.equal(outgoing.children.length, 2, 'outgoing messages have no duplicated participant avatar');
+  assert.equal(incoming.children.some(child => child.tagName === 'img'), false, 'private profile photos are not requested');
+  mounted.chat.closeView();
+  assert.equal(headerAvatar.textContent, '');
+  assert.equal(mounted.elements['.pulse-direct-title'].textContent, 'Chat');
+  assert.equal(mounted.elements['.pulse-direct-handle'].textContent, '');
+  mounted.chat.open({ id: 'handle-peer', peer: { username: 'sparrow', firstName: 'Secret' } });
+  await flush();
+  assert.equal(headerAvatar.textContent, 'S');
+  assert.equal(mounted.elements['.pulse-direct-title'].textContent, '@sparrow');
+  assert.equal(mounted.elements['.pulse-direct-messages'].children[0].children[2].textContent, 'S');
+});

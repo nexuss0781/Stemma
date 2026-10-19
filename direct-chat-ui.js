@@ -59,7 +59,15 @@
         time.setAttribute('title', timestamp(message.createdAt));
         time.setAttribute('aria-label', timestamp(message.createdAt));
         if (message.createdAt) time.dateTime = message.createdAt;
-        item.append(time); list.append(item);
+        item.append(time);
+        if (!message.mine) {
+          // Peer photos remain account-private; use only the public nickname/handle.
+          const peer = conversation.peer || conversation;
+          const avatar = node('span', 'pulse-person-mark pulse-direct-message-avatar', (peer.nickName || peer.username || '?').trim().slice(0, 1).toUpperCase());
+          avatar.setAttribute('aria-hidden', 'true');
+          item.append(avatar);
+        }
+        list.append(item);
       }
     }
     function merge(incoming, { olderPage = false } = {}) {
@@ -117,12 +125,16 @@
       if (avatar) avatar.textContent = (peer.nickName || peer.username || '?').trim().slice(0, 1).toUpperCase();
       panel.hidden = false; list.replaceChildren(); older.hidden = true;
       input.value = ''; input.disabled = send.disabled = true; status.textContent = '';
+      input.style.height = 'auto';
       back.focus({ preventScroll: true }); void load({ initial: true });
     }
     function closeView() {
       generation++; loading = false; sending = false; conversation = null; messages = []; hasMore = false;
       panel.hidden = true; list.replaceChildren(); older.hidden = true; older.disabled = false;
       input.value = ''; input.disabled = send.disabled = true; status.textContent = '';
+      const avatar = panel.querySelector('.pulse-direct-peer');
+      if (avatar) avatar.textContent = '';
+      title.textContent = 'Chat'; handle.textContent = ''; input.style.height = 'auto';
     }
     listen(back, 'click', () => { closeView(); onClose(); });
     listen(panel, 'keydown', event => {

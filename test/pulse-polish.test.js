@@ -73,8 +73,8 @@ test('Pulse conversation rows pair nickname with @username and keep the row comp
 });
 
 test('All/User lists use the full-width paper-soft surface and compact final row override', () => {
-  const shell = rule('.app-shell:has(.pulse-feed:not([hidden]) :is(#pulse-tab-0, #pulse-tab-1)[aria-selected="true"])', { last: true });
-  const feed = rule('.pulse-feed:has(:is(#pulse-tab-0, #pulse-tab-1)[aria-selected="true"])', { last: true });
+  const shell = rule('.app-shell:has(.pulse-feed:not([hidden]))', { last: true });
+  const feed = rule('.pulse-feed', { last: true });
   const row = rule(':is(#pulse-panel-0, #pulse-panel-1) :is(.pulse-direct-row, .pulse-saved-row)', { last: true });
   const avatar = rule(':is(#pulse-panel-0, #pulse-panel-1) .pulse-person-mark', { last: true });
 
@@ -84,7 +84,7 @@ test('All/User lists use the full-width paper-soft surface and compact final row
   assert.match(feed, /border-radius:\s*0/);
   assert.match(feed, /box-shadow:\s*none/);
   assert.match(feed, /background:\s*var\(--paper-soft\)/);
-  assert.match(rule('.pulse-view:has(.pulse-feed:not([hidden]) :is(#pulse-tab-0, #pulse-tab-1)[aria-selected="true"]) .pulse-content-grid', { last: true }), /width:\s*100%/);
+  assert.match(rule('.pulse-view:has(.pulse-feed:not([hidden])) .pulse-content-grid', { last: true }), /width:\s*100%/);
   assert.match(row, /min-height:\s*64px/,
     'the final All/User override supersedes the earlier 82px base row height');
   assert.match(row, /padding:\s*9px\s+0/);
@@ -106,26 +106,42 @@ test('conversation list omits ready-empty copy but keeps loading and error statu
     'the status element remains visible for loading/error text and hidden for ready-empty results');
 });
 
-test('direct conversation surfaces use existing soft-light palette and preserve bubble colors', () => {
-  const creamSurfaces = [
-    ['.pulse-direct-chat', 'background'],
-    ['.pulse-direct-header', 'background'],
-    ['.pulse-direct-history', 'background'],
-    ['.pulse-direct-compose', 'background'],
-    ['.pulse-direct-status:not(:empty)', 'background']
-  ];
-  for (const [selector, property] of creamSurfaces) {
-    assert.equal(effectiveValue(selector, property), 'var(--paper-soft)',
-      `${selector} uses paper-soft, including the final effective header background`);
+test('direct conversation surfaces use translucent cream glass, accessible controls, and the existing palette', () => {
+  assert.equal(effectiveValue('.pulse-direct-chat', 'background'), 'var(--paper-soft)');
+  assert.match(effectiveValue('.pulse-direct-chat', 'background-image'), /color-mix\(in srgb, var\(--brand-gold\)/,
+    'the cream shell uses translucent gold light rather than a hard-coded color');
+  for (const [selector, percentage] of [
+    ['.pulse-direct-header', '74%'],
+    ['.pulse-direct-compose', '72%'],
+    ['.pulse-direct-status:not(:empty)', '78%']
+  ]) {
+    assert.match(effectiveValue(selector, 'background'), new RegExp(`color-mix\\(in srgb, var\\(--paper-soft\\) ${percentage}, transparent\\)`),
+      `${selector} uses a translucent paper-soft cream surface`);
   }
-  assert.equal(effectiveValue('.pulse-direct-compose textarea', 'background'), 'var(--skeleton-light)');
-  assert.equal(effectiveValue('.pulse-direct-compose button', 'background'), 'var(--brand-gold)');
+  assert.match(effectiveValue('.pulse-direct-compose textarea', 'background'), /color-mix\(in srgb, var\(--brand-gold-light\) 48%, transparent\)/);
+  assert.match(effectiveValue('.pulse-direct-compose button', 'background'), /color-mix\(in srgb, var\(--brand-gold\) 85%, transparent\)/);
+
+  for (const selector of ['.pulse-direct-header', '.pulse-direct-compose', '.pulse-direct-status:not(:empty)', '.pulse-direct-message', '.pulse-direct-older']) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const declarations = [...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`, 'g'))]
+      .map(match => match[1]);
+    assert.ok(declarations.some(block => /-webkit-backdrop-filter:\s*blur\(/.test(block)),
+      `${selector} supports WebKit backdrop blur`);
+    assert.ok(declarations.some(block => /backdrop-filter:\s*blur\(/.test(block)),
+      `${selector} uses backdrop blur`);
+  }
+
+  const back = rule('.pulse-direct-header .pulse-direct-back', { last: true });
+  assert.match(back, /flex-basis:\s*44px/);
+  assert.match(back, /width:\s*44px/);
+  assert.match(back, /height:\s*44px/);
+  assert.match(rule('.pulse-direct-compose textarea', { last: true }), /font-size:\s*16px/);
 
   const incoming = rule('.pulse-direct-message', { last: true });
   const outgoing = rule('.pulse-direct-message.is-mine', { last: true });
-  assert.match(incoming, /background:\s*var\(--brand-gold\)/);
+  assert.match(incoming, /background:\s*color-mix\(in srgb, var\(--brand-gold\) 83%, transparent\)/);
   assert.match(incoming, /color:\s*var\(--brand-burgundy-deep\)/);
-  assert.match(outgoing, /background:\s*var\(--brand-burgundy\)/);
+  assert.match(outgoing, /background:\s*color-mix\(in srgb, var\(--brand-burgundy\) 95%, transparent\)/);
   assert.match(outgoing, /color:\s*var\(--brand-gold-light\)/);
   assert.doesNotMatch(css, /(?:^|\n)\s*--[a-z][\w-]*\s*:/,
     'the Pulse stylesheet consumes existing palette tokens and defines no new palette tokens');
@@ -134,11 +150,11 @@ test('direct conversation surfaces use existing soft-light palette and preserve 
 test('Pulse chat bubbles retain gold incoming and burgundy outgoing colors from the existing palette', () => {
   const incoming = rule('.pulse-direct-message', { last: true });
   const outgoing = rule('.pulse-direct-message.is-mine', { last: true });
-  assert.match(incoming, /background:\s*var\(--brand-gold\)/,
-    'incoming bubbles use the established gold');
+  assert.match(incoming, /background:\s*color-mix\(in srgb, var\(--brand-gold\) 83%, transparent\)/,
+    'incoming bubbles use translucent established gold');
   assert.match(incoming, /color:\s*var\(--brand-burgundy-deep\)/);
-  assert.match(outgoing, /background:\s*var\(--brand-burgundy\)/,
-    'outgoing bubbles use the established burgundy');
+  assert.match(outgoing, /background:\s*color-mix\(in srgb, var\(--brand-burgundy\) 95%, transparent\)/,
+    'outgoing bubbles use translucent established burgundy');
   assert.match(outgoing, /color:\s*var\(--brand-gold-light\)/);
   assert.match(incoming, /border-radius:/);
   assert.match(outgoing, /border-radius:/);

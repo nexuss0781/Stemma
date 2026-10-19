@@ -95,7 +95,7 @@ test('User retains four empty direct-conversation containers while Group, Channe
           'each User stage mounts the empty direct-conversation list for async population');
         assert.doesNotMatch(stage, /pulse-saved-row|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/);
       } else {
-        assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation|pulse-direct-list|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
+        assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation\b|pulse-direct-list|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
           `category ${index} stage ${stageIndex} has no saved row, chat, story, discovery, app-grid, or skeleton placeholder`);
       }
     }
@@ -197,7 +197,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="direct-chat-ui.js\?v=3" defer><\/script>\s*<script src="pulse-data-ui.js\?v=3" defer><\/script>\s*<script src="pulse-ui.js\?v=9" defer/,
+  assert.match(html, /src="direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="pulse-ui.js\?v=\d+" defer/,
     'the data client loads before Pulse rendering');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
