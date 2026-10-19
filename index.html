@@ -285,7 +285,6 @@
           <h1 id="notifications-title">Notifications</h1>
           <div class="notifications-trailing-actions">
           <button id="notifications-mark-read" type="button" title="Mark selected notifications as read" hidden disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 12 4 4L17 5M10 16l2 2L23 7"/></svg><span>Read</span></button>
-          <button id="notifications-select" type="button" aria-label="Select notifications" title="Select notifications" aria-pressed="false" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path class="notification-selection-check" d="m8 12 3 3 5-6"/></svg></button>
           <div class="notifications-sort-control">
             <button id="notifications-sort" type="button" aria-label="Sort notifications" title="Sort notifications" aria-expanded="false" aria-haspopup="menu" aria-controls="notifications-sort-menu"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h12M4 18h8"/></svg></button>
             <div id="notifications-sort-menu" class="notifications-sort-menu" role="menu" aria-label="Notification order" hidden>
@@ -295,6 +294,7 @@
               <button type="button" role="menuitemradio" aria-checked="false" data-notification-sort="read">Read first</button>
             </div>
           </div>
+          <button id="notifications-select" type="button" aria-label="Select notifications" title="Select notifications" aria-pressed="false" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path class="notification-selection-check" d="m8 12 3 3 5-6"/></svg></button>
         </div>
         </div>
         <div id="notifications-selection-tools" class="notifications-selection-tools" hidden><button id="notifications-select-all" type="button">Select all</button><span id="notifications-selection-count" aria-live="polite"></span></div>

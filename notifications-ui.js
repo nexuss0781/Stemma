@@ -139,7 +139,6 @@
         renderList();
         if (dialog.open && detailIndex !== null) detailContent.innerHTML = renderNotificationDetail(records[detailIndex]);
       }
-      feedback.textContent = ids.length > 1 ? 'Selected notifications marked as read.' : 'Notification marked as read.';
     } catch (error) {
       if (error.name !== 'AbortError' && active && currentGeneration === generation) feedback.textContent = 'Could not save the read status. Please try the Read action again.';
     } finally {

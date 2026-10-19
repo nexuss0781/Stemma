@@ -7,7 +7,7 @@ const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const source = await readFile(new URL('../notifications-ui.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 
-function createHarness(customRecords) {
+function createHarness(customRecords, failRead = false) {
   const elements = new Map();
   const windowListeners = new Map();
   const hashStack = [{ hash: '#payment', state: null }];
@@ -92,7 +92,7 @@ function createHarness(customRecords) {
   const requests = [];
   const fetch = async (url, options) => {
     requests.push({ url, options });
-    if (url.endsWith('/read')) return { ok: true, json: async () => ({ readIds: JSON.parse(options.body).ids, readAt: '2026-10-19T01:00:00Z' }) };
+    if (url.endsWith('/read')) return { ok: !failRead, json: async () => ({ readIds: JSON.parse(options.body).ids, readAt: '2026-10-19T01:00:00Z' }) };
     return { ok: true, json: async () => ({ notifications: records }) };
   };
   vm.runInNewContext(source, { window, document, fetch, AbortController });
@@ -178,7 +178,7 @@ test('unread dots clear after read acknowledgement, and bulk selection does not 
   assert.deepEqual(JSON.parse(mutation.options.body).ids.sort(), ['newer', 'older']);
   assert.doesNotMatch(content.innerHTML, /notification-unread-dot/);
   assert.match(content.innerHTML, /notification-status">Read/);
-  assert.equal(document.getElementById('notifications-feedback').textContent, 'Selected notifications marked as read.');
+  assert.equal(document.getElementById('notifications-feedback').textContent, '', 'successful bulk read stays silent');
   document.getElementById('notifications-select').click();
   assert.equal(document.getElementById('notifications-selection-tools').hidden, true);
 });
@@ -225,7 +225,7 @@ test('centered toolbar keeps Back alone left, conditional Read, selection and ac
   assert.doesNotMatch(leading, /notifications-mark-read|notifications-select|notifications-sort/);
   assert.match(toolbar, /<h1 id="notifications-title">Notifications<\/h1>/);
   assert.match(trailing, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg/);
-  assert.match(trailing, /id="notifications-select"[\s\S]*?<\/button>\s*<div class="notifications-sort-control">/);
+  assert.ok(trailing.indexOf('notifications-sort') < trailing.indexOf('id="notifications-select"'));
   assert.match(trailing, /id="notifications-sort"[^>]*aria-expanded="false"[^>]*aria-haspopup="menu"/);
   assert.equal((toolbar.match(/role="menuitemradio"/g) || []).length, 4);
   assert.doesNotMatch(html, /All your updates, newest first\./);
@@ -265,4 +265,24 @@ test('sorting changes display order without losing selection or the canonical de
   content.click({ closest: selector => selector === '[data-notification-index]' ? { dataset: { notificationIndex: '1' } } : null });
   assert.equal(document.getElementById('notification-detail-title').textContent, 'Oldest unread');
   assert.match(document.getElementById('notification-detail-content').innerHTML, /Oldest full detail/);
+});
+
+test('opening an unread item updates its status silently; failures still show actionable feedback', async () => {
+  for (const failRead of [false, true]) {
+    const { document } = createHarness(undefined, failRead);
+    document.getElementById('profile-notifications-button').click();
+    await new Promise(resolve => setImmediate(resolve));
+    const content = document.getElementById('notifications-content');
+    content.click({ closest: selector => selector === '[data-notification-index]' ? { dataset: { notificationIndex: '0' } } : null });
+    await new Promise(resolve => setImmediate(resolve));
+    const feedback = document.getElementById('notifications-feedback').textContent;
+    if (failRead) {
+      assert.match(feedback, /Could not save the read status/);
+      assert.equal((content.innerHTML.match(/notification-unread-dot/g) || []).length, 2);
+    } else {
+      assert.equal(feedback, '');
+      assert.equal((content.innerHTML.match(/notification-unread-dot/g) || []).length, 1);
+      assert.match(document.getElementById('notification-detail-content').innerHTML, /notification-status">Read/);
+    }
+  }
 });

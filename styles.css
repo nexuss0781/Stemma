@@ -1467,7 +1467,7 @@ body { color: var(--brand-burgundy); }
 .notifications-feedback { margin: 0; padding: 4px 5px; color: var(--brand-burgundy); font-size: 11px; line-height: 1.5; }
 .notifications-feedback:empty { display: none; }
 .notifications-page:has(.notifications-feedback:empty) { grid-template-rows: auto minmax(0,1fr); }
-.notifications-content { border: 0; border-radius: 0; background: transparent; }
+.notifications-content { border: 0; border-radius: 0; background: var(--paper-soft); }
 .notification-group { padding: 4px 0 0; }
 .notification-group-title { margin-inline: 5px; font-weight: 500; opacity: .68; }
 .notification-open { padding-inline: 5px; }

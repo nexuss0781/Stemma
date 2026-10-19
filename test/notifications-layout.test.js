@@ -79,7 +79,7 @@ function createUi(records) {
   return { document, window };
 }
 
-test('Notifications title is centered in the toolbar, with Back left and checkbox immediately before far-right sort', () => {
+test('Notifications title is centered in the toolbar, with Back left and Sort immediately before the far-right checkbox', () => {
   const toolbarStart = html.indexOf('<div class="notifications-top-row">');
   const selectionToolsStart = html.indexOf('<div id="notifications-selection-tools"', toolbarStart);
   assert.ok(toolbarStart >= 0 && selectionToolsStart > toolbarStart, 'toolbar exists before selection tools');
@@ -94,9 +94,10 @@ test('Notifications title is centered in the toolbar, with Back left and checkbo
   assert.match(trailing, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
   assert.ok(trailing.indexOf('notifications-mark-read') < trailing.indexOf('notifications-select'));
   assert.match(toolbar, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg/);
-  assert.match(trailing, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg[\s\S]*?<\/button>\s*<div class="notifications-sort-control">/,
-    'the selection checkbox directly precedes the sort control');
-  assert.ok(trailing.indexOf('notifications-select') < trailing.indexOf('notifications-sort'));
+  assert.match(trailing, /<\/div>\s*<button id="notifications-select"[^>]*aria-label="Select notifications"/,
+    'the selection checkbox follows the complete sort control');
+  assert.ok(trailing.indexOf('notifications-mark-read') < trailing.indexOf('notifications-sort'));
+  assert.ok(trailing.indexOf('notifications-sort') < trailing.indexOf('id="notifications-select"'));
   assert.equal((toolbar.match(/id="notifications-title"/g) || []).length, 1);
 
   const row = lastRule(css, '.notifications-top-row');
@@ -175,4 +176,11 @@ test('unread dots are limited to unread records outside selection mode', () => {
   assert.doesNotMatch(selecting, /notification-unread-dot/,
     'selection mode replaces unread dots with selection affordances');
   assert.match(selecting, /notification-checkbox/);
+});
+
+test('the full-height feed reuses the existing soft-light palette without a card border', () => {
+  const feed = lastRule(css, '.notifications-content');
+  assert.match(feed, /background:\s*var\(--paper-soft\)/);
+  assert.match(feed, /border:\s*0/);
+  assert.match(feed, /border-radius:\s*0/);
 });
