@@ -74,7 +74,7 @@
     result.route = state.route;
     const tabs = state.tabs && typeof state.tabs === 'object' && !Array.isArray(state.tabs) ? state.tabs : {};
     for (const key of TAB_KEYS) {
-      const maxIndex = key === 'pulse' ? 5 : 2;
+      const maxIndex = key === 'pulse' ? 4 : 2;
       if (Number.isInteger(tabs[key]) && tabs[key] >= 0 && tabs[key] <= maxIndex) result.tabs[key] = tabs[key];
     }
     if (state.paymentSlide === 0 || state.paymentSlide === 1) result.paymentSlide = state.paymentSlide;

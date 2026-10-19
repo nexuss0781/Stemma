@@ -8,7 +8,7 @@ const sections = [
 ];
 
 const pageTabs = {
-  pulse: ['All', 'User', 'Group', 'Channel', 'App', 'Story'],
+  pulse: ['All', 'User', 'Group', 'Channel', 'App'],
   overview: ['Snapshot', 'Cash flow', 'This month'],
   cards: ['Pay fee', 'Deposit', 'History'],
   activity: ['All activity', 'Incoming', 'Outgoing'],

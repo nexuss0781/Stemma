@@ -40,9 +40,9 @@ test('round-trips all existing routes and each of their three tab indexes', () =
   assert.equal(storage.values.size, 15);
 });
 
-test('round-trips Pulse and each of its six category indexes', () => {
+test('round-trips Pulse and each of its five category indexes', () => {
   const memory = new StemmaNavigationMemory(makeStorage());
-  for (let category = 0; category <= 5; category += 1) {
+  for (let category = 0; category <= 4; category += 1) {
     const input = state('pulse', category);
     assert.equal(memory.save(`google:pulse-${category}@example.test`, input), true);
     assert.deepEqual(memory.load(`google:pulse-${category}@example.test`), input);
@@ -51,12 +51,12 @@ test('round-trips Pulse and each of its six category indexes', () => {
 
 test('invalid Pulse and existing-route category indexes fall back to zero', () => {
   const clean = StemmaNavigationMemory.sanitize;
-  for (const index of [-1, 6, 1.5, '5', null]) {
+  for (const index of [-1, 5, 6, 1.5, '5', null]) {
     const sanitized = clean({ ...state('pulse'), tabs: { ...state('pulse').tabs, pulse: index } });
     assert.equal(sanitized.tabs.pulse, 0, `Pulse index ${String(index)} is rejected`);
   }
-  const pulseMaximum = clean({ ...state('pulse'), tabs: { ...state('pulse').tabs, pulse: 5 } });
-  assert.equal(pulseMaximum.tabs.pulse, 5);
+  const pulseMaximum = clean({ ...state('pulse'), tabs: { ...state('pulse').tabs, pulse: 4 } });
+  assert.equal(pulseMaximum.tabs.pulse, 4);
   const existingMaximum = clean({ ...state('cards'), tabs: { ...state('cards').tabs, cards: 2 } });
   assert.equal(existingMaximum.tabs.cards, 2);
   const existingOutOfRange = clean({ ...state('cards'), tabs: { ...state('cards').tabs, cards: 3 } });

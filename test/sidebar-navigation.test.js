@@ -153,11 +153,11 @@ test('saved route, every tab index, and route-specific tab state are restored', 
 
 test('Pulse route and its highest category index are restored', () => {
   const h = makeHarness();
-  const saved = makeState('pulse', { tab: 5 });
+  const saved = makeState('pulse', { tab: 4 });
   assert.equal(h.save('google:pulse@example.test', saved), true);
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:pulse@example.test')");
   assert.equal(h.evaluate('activeRoute'), 'pulse');
-  assert.equal(h.evaluate('activeTabs.pulse'), 5);
+  assert.equal(h.evaluate('activeTabs.pulse'), 4);
   h.flushFrames();
 });
 

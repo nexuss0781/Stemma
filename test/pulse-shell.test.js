@@ -12,27 +12,49 @@ function load() {
   vm.runInContext(source, context);
   return { pulse: context.StemmaPulse, effects };
 }
-test('Pulse has six accessible icon-only categories, with All selected by default', () => {
+test('Pulse has five accessible icon-only categories, with All selected by default', () => {
   const { pulse, effects } = load();
   const markup = pulse.render();
-  assert.deepEqual(Array.from(pulse.categories, item => item.label), ['All', 'User', 'Group', 'Channel', 'App', 'Story']);
-  assert.equal((markup.match(/role="tab"/g) || []).length, 6);
-  assert.equal((markup.match(/role="tabpanel"/g) || []).length, 6);
+  assert.deepEqual(Array.from(pulse.categories, item => item.label), ['All', 'User', 'Group', 'Channel', 'App']);
+  assert.equal((markup.match(/role="tab"/g) || []).length, 5);
+  assert.equal((markup.match(/role="tabpanel"/g) || []).length, 5);
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
-  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 5);
+  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 4);
+  assert.doesNotMatch(markup, /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid/,
+    'Story is not a category tab or panel');
+  assert.match(markup, /class="pulse-stories"/);
+  assert.equal((markup.match(/class="pulse-story-ring/g) || []).length, 7,
+    'the avatar story strip remains visible as a preview');
+  assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 3,
+    'the main preview tiles remain in the shell');
   assert.equal(markup.replace(/<[^>]*>/g, '').trim(), '', 'all content is skeletons, with no visible text');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
-test('each category renders as its selected panel without changing skeleton content', () => {
+test('the layered create affordance is inline SVG and remains decorative, not interactive', () => {
+  const markup = load().pulse.render();
+  const affordance = markup.match(/<(div|span)\b(?=[^>]*\bclass="[^"]*\bpulse-create-affordance\b)[^>]*>([\s\S]*?)<\/\1>/);
+  assert.ok(affordance, 'the create affordance is a non-control circle element');
+  assert.match(affordance[0], /aria-hidden="true"/,
+    'the visual-only affordance is hidden from assistive technology');
+  assert.doesNotMatch(affordance[0], /\b(?:role|tabindex|data-pulse-[\w-]+|onclick)=/i,
+    'the affordance exposes no interactive semantics or action hook');
+  assert.match(affordance[2], /<svg\b[^>]*>[\s\S]*?<\/(?:svg)>/,
+    'the layered-plus artwork is embedded as inline SVG');
+  assert.doesNotMatch(affordance[2], /<use\b/i,
+    'the create artwork is inline rather than an external symbol reference');
+});
+test('each of the five categories renders as its selected panel without changing skeleton content', () => {
   const { pulse } = load();
-  for (let index = 0; index < 6; index++) {
+  for (let index = 0; index < 5; index++) {
     const markup = pulse.render(index);
     assert.match(markup, new RegExp(`id="pulse-tab-${index}"[^>]*aria-selected="true"`));
     assert.match(markup, new RegExp(`translate3d\\(-${index * 100}%,0,0\\)`));
     assert.equal((markup.match(/aria-selected="true"/g) || []).length, 1);
     assert.match(markup, /pulse-app-grid/);
-    assert.match(markup, /pulse-story-grid/);
+    assert.match(markup, /class="pulse-stories"/);
+    assert.match(markup, /class="pulse-preview-tile"/);
+    assert.doesNotMatch(markup, /pulse-story-grid/);
   }
 });
 test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduced motion', () => {
@@ -43,7 +65,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: pan-y pinch-zoom/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=1" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=2" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse source and styles are publicly served as static assets only', async () => {

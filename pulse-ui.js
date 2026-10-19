@@ -4,7 +4,7 @@
   const categories = Object.freeze([
     { label: 'All', icon: 'pulse' }, { label: 'User', icon: 'user' },
     { label: 'Group', icon: 'pulse-group' }, { label: 'Channel', icon: 'pulse-channel' },
-    { label: 'App', icon: 'grid' }, { label: 'Story', icon: 'pulse-story' }
+    { label: 'App', icon: 'grid' }
   ]);
   const glyph = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const bone = (classes = '') => `<span class="pulse-bone skeleton-shimmer ${classes}"></span>`;
@@ -16,20 +16,27 @@
         <div class="pulse-meta">${bone('pulse-time')}${i % 3 === 0 ? bone('pulse-dot') : ''}</div>
       </div>`).join('')}</div>`;
   }
-  function tiles(kind) {
-    return `<div class="pulse-${kind}-grid" aria-hidden="true">${Array.from({ length: kind === 'story' ? 6 : 9 }, () => `
-      <div class="pulse-${kind}-tile">${bone(kind === 'story' ? 'pulse-tile-avatar' : 'pulse-app-icon')}
+  function tiles() {
+    return `<div class="pulse-app-grid" aria-hidden="true">${Array.from({ length: 9 }, () => `
+      <div class="pulse-app-tile">${bone('pulse-app-icon')}
         <div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div>
       </div>`).join('')}</div>`;
   }
   function render(selected = 0) {
-    selected = Math.max(0, Math.min(5, selected));
+    selected = Math.max(0, Math.min(categories.length - 1, selected));
     return `<section class="pulse-shell" aria-label="Pulse visual preview">
       <div class="pulse-stories" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<div class="pulse-story-ring${i === 0 ? ' pulse-story-own' : ''}">${bone('pulse-story-avatar')}</div>`).join('')}</div>
       <div class="pulse-previews" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="pulse-preview-tile">${bone('pulse-tile-avatar')}<div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div></div>`).join('')}</div>
       <div class="pulse-feed">
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
-        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${i === 4 ? tiles('app') : i === 5 ? tiles('story') : rows(['all', 'user', 'group', 'channel'][i])}</section>`).join('')}</div></div>
+        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${i === 4 ? tiles() : rows(['all', 'user', 'group', 'channel'][i])}</section>`).join('')}</div></div>
+        <div class="pulse-create-affordance" aria-hidden="true">
+          <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+            <path d="M29 10.5V25a4 4 0 0 1-4 4H10.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <rect x="3" y="3" width="22" height="22" rx="3.3" fill="currentColor" />
+            <path class="pulse-create-plus" d="M14 9v10M9 14h10" fill="none" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </div>
       </div>
     </section>`;
   }
@@ -61,7 +68,7 @@
     listen(shell, 'keydown', event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
-      const index = event.key === 'Home' ? 0 : event.key === 'End' ? 5 : selected + (event.key === 'ArrowRight' ? 1 : -1);
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? categories.length - 1 : selected + (event.key === 'ArrowRight' ? 1 : -1);
       select(index, true);
     });
     listen(viewport, 'pointerdown', event => {
@@ -79,7 +86,7 @@
         track.classList.add('is-dragging');
       }
       if (!drag.horizontal) return;
-      drag.dx = (selected === 0 && dx > 0) || (selected === 5 && dx < 0) ? dx * .22 : dx;
+      drag.dx = (selected === 0 && dx > 0) || (selected === categories.length - 1 && dx < 0) ? dx * .22 : dx;
       track.style.transform = `translate3d(calc(-${selected * 100}% + ${drag.dx}px),0,0)`;
     });
     const finish = event => {
