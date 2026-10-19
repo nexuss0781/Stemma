@@ -13,9 +13,13 @@
 .pulse-bone { display: block; flex-shrink: 0; border-radius: 999px; background: var(--skeleton); }
 .pulse-stories { touch-action: pan-x pinch-zoom; scroll-snap-type: x proximity; display: flex; align-items: center; gap: 15px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .pulse-stories::-webkit-scrollbar { display: none; }
-.pulse-story-ring { scroll-snap-align: start; display: grid; place-items: center; flex: 0 0 54px; width: 54px; height: 54px; border: 1.5px solid var(--brand-burgundy); border-radius: 50%; padding: 3px; }
-.pulse-story-own { border-style: dashed; opacity: .65; }
-.pulse-story-avatar { width: 100%; height: 100%; border-radius: 50%; }
+.pulse-story-ring { position: relative; scroll-snap-align: start; display: grid; place-items: center; flex: 0 0 62px; width: 62px; height: 62px; border: 0; border-radius: 50%; padding: 3px; background: repeating-conic-gradient(from -25deg, var(--brand-burgundy) 0deg 83deg, var(--paper-soft) 83deg 90deg); box-shadow: 0 3px 8px var(--line); }
+.pulse-story-ring:nth-child(3n) { background: conic-gradient(from 25deg, var(--brand-burgundy-deep), var(--brand-burgundy) 55%, var(--brand-gold) 56% 64%, var(--brand-burgundy) 65%); }
+.pulse-story-own { background: var(--brand-gold); border: 1px dashed var(--brand-burgundy); box-shadow: none; }
+.pulse-story-avatar { display: grid; place-items: center; width: 100%; height: 100%; border: 3px solid var(--paper-soft); border-radius: 50%; color: var(--brand-gold); background: radial-gradient(circle at 28% 18%, var(--brand-burgundy), var(--brand-burgundy-deep)); }
+.pulse-story-avatar .icon { width: 25px; height: 25px; stroke-width: 1.35; }
+.pulse-story-ring:nth-child(even) .pulse-story-avatar { background: linear-gradient(140deg, var(--brand-burgundy-deep), var(--brand-burgundy)); }
+.pulse-story-own .pulse-story-avatar { color: var(--brand-burgundy); background: var(--skeleton-light); }
 .pulse-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .pulse-preview-tile { position: relative; aspect-ratio: 1; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(150deg, var(--skeleton-light), var(--brand-gold)); }
 .pulse-preview-tile:nth-child(2) { background: linear-gradient(150deg, var(--brand-burgundy), var(--brand-burgundy-deep)); }
@@ -62,7 +66,10 @@
 .pulse-app-icon { width: 52px; height: 52px; border-radius: 17px; }
 .pulse-app-tile .pulse-tile-copy { width: 100%; justify-items: center; }
 .pulse-app-tile .pulse-tile-line { background: var(--skeleton); }
-.pulse-stage { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 100%; overflow: hidden; visibility: hidden; opacity: 0; transform: translate3d(0,-32px,0); pointer-events: none; transition: transform .3s cubic-bezier(.22,.75,.2,1), opacity .3s ease, visibility .3s; }
+.pulse-stage { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 100%; overflow: hidden; visibility: hidden; opacity: 0; transform: translate3d(0,-32px,0); pointer-events: none; transition: none; }
+.pulse-panel.is-interacting .pulse-stage { transition: none; }
+.pulse-panel.is-interacting .pulse-stage > * { transform-origin: center top; will-change: transform, opacity; }
+.pulse-panel.is-interacting .skeleton-shimmer::after { animation-play-state: paused; }
 /* Only this viewport changes: a downward pull reveals one story layout. */
 .pulse-stage.is-past { transform: translate3d(0,32px,0); }
 .pulse-stage.is-current { visibility: visible; opacity: 1; transform: translate3d(0,0,0); pointer-events: auto; }
@@ -81,7 +88,7 @@
 @media (max-width: 360px), (max-height: 700px) {
   .pulse-shell { gap: 9px; }
   .pulse-stories { gap: 12px; padding-top: 4px; }
-  .pulse-story-ring { flex-basis: 47px; width: 47px; height: 47px; }
+  .pulse-story-ring { flex-basis: 52px; width: 52px; height: 52px; }
   .pulse-preview-tile { border-radius: 14px; }
   .pulse-conversation { gap: 10px; }
 }

@@ -23,7 +23,7 @@
       </div>`).join('')}</div>`;
   }
   function stories() {
-    return `<div class="pulse-stories" tabindex="0" role="region" aria-label="Story previews, scroll horizontally">${Array.from({ length: 12 }, (_, i) => `<div class="pulse-story-ring${i === 0 ? ' pulse-story-own' : ''}" aria-hidden="true">${bone('pulse-story-avatar')}</div>`).join('')}</div>`;
+    return `<div class="pulse-stories" tabindex="0" role="region" aria-label="Story previews, scroll horizontally">${Array.from({ length: 12 }, (_, i) => `<div class="pulse-story-ring${i === 0 ? ' pulse-story-own' : ''}" aria-hidden="true"><span class="pulse-story-avatar">${glyph(i === 0 ? 'user' : ['user', 'pulse-group', 'pulse-channel'][i % 3])}</span></div>`).join('')}</div>`;
   }
   function stages(kind, app) {
     return `<section class="pulse-stage pulse-stage-minimal is-current" aria-label="Chat preview">${app ? tiles() : rows(kind)}</section>
@@ -65,23 +65,116 @@
     let wheelTimer;
     let wheelLocked = false;
     let wheelDistance = 0;
-    function reveal(panel, index) {
-      const next = Math.max(0, Math.min(3, index));
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const states = panels.map(panel => ({ panel, progress: Number(panel.dataset.stage), frame: 0, pair: null }));
+    const clamp = (value, min = 0, max = 3) => Math.max(min, Math.min(max, value));
+    const mix = (a, b, t) => a + (b - a) * t;
+    function resetVisual(state) {
+      state.pair = null;
+      state.panel.classList.remove('is-interacting');
+      [...state.panel.children].forEach(stage => {
+        stage.removeAttribute('style');
+        [...stage.children].forEach(child => child.removeAttribute('style'));
+        stage.querySelectorAll('.pulse-conversation, .pulse-story-ring').forEach(row => row.removeAttribute('style'));
+      });
+    }
+    // Measure shared layout once per adjacent pair, never on every pointer move.
+    // The chat rows and story rail keep their identity instead of double-image crossfades.
+    function paint(state, progress) {
+      state.progress = clamp(progress);
+      state.panel.dataset.progress = state.progress.toFixed(4);
+      const low = Math.min(2, Math.floor(state.progress));
+      const t = state.progress - low;
+      if (!state.pair || state.pair.low !== low) {
+        resetVisual(state);
+        const from = state.panel.children[low];
+        const to = state.panel.children[low + 1];
+        const shared = ['.pulse-conversations', '.pulse-stories'].map(selector => {
+          const a = from.querySelector(selector), b = to.querySelector(selector);
+          if (a && b && selector === '.pulse-stories') {
+            const scroll = state.progress - low > .5 ? b.scrollLeft : a.scrollLeft;
+            a.scrollLeft = scroll; b.scrollLeft = scroll;
+          }
+          return a && b ? { a, b, y: [a.offsetTop, b.offsetTop], h: [a.offsetHeight, b.offsetHeight] } : null;
+        }).filter(Boolean);
+        state.pair = { low, from, to, shared };
+      }
+      state.panel.classList.add('is-interacting');
+      const { from, to, shared } = state.pair;
+      [...state.panel.children].forEach(stage => {
+        stage.style.visibility = stage === from || stage === to ? 'visible' : 'hidden';
+        stage.style.opacity = stage === from || stage === to ? '1' : '0';
+        stage.style.transform = 'none';
+      });
+      // Shared layouts morph; unrelated grid content uses a restrained depth handoff.
+      for (const [stage, weight, direction] of [[from, 1 - t, -1], [to, t, 1]]) {
+        [...stage.children].forEach(child => {
+          child.style.opacity = String(weight);
+          if (child.matches('.pulse-stories, .pulse-previews')) child.style.clipPath = `inset(0 0 ${(1 - weight) * 100}% 0)`;
+          child.style.transform = `translate3d(0,${direction * (1 - weight) * 24}px,0) scale(${mix(.97, 1, weight)})`;
+          if (child.classList.contains('pulse-stories')) {
+            child.style.transform = 'none';
+            child.querySelectorAll('.pulse-story-ring').forEach(ring => { ring.style.transformOrigin = 'center top'; ring.style.transform = `scale(${weight})`; });
+          }
+        });
+      }
+      shared.forEach(({ a, b, y, h }) => {
+        a.style.opacity = '1';
+        a.style.clipPath = 'none';
+        a.querySelectorAll('.pulse-story-ring').forEach(ring => ring.style.transform = 'none');
+        a.style.transform = `translate3d(0,${mix(y[0], y[1], t) - y[0]}px,0)`;
+        a.style.height = `${mix(h[0], h[1], t)}px`;
+        a.style.alignSelf = 'start';
+        b.style.opacity = '0';
+        if (low === 1 && a.classList.contains('pulse-conversations')) {
+          [...a.children].slice(3).forEach(row => { row.style.flex = `${1 - t} 1 0%`; row.style.opacity = String(1 - t); row.style.overflow = 'hidden'; });
+        }
+      });
+    }
+    function stop(state) { cancelAnimationFrame(state.frame); state.frame = 0; }
+    function settle(state, target, velocity = 0) {
+      stop(state);
+      if (motion.matches) { state.progress = target; resetVisual(state); state.panel.dataset.progress = String(target); return; }
+      const lower = Math.min(Math.floor(state.progress), target);
+      const upper = Math.max(Math.ceil(state.progress), target);
+      paint(state, state.progress);
+      let last = performance.now();
+      let speed = velocity;
+      const tick = now => {
+        const dt = Math.min((now - last) / 1000, .032);
+        last = now;
+        // Damped spring: release velocity is carried forward, no restart or CSS delay.
+        speed += ((target - state.progress) * 420 - speed * 40) * dt;
+        const next = clamp(state.progress + speed * dt, lower, upper);
+        if (Math.abs(target - next) < .001 && Math.abs(speed) < .015) {
+          state.progress = target; state.panel.dataset.progress = String(target);
+          resetVisual(state); state.frame = 0; return;
+        }
+        paint(state, next);
+        state.frame = requestAnimationFrame(tick);
+      };
+      state.frame = requestAnimationFrame(tick);
+    }
+    function reveal(panel, index, velocity = 0) {
+      const next = clamp(index);
       const current = Number(panel.dataset.stage);
-      if (current === next) return;
-      if (panel.contains(document.activeElement) && document.activeElement !== panel) panel.focus({ preventScroll: true });
-      panel.dataset.stage = String(next);
-      announcement.textContent = `${categories[selected].label}: ${stageNames[next]}, stage ${next + 1} of 4.`;
-      panel.setAttribute('aria-description', `${stageNames[next]}, stage ${next + 1} of 4. Pull down or Arrow Down for next; swipe up or Arrow Up for previous.`);
+      if (current !== next) {
+        if (panel.contains(document.activeElement) && document.activeElement !== panel) panel.focus({ preventScroll: true });
+        panel.dataset.stage = String(next);
+        announcement.textContent = `${categories[selected].label}: ${stageNames[next]}, stage ${next + 1} of 4.`;
+        panel.setAttribute('aria-description', `${stageNames[next]}, stage ${next + 1} of 4. Pull down or Arrow Down for next; swipe up or Arrow Up for previous.`);
+      }
       [...panel.children].forEach((stage, i) => {
         stage.classList.toggle('is-current', i === next);
         stage.classList.toggle('is-past', i < next);
         stage.inert = i !== next;
         if (i === next) stage.removeAttribute('aria-hidden'); else stage.setAttribute('aria-hidden', 'true');
       });
+      settle(states[panels.indexOf(panel)], next, velocity);
     }
     function select(index, focus = false) {
       selected = Math.max(0, Math.min(categories.length - 1, index));
+      states.forEach(state => { stop(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); resetVisual(state); });
       drag = null;
       track.classList.remove('is-dragging');
       track.style.transform = `translate3d(-${selected * 100}%,0,0)`;
@@ -123,7 +216,7 @@
     listen(viewport, 'pointerdown', event => {
       if (!event.isPrimary) { drag = null; select(selected); return; }
       if (event.pointerType === 'mouse' && event.button !== 0) return;
-      drag = { x: event.clientX, y: event.clientY, dx: 0, dy: 0, axis: null, rail: Boolean(event.target.closest('.pulse-stories')), id: event.pointerId };
+      drag = { x: event.clientX, y: event.clientY, dx: 0, dy: 0, axis: null, rail: Boolean(event.target.closest('.pulse-stories')), id: event.pointerId, start: states[selected].progress, base: Number(panels[selected].dataset.stage), time: performance.now(), velocity: 0, lastY: event.clientY };
     });
     listen(viewport, 'pointermove', event => {
       if (!drag || event.pointerId !== drag.id) return;
@@ -134,13 +227,17 @@
           if (drag.rail) { drag = null; return; } // Native story scrolling never selects a category.
           drag.axis = 'x';
           track.classList.add('is-dragging');
-        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) drag.axis = 'y';
+        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) { drag.axis = 'y'; drag.start = states[selected].progress; stop(states[selected]); }
         else return;
         viewport.setPointerCapture(event.pointerId);
       }
       if (!drag.axis) return;
+      const now = performance.now();
+      drag.velocity = (event.clientY - drag.lastY) / Math.max(8, now - drag.time);
+      drag.lastY = event.clientY; drag.time = now;
       drag.dy = dy;
       drag.dx = (selected === 0 && dx > 0) || (selected === categories.length - 1 && dx < 0) ? dx * .22 : dx;
+      if (drag.axis === 'y' && !motion.matches) paint(states[selected], clamp(drag.start + dy / 180, Math.max(0, drag.base - 1), Math.min(3, drag.base + 1)));
       if (drag.axis === 'x') track.style.transform = `translate3d(calc(-${selected * 100}% + ${drag.dx}px),0,0)`;
     });
     const finish = event => {
@@ -148,9 +245,12 @@
       const gesture = drag;
       drag = null;
       if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
-      if (event.type !== 'pointercancel' && gesture.axis === 'y' && Math.abs(gesture.dy) >= 48) {
+      if (gesture.axis === 'y') {
         const panel = panels[selected];
-        reveal(panel, Number(panel.dataset.stage) + (gesture.dy > 0 ? 1 : -1));
+        const velocity = performance.now() - gesture.time > 80 ? 0 : gesture.velocity;
+        const commit = event.type !== 'pointercancel' && (Math.abs(gesture.dy) >= 48 || (Math.abs(gesture.dy) >= 18 && Math.abs(velocity) > .55 && Math.sign(velocity) === Math.sign(gesture.dy)));
+        const target = commit ? gesture.base + (gesture.dy > 0 ? 1 : -1) : gesture.base;
+        reveal(panel, target, event.type === 'pointercancel' ? 0 : velocity * 1000 / 180);
       }
       const next = event.type !== 'pointercancel' && gesture.axis === 'x' && Math.abs(gesture.dx) > Math.min(64, viewport.clientWidth * .18) ? selected + (gesture.dx < 0 ? 1 : -1) : selected;
       if (gesture.axis === 'x') select(next);
@@ -158,9 +258,11 @@
     listen(viewport, 'pointerup', finish);
     listen(viewport, 'pointercancel', finish);
     listen(viewport, 'lostpointercapture', event => {
-      if (event.target === viewport && drag && event.pointerId === drag.id && !viewport.hasPointerCapture(event.pointerId)) { drag = null; select(selected); }
+      if (event.target === viewport && drag && event.pointerId === drag.id && !viewport.hasPointerCapture(event.pointerId)) { const panel = panels[selected]; drag = null; reveal(panel, Number(panel.dataset.stage)); }
     });
-    cleanup = () => { abort.abort(); clearTimeout(wheelTimer); };
+    listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
+    listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
+    cleanup = () => { abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories });
 })(typeof window !== 'undefined' ? window : globalThis);

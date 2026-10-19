@@ -65,7 +65,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=4" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=5" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {
@@ -117,4 +117,20 @@ test('Pulse announces layouts without visible content and safely handles capture
   assert.match(css, /pulse-announcement \{[^}]*clip-path: inset\(50%\)/);
   assert.match(css, /overflow: clip/);
   assert.match(source, /wheelLocked/);
+});
+
+test('Pulse swipe refinement keeps stages mounted and interpolates live drag progress before release', () => {
+  const markup = load().pulse.render();
+  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20,
+    'all four stage elements remain present in each category panel');
+  assert.match(source, /requestAnimationFrame\s*\(/,
+    'pointer-driven visual updates are frame-scheduled rather than release-only');
+  assert.match(source, /\.dataset\.progress\b/,
+    'continuous progress is exposed on the panel for stage interpolation');
+  assert.match(source, /is-interacting/,
+    'the active panel can identify an in-progress gesture');
+  assert.match(source, /pointercancel/,
+    'canceled gestures have a separate rollback path from successful release');
+  assert.match(source, /prefers-reduced-motion:\s*reduce/,
+    'stage transitions continue to honor the reduced-motion preference');
 });
