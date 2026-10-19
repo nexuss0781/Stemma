@@ -30,19 +30,29 @@
       && /^(https:\/\/|\/(?!\/))[^\s<>"'\\]+$/i.test(item.senderAvatarUrl) ? item.senderAvatarUrl : '';
     return `<span class="notification-avatar" aria-hidden="true"><svg class="icon"><use href="#i-bell"/></svg>${photo ? `<img src="${escape(photo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />` : ''}</span>`;
   }
-  function renderNotifications(records, selection = null) {
+  function renderNotifications(records, selection = null, order = 'unread') {
     if (!records.length) return '<div class="notifications-empty"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><h2>No notifications yet</h2><p>There are no saved notifications available for your account.</p></div>';
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
     const groups = new Map();
-    sortRecords(records).forEach((item, index) => {
-      const label = groupLabel(item, today, yesterday);
+    // Keep canonical indices for detail/read actions even when display order changes.
+    const entries = sortRecords(records).map((item, index) => ({ item, index }));
+    entries.sort((a, b) => {
+      if (order === 'unread' || order === 'read') {
+        const status = Number(isUnread(b.item)) - Number(isUnread(a.item));
+        if (status) return order === 'read' ? -status : status;
+      }
+      return order === 'oldest' ? b.index - a.index : a.index - b.index;
+    });
+    entries.forEach(({ item, index }) => {
+      const label = order === 'unread' || order === 'read'
+        ? groupLabel(item, today, yesterday)
+        : groupLabel({ ...item, readAt: true }, today, yesterday);
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label).push({ item, index });
     });
-    // Unread first; indices still address the original date-sorted detail records.
-    const labels = [...groups.keys()].sort((a, b) => a === 'New' ? -1 : b === 'New' ? 1 : 0);
+    const labels = [...groups.keys()];
     return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(notificationTitle(item))}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
   }
   function renderNotificationDetail(item) {
@@ -63,6 +73,9 @@
   const selectAll = document.getElementById('notifications-select-all');
   const markRead = document.getElementById('notifications-mark-read');
   const feedback = document.getElementById('notifications-feedback');
+  const sortToggle = document.getElementById('notifications-sort');
+  const sortMenu = document.getElementById('notifications-sort-menu');
+  let sortOrder = 'newest';
   let request = null;
   let records = [];
   let active = false;
@@ -82,7 +95,8 @@
   const routeHash = () => `#${crumb.dataset.route || 'profile'}`;
   function updateTools() {
     selectToggle.hidden = records.length === 0;
-    selectToggle.textContent = selectionMode ? 'Cancel' : 'Select';
+    selectToggle.setAttribute('aria-label', selectionMode ? 'Cancel selection' : 'Select notifications');
+    selectToggle.setAttribute('title', selectionMode ? 'Cancel selection' : 'Select notifications');
     selectToggle.setAttribute('aria-pressed', String(selectionMode));
     selectionTools.hidden = !selectionMode;
     selectionCount.textContent = selectionMode ? `${selected.size} selected` : '';
@@ -90,7 +104,7 @@
   }
   function renderList(focusIndex) {
     const scroll = content.scrollTop;
-    content.innerHTML = renderNotifications(records, selectionMode ? selected : null);
+    content.innerHTML = renderNotifications(records, selectionMode ? selected : null, sortOrder);
     content.scrollTop = scroll;
     updateTools();
     if (focusIndex !== undefined) content.querySelector?.(`[data-notification-index="${focusIndex}"]`)?.focus({ preventScroll: true });
@@ -160,9 +174,15 @@
     }
   }
   function cancelPress() { if (pressTimer !== null) window.clearTimeout(pressTimer); pressTimer = null; press = null; }
+  function closeSort(restoreFocus = false) {
+    sortMenu.hidden = true;
+    sortToggle.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) sortToggle.focus({ preventScroll: true });
+  }
   function hidePage() {
     if (!active) return;
     active = false;
+    closeSort();
     generation += 1;
     cancelPress();
     suppressedClick = null;
@@ -225,6 +245,30 @@
   selectToggle.addEventListener('click', () => { selectionMode = !selectionMode; selected.clear(); renderList(); });
   selectAll.addEventListener('click', () => { records.forEach(item => selected.add(String(item.id))); renderList(); });
   markRead.addEventListener('click', () => { void markIdsRead([...selected]); });
+  sortToggle.addEventListener('click', () => {
+    sortMenu.hidden = !sortMenu.hidden;
+    sortToggle.setAttribute('aria-expanded', String(!sortMenu.hidden));
+    if (!sortMenu.hidden) sortMenu.querySelector?.('[aria-checked="true"]')?.focus();
+  });
+  sortMenu.addEventListener('click', event => {
+    const option = event.target.closest('[data-notification-sort]');
+    if (!option || !['newest', 'oldest', 'unread', 'read'].includes(option.dataset.notificationSort)) return;
+    sortOrder = option.dataset.notificationSort;
+    sortMenu.querySelectorAll?.('[data-notification-sort]').forEach(button => button.setAttribute('aria-checked', String(button.dataset.notificationSort === sortOrder)));
+    renderList();
+    content.scrollTop = 0;
+    closeSort(true);
+  });
+  sortMenu.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const options = [...sortMenu.querySelectorAll('[data-notification-sort]')];
+    const index = options.indexOf(event.target);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[next]?.focus();
+  });
+  window.addEventListener('keydown', event => { if (event.key === 'Escape' && !sortMenu.hidden) { event.preventDefault(); closeSort(true); } });
+  window.addEventListener('click', event => { if (!sortMenu.hidden && !event.target.closest('.notifications-sort-control')) closeSort(); });
   content.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     const button = event.target.closest('[data-notification-index]');

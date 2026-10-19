@@ -213,3 +213,52 @@ test('system titles are identical in feed and detail without changing personal t
     assert.equal(JSON.stringify(record), before, 'rendering does not rewrite stored notification content');
   }
 });
+
+test('minimal toolbar keeps Read and checkbox beside icon-only Back and exposes an accessible sort menu', () => {
+  const toolbar = html.match(/<div class="notifications-top-row">([\s\S]*?)<div class="notifications-title-row">/)?.[1];
+  assert.ok(toolbar);
+  assert.match(toolbar, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg[\s\S]*?<\/svg><\/button>/);
+  assert.ok(toolbar.indexOf('notifications-back') < toolbar.indexOf('notifications-mark-read'));
+  assert.ok(toolbar.indexOf('notifications-mark-read') < toolbar.indexOf('notifications-select"'));
+  assert.ok(toolbar.indexOf('notifications-select"') < toolbar.indexOf('notifications-sort"'));
+  assert.match(toolbar, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg/);
+  assert.match(toolbar, /id="notifications-sort"[^>]*aria-expanded="false"[^>]*aria-haspopup="menu"/);
+  assert.equal((toolbar.match(/role="menuitemradio"/g) || []).length, 4);
+  assert.doesNotMatch(html, /All your updates, newest first\./);
+});
+
+test('sorting changes display order without losing selection or the canonical detail target', async () => {
+  const { document } = createHarness([
+    { id: 'new', title: 'Newest read', message: 'Newest full detail', createdAt: '2026-10-19T10:00:00Z', readAt: '2026-10-19T11:00:00Z' },
+    { id: 'old', title: 'Oldest unread', message: 'Oldest full detail', createdAt: '2026-10-18T10:00:00Z', readAt: null }
+  ]);
+  document.getElementById('profile-notifications-button').click();
+  await new Promise(resolve => setImmediate(resolve));
+  const content = document.getElementById('notifications-content');
+  const sort = document.getElementById('notifications-sort');
+  const menu = document.getElementById('notifications-sort-menu');
+  menu.hidden = true; // Match the initial HTML state in this minimal DOM harness.
+  for (const [order, first, second] of [
+    ['oldest', 'Oldest unread', 'Newest read'], ['newest', 'Newest read', 'Oldest unread'],
+    ['unread', 'Oldest unread', 'Newest read'], ['read', 'Newest read', 'Oldest unread']
+  ]) {
+    sort.click();
+    assert.equal(menu.hidden, false);
+    assert.equal(sort.getAttribute('aria-expanded'), 'true');
+    menu.click({ closest: () => ({ dataset: { notificationSort: order } }) });
+    assert.equal(menu.hidden, true);
+    assert.equal(sort.getAttribute('aria-expanded'), 'false');
+    assert.ok(content.innerHTML.indexOf(first) < content.innerHTML.indexOf(second), order);
+    assert.match(content.innerHTML, /data-notification-index="0"[^>]*>[\s\S]*?Newest read/);
+  }
+  document.getElementById('notifications-select').click();
+  content.click({ closest: selector => selector === '[data-notification-index]' ? { dataset: { notificationIndex: '1' } } : null });
+  menu.click({ closest: () => ({ dataset: { notificationSort: 'oldest' } }) });
+  assert.equal(document.getElementById('notifications-selection-count').textContent, '1 selected');
+  assert.match(content.innerHTML, /is-selected[^>]*data-notification-index="1"/);
+  assert.equal(document.getElementById('notifications-select').getAttribute('aria-pressed'), 'true');
+  document.getElementById('notifications-select').click();
+  content.click({ closest: selector => selector === '[data-notification-index]' ? { dataset: { notificationIndex: '1' } } : null });
+  assert.equal(document.getElementById('notification-detail-title').textContent, 'Oldest unread');
+  assert.match(document.getElementById('notification-detail-content').innerHTML, /Oldest full detail/);
+});
