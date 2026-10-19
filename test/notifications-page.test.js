@@ -214,15 +214,19 @@ test('system titles are identical in feed and detail without changing personal t
   }
 });
 
-test('minimal toolbar keeps Read and checkbox beside icon-only Back and exposes an accessible sort menu', () => {
-  const toolbar = html.match(/<div class="notifications-top-row">([\s\S]*?)<div class="notifications-title-row">/)?.[1];
+test('centered toolbar keeps Back and conditional Read left, selection and accessible sort right', () => {
+  const toolbar = html.match(/<div class="notifications-top-row">([\s\S]*?)<div id="notifications-selection-tools"/)?.[1];
   assert.ok(toolbar);
-  assert.match(toolbar, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg[\s\S]*?<\/svg><\/button>/);
-  assert.ok(toolbar.indexOf('notifications-back') < toolbar.indexOf('notifications-mark-read'));
-  assert.ok(toolbar.indexOf('notifications-mark-read') < toolbar.indexOf('notifications-select"'));
-  assert.ok(toolbar.indexOf('notifications-select"') < toolbar.indexOf('notifications-sort"'));
-  assert.match(toolbar, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg/);
-  assert.match(toolbar, /id="notifications-sort"[^>]*aria-expanded="false"[^>]*aria-haspopup="menu"/);
+  const leading = toolbar.match(/<div class="notifications-leading-actions">([\s\S]*?)<\/div>/)?.[1];
+  const trailing = toolbar.match(/<div class="notifications-trailing-actions">([\s\S]*)/)?.[1];
+  assert.ok(leading && trailing);
+  assert.match(leading, /id="notifications-back"[^>]*aria-label="Back to previous page"[^>]*><svg[\s\S]*?<\/svg><\/button>/);
+  assert.match(leading, /id="notifications-mark-read"[^>]*hidden[^>]*disabled/);
+  assert.doesNotMatch(leading, /notifications-select|notifications-sort/);
+  assert.match(toolbar, /<h1 id="notifications-title">Notifications<\/h1>/);
+  assert.match(trailing, /id="notifications-select"[^>]*aria-label="Select notifications"[^>]*><svg/);
+  assert.match(trailing, /id="notifications-select"[\s\S]*?<\/button>\s*<div class="notifications-sort-control">/);
+  assert.match(trailing, /id="notifications-sort"[^>]*aria-expanded="false"[^>]*aria-haspopup="menu"/);
   assert.equal((toolbar.match(/role="menuitemradio"/g) || []).length, 4);
   assert.doesNotMatch(html, /All your updates, newest first\./);
 });

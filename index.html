@@ -279,10 +279,13 @@
     <main id="notifications-page" class="notifications-page" aria-labelledby="notifications-title" hidden>
       <header class="notifications-page-heading">
         <div class="notifications-top-row">
+          <div class="notifications-leading-actions">
           <button id="notifications-back" class="notifications-back" type="button" aria-label="Back to previous page"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
-          <button id="notifications-mark-read" type="button" title="Mark selected notifications as read" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 12 4 4L17 5M10 16l2 2L23 7"/></svg><span>Read</span></button>
+          <button id="notifications-mark-read" type="button" title="Mark selected notifications as read" hidden disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 12 4 4L17 5M10 16l2 2L23 7"/></svg><span>Read</span></button>
+          </div>
+          <h1 id="notifications-title">Notifications</h1>
+          <div class="notifications-trailing-actions">
           <button id="notifications-select" type="button" aria-label="Select notifications" title="Select notifications" aria-pressed="false" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path class="notification-selection-check" d="m8 12 3 3 5-6"/></svg></button>
-          <div id="notifications-selection-tools" class="notifications-selection-tools" hidden><button id="notifications-select-all" type="button">Select all</button></div>
           <div class="notifications-sort-control">
             <button id="notifications-sort" type="button" aria-label="Sort notifications" title="Sort notifications" aria-expanded="false" aria-haspopup="menu" aria-controls="notifications-sort-menu"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h12M4 18h8"/></svg></button>
             <div id="notifications-sort-menu" class="notifications-sort-menu" role="menu" aria-label="Notification order" hidden>
@@ -293,7 +296,8 @@
             </div>
           </div>
         </div>
-        <div class="notifications-title-row"><h1 id="notifications-title">Notifications</h1><span id="notifications-selection-count" aria-live="polite"></span></div>
+        </div>
+        <div id="notifications-selection-tools" class="notifications-selection-tools" hidden><button id="notifications-select-all" type="button">Select all</button><span id="notifications-selection-count" aria-live="polite"></span></div>
       </header>
       <p id="notifications-feedback" class="notifications-feedback" role="status"></p>
       <section id="notifications-content" class="notifications-content" aria-label="Your notifications" aria-live="polite" aria-busy="false" tabindex="0"></section>

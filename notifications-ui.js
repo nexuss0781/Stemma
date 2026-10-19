@@ -53,7 +53,7 @@
       groups.get(label).push({ item, index });
     });
     const labels = [...groups.keys()];
-    return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(notificationTitle(item))}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
+    return labels.map((label, groupIndex) => `<section class="notification-group" aria-labelledby="notification-group-${groupIndex}"><h2 class="notification-group-title" id="notification-group-${groupIndex}">${escape(label)}</h2><ol class="notifications-list">${groups.get(label).map(({ item, index }) => `<li class="notification-item"><button type="button" class="notification-open${selection?.has(String(item.id)) ? ' is-selected' : ''}" data-notification-index="${index}" ${selection ? `aria-pressed="${selection.has(String(item.id))}"` : 'aria-haspopup="dialog" aria-controls="notification-detail-dialog"'}>${selection ? `<span class="notification-checkbox" aria-hidden="true">${selection.has(String(item.id)) ? '✓' : ''}</span>` : renderAvatar(item)}<span class="notification-summary"><span class="notification-title">${escape(notificationTitle(item))}</span>${item.message ? `<span class="notification-preview">${escape(previewMessage(item.message))}</span>` : ''}${renderMeta(item, true)}</span>${!selection && isUnread(item) ? '<span class="notification-unread-dot" aria-label="Unread"></span>' : ''}</button></li>`).join('')}</ol></section>`).join('');
   }
   function renderNotificationDetail(item) {
     return `${renderMeta(item)}${item.message ? `<p class="notification-full-message">${escape(item.message)}</p>` : '<p class="notification-full-message">No additional details were provided.</p>'}`;
@@ -100,6 +100,7 @@
     selectToggle.setAttribute('aria-pressed', String(selectionMode));
     selectionTools.hidden = !selectionMode;
     selectionCount.textContent = selectionMode ? `${selected.size} selected` : '';
+    markRead.hidden = selected.size === 0;
     markRead.disabled = !selected.size || pendingRead.size > 0;
   }
   function renderList(focusIndex) {
