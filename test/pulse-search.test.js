@@ -4,9 +4,10 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
-const [source, css] = await Promise.all(['pulse-ui.js', 'pulse.css'].map(name => readFile(new URL(name, root), 'utf8')));
+const [source, dataSource, css] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css'].map(name => readFile(new URL(name, root), 'utf8')));
 const effects = [];
 const context = vm.createContext({ fetch: () => effects.push('fetch'), XMLHttpRequest: () => effects.push('xhr') });
+vm.runInContext(dataSource, context);
 vm.runInContext(source, context);
 const rendered = context.StemmaPulse.render();
 const searchPanel = rendered.match(/<([a-z][\w-]*)\b(?=[^>]*\bid="pulse-search")(?=[^>]*\bclass="[^"]*\bpulse-search(?:\s|"))[\s\S]*?<\/\1>/i);
@@ -30,7 +31,9 @@ test('Pulse search is a hidden, skeleton-only search view with its required cont
   assert.match(markup, /\bRecent\b/, 'the recent section is headed Recent');
   assert.match(markup, /\bClear All\b/, 'the clear affordance is labeled Clear All');
 
+  assert.match(markup, /class="pulse-users-more" hidden/, 'pagination is initially hidden until results exist');
   const visibleText = markup.replace(/<span\b(?=[^>]*class="[^"]*\bpulse-announcement\b)[^>]*>[\s\S]*?<\/span>/gi, '')
+    .replace(/<button\b(?=[^>]*\bclass="pulse-users-more")[^>]*>[\s\S]*?<\/button>/gi, '')
     .replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   assert.equal(visibleText, 'RecentClear All',
     'the search view contains only its section labels, with no real search results or recent items');
@@ -56,6 +59,29 @@ test('Pulse search categories are icon-only and provide local tab affordances', 
     'category selection is represented as a local data attribute');
   assert.match(source, /data-pulse-search-tab/,
     'category selection is scoped to the local search-tab preview controls');
+});
+
+test('public Pulse lookup searches and renders only usernames and nicknames safely', () => {
+  const start = dataSource.indexOf('async function lookup(');
+  const end = dataSource.indexOf('function paintNotes()', start);
+  assert.ok(start >= 0 && end > start, 'the public-user lookup has a bounded implementation');
+  const lookup = dataSource.slice(start, end);
+  assert.match(lookup, /field\.value\.trim\(\)\.replace\(\/\^@\/, ''\)/,
+    'a leading @ is removed before searching');
+  assert.match(lookup, /`\/api\/pulse\/users\?q=\$\{encodeURIComponent\(query\)\}&offset=\$\{offset\}`/,
+    'queries are encoded and sent to the public-user lookup endpoint');
+  assert.match(lookup, /Number\(tab\.dataset\.pulseSearchTab\) < 2/,
+    'lookup is available in All and User categories only');
+  assert.match(lookup, /node\('strong', '', user\.nickName \|\| `@\$\{user\.username\}`\)/);
+  assert.match(lookup, /node\('span', '', `@\$\{user\.username\}`\)/);
+  assert.match(lookup, /user\.nickName \|\| user\.username/);
+  const userFields = [...lookup.matchAll(/user\.([A-Za-z_$][\w$]*)/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(userFields)].sort(), ['nickName', 'username'],
+    'public results use no legal name, email, or other private profile fields');
+  assert.match(dataSource, /el\.textContent = value/,
+    'user-provided result labels are assigned as text, not interpreted markup');
+  assert.doesNotMatch(lookup, /\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML/,
+    'public lookup never inserts user data as HTML');
 });
 
 test('suggestions render as a horizontal rail of circular skeleton placeholders', () => {

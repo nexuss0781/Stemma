@@ -5,12 +5,16 @@ import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { createApp, buildConfig } from '../server.js';
 const root = new URL('../', import.meta.url);
-const [source, css, html, app] = await Promise.all(['pulse-ui.js', 'pulse.css', 'index.html', 'app.js'].map(name => readFile(new URL(name, root), 'utf8')));
+const [source, dataSource, css, html, app] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js'].map(name => readFile(new URL(name, root), 'utf8')));
 function load() {
   const effects = [];
   const context = vm.createContext({ fetch: () => effects.push('fetch'), XMLHttpRequest: () => effects.push('xhr') });
+  vm.runInContext(dataSource, context);
   vm.runInContext(source, context);
   return { pulse: context.StemmaPulse, effects };
+}
+function withoutSavedRowText(markup) {
+  return markup.replace(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi, '');
 }
 test('Pulse has five accessible icon-only categories, with All selected by default', () => {
   const { pulse, effects } = load();
@@ -27,9 +31,31 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
     'each category has two horizontally scrollable story stages');
   assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 15,
     'each category retains three preview tiles');
-  assert.equal(markup.split('<section class="pulse-search"')[0].replace(/<[^>]*>/g, '').trim(), '', 'all content is skeletons, with no visible text');
+  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'all non-saved feed content is skeletons, with no visible text');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
+});
+test('All and User begin with a private Saved Messages row and self-only notes view', () => {
+  const markup = load().pulse.render();
+  const rows = [...markup.matchAll(/<button\b(?=[^>]*\bclass="pulse-conversation pulse-saved-row")[^>]*>[\s\S]*?<\/button>/gi)];
+  assert.equal(rows.length, 6, 'the first conversation in each All and User stage is Saved Messages');
+  assert.ok(markup.indexOf('pulse-saved-row') < markup.indexOf('pulse-kind-all'),
+    'Saved Messages precedes the remaining All skeleton conversations');
+  for (const row of rows) {
+    assert.match(row[0], /\bdata-pulse-saved(?:\s|=|>)/);
+    assert.match(row[0], /<strong>Saved Messages<\/strong>/);
+    assert.match(row[0], /Your private notes/);
+  }
+  const saved = markup.match(/<section class="pulse-saved"[\s\S]*?<\/section>/);
+  assert.ok(saved, 'the private Saved Messages view is rendered');
+  assert.match(saved[0], /aria-label="Saved Messages"[^>]*\bhidden/);
+  assert.match(saved[0], /Only you can see these notes/);
+  assert.match(saved[0], /class="pulse-saved-items" role="list"/);
+  assert.match(saved[0], /<textarea[^>]*\bdisabled/);
+  assert.match(dataSource, /request\('\/api\/pulse\/saved' \+ before\)/,
+    'notes are loaded from the signed-in user’s private saved-messages collection');
+  assert.match(dataSource, /request\('\/api\/pulse\/saved', \{ method: 'POST'/,
+    'the compose action saves notes only to that private collection');
 });
 test('the create-preview toggle is accessible and retains its inline layered-plus SVG', () => {
   const markup = load().pulse.render();
@@ -56,7 +82,7 @@ test('create previews are three hidden, inert, decorative skeleton placeholders 
     assert.doesNotMatch(content, /<(?:a|button|input|select|textarea)\b|\b(?:role|tabindex|onclick|data-pulse-[\w-]+)=/i,
       'placeholders expose no controls or action hooks');
   }
-  assert.equal(markup.split('<section class="pulse-search"')[0].replace(/<[^>]*>/g, '').trim(), '', 'the Pulse shell remains text-free');
+  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'the non-saved Pulse shell remains text-free');
 });
 test('create previews toggle from the shell and support Escape and outside dismissal', () => {
   assert.match(source, /classList\.toggle\(['"]is-create-open['"]/,
@@ -97,7 +123,8 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=7" defer/);
+  assert.match(html, /src="pulse-data-ui.js\?v=1" defer><\/script>\s*<script src="pulse-ui.js\?v=8" defer/,
+    'the data client loads before Pulse rendering');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {

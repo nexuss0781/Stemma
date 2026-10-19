@@ -388,6 +388,7 @@ function syncPaymentCarousel() {
   updatePaymentProgress();
 }
 function renderCards() {
+  if (typeof StemmaPulse !== 'undefined') StemmaPulse.unmount();
   const grid = document.getElementById('dashboard-grid');
   const billView = activeRoute === 'cards' && payments.isBillOpen;
   const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;

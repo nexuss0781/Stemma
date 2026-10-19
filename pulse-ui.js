@@ -1,4 +1,4 @@
-/* Visual-only Pulse shell. No accounts, messaging, uploads, or network calls. */
+/* Pulse stages retain their visual previews; public handles and self notes are connected separately. */
 (function attachPulse(root) {
   'use strict';
   const categories = Object.freeze([
@@ -9,8 +9,8 @@
   const glyph = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const bone = (classes = '') => `<span class="pulse-bone skeleton-shimmer ${classes}"></span>`;
   function rows(kind) {
-    return `<div class="pulse-conversations" aria-hidden="true">${Array.from({ length: 6 }, (_, i) => `
-      <div class="pulse-conversation pulse-kind-${kind}">
+    return `<div class="pulse-conversations">${Array.from({ length: 6 }, (_, i) => (i === 0 && ['all', 'user'].includes(kind)) ? `<button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${glyph('card')}</span><span class="pulse-copy"><strong>Saved Messages</strong><span>Your private notes</span></span></button>` : `
+      <div class="pulse-conversation pulse-kind-${kind}" aria-hidden="true">
         <div class="pulse-avatar-wrap">${bone('pulse-avatar')}${kind === 'group' ? bone('pulse-avatar-secondary') : ''}</div>
         <div class="pulse-copy">${bone(`pulse-name pulse-length-${i % 3}`)}${bone('pulse-preview')}${kind === 'channel' ? bone('pulse-preview-short') : ''}</div>
         <div class="pulse-meta">${bone('pulse-time')}${i % 3 === 0 ? bone('pulse-dot') : ''}</div>
@@ -27,19 +27,20 @@
   }
   function stages(kind, app) {
     return `<section class="pulse-stage pulse-stage-minimal is-current" aria-label="Chat preview">${app ? tiles() : rows(kind)}</section>
-      <section class="pulse-stage pulse-stage-stories" inert aria-hidden="true" aria-label="Circular story previews">${stories()}${rows(kind)}</section>
-      <section class="pulse-stage pulse-stage-previews" inert aria-hidden="true" aria-label="Story tile previews">${stories()}<div class="pulse-previews" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="pulse-preview-tile">${bone('pulse-tile-avatar')}<div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div></div>`).join('')}</div>${rows(kind)}</section>
+      <section class="pulse-stage pulse-stage-stories" inert aria-hidden="true" aria-label="Circular story previews">${stories()}${rows(app ? 'app' : kind)}</section>
+      <section class="pulse-stage pulse-stage-previews" inert aria-hidden="true" aria-label="Story tile previews">${stories()}<div class="pulse-previews" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="pulse-preview-tile">${bone('pulse-tile-avatar')}<div class="pulse-tile-copy">${bone('pulse-tile-line')}${bone('pulse-tile-line short')}</div></div>`).join('')}</div>${rows(app ? 'app' : kind)}</section>
       <section class="pulse-stage pulse-stage-grid" inert aria-hidden="true" aria-label="Two-column preview grid"><div class="pulse-discovery-grid" aria-hidden="true">${Array.from({ length: 4 }, () => `<div class="pulse-discovery-tile">${bone('pulse-discovery-image')}<div class="pulse-discovery-copy">${bone('pulse-avatar')}${bone('pulse-name')}</div></div>`).join('')}</div></section>`;
   }
   function searchView() {
-    return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search preview" hidden>
+    return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search" hidden>
       <div class="pulse-search-header">
-        <label class="pulse-search-field">${glyph('pulse-search')}<input id="pulse-search-input" type="search" placeholder="Search Pulse" aria-label="Search Pulse" aria-describedby="pulse-search-hint" autocomplete="off" spellcheck="false"></label>
+        <label class="pulse-search-field">${glyph('pulse-search')}<input id="pulse-search-input" type="search" placeholder="Username or nickname" aria-label="Search Pulse" aria-describedby="pulse-search-hint" autocomplete="off" spellcheck="false"></label>
         <button type="button" class="pulse-search-close" aria-label="Close Pulse search">${glyph('close')}</button>
       </div>
-      <span id="pulse-search-hint" class="pulse-announcement">Visual preview only. Search and recent history are not connected yet.</span>
+      <span id="pulse-search-hint" class="pulse-announcement">Search app users by username or nickname only.</span>
       <nav class="pulse-search-tabs pulse-tabs" role="tablist" aria-label="Search categories">${categories.map((item, i) => `<button type="button" class="pulse-search-tab pulse-tab" role="tab" aria-label="Search ${item.label}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-pulse-search-tab="${i}" aria-controls="pulse-search-results">${glyph(item.icon)}</button>`).join('')}</nav>
-      <div class="pulse-search-body" id="pulse-search-results" role="region" aria-label="Skeleton search results">
+      <div class="pulse-search-body" id="pulse-search-results" role="region" aria-label="Pulse search results">
+        <p class="pulse-data-status pulse-user-status" role="status" aria-live="polite" hidden></p><div class="pulse-user-results" role="list" aria-label="Users" hidden></div><button type="button" class="pulse-users-more" hidden>Load more users</button>
         <div class="pulse-search-suggestions" tabindex="0" role="region" aria-label="Suggested previews, scroll horizontally"><div aria-hidden="true">${Array.from({ length: 8 }, () => `<div class="pulse-search-suggestion">${bone('pulse-search-circle')}${bone('pulse-search-caption')}</div>`).join('')}</div></div>
         <div class="pulse-search-recent-heading"><h2>Recent</h2><button type="button" class="pulse-search-clear" disabled title="Recent history is coming later">Clear All</button></div>
         <div class="pulse-search-recents" role="list" aria-label="Recent search placeholders">${Array.from({ length: 6 }, (_, i) => `<div class="pulse-search-recent-row" role="listitem" aria-label="Recent search placeholder ${i + 1}"><div class="pulse-search-row-skeleton" aria-hidden="true">${bone('pulse-avatar')}<div class="pulse-copy">${bone(`pulse-name pulse-length-${i % 3}`)}${bone('pulse-preview')}</div></div><button type="button" class="pulse-search-remove" aria-label="Remove recent search placeholder ${i + 1}" disabled title="Recent history is coming later">${glyph('close')}</button></div>`).join('')}</div>
@@ -65,6 +66,7 @@
         </button>
       </div>
       ${searchView()}
+      ${root.StemmaPulseData ? root.StemmaPulseData.savedView() : ''}
     </section>`;
   }
   let cleanup = () => {};
@@ -74,7 +76,7 @@
     if (!shell) return;
     const track = shell.querySelector('.pulse-track');
     const viewport = shell.querySelector('.pulse-viewport');
-    const tabs = [...shell.querySelectorAll('.pulse-tab')];
+    const tabs = [...shell.querySelectorAll('[data-pulse-tab]')];
     const panels = [...shell.querySelectorAll('.pulse-panel')];
     let drag = null;
     const abort = new AbortController();
@@ -110,6 +112,8 @@
       track.classList.remove('is-dragging');
       track.style.transform = `translate3d(-${selected * 100}%,0,0)`;
       states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); });
+      const saved = shell.querySelector('.pulse-saved');
+      if (saved) saved.hidden = true;
       search.hidden = !open;
       feed.hidden = open;
       feed.inert = open;
@@ -341,7 +345,8 @@
     });
     listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
+    root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false) });
     cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
-  root.StemmaPulse = Object.freeze({ render, mount, categories });
+  root.StemmaPulse = Object.freeze({ render, mount, categories, unmount: () => { cleanup(); cleanup = () => {}; } });
 })(typeof window !== 'undefined' ? window : globalThis);

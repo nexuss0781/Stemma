@@ -150,3 +150,32 @@
   .pulse-search-circle { width: 52px; height: 52px; }
   .pulse-search-recent-row { min-height: 72px; }
 }
+
+/* Connected public-handle lookup and private self notes; existing palette only. */
+.pulse-shell [hidden] { display: none !important; }
+.pulse-saved-row { width: 100%; padding: 0; text-align: left; font: inherit; color: var(--brand-burgundy); background: transparent; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pulse-saved-row .pulse-copy { gap: 5px; }
+.pulse-saved-row strong, .pulse-user-result strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.pulse-saved-row .pulse-copy > span, .pulse-user-result .pulse-copy > span { font-size: 12px; opacity: .75; overflow-wrap: anywhere; }
+.pulse-person-mark { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%; background: var(--brand-burgundy); color: var(--brand-gold); }
+.pulse-person-mark .icon { width: 22px; height: 22px; }
+.pulse-data-status { padding: 8px 16px; margin: 0; color: var(--brand-burgundy); font-size: 13px; overflow-wrap: anywhere; }
+.pulse-data-status:empty { display: none; }
+.pulse-user-results { padding: 0 16px; }
+.pulse-user-result { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); color: var(--brand-burgundy); }
+.pulse-saved { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; min-width: 0; background: var(--paper-soft); overflow: hidden; }
+.pulse-saved-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--brand-burgundy); }
+.pulse-saved-back .icon { transform: rotate(180deg); }
+.pulse-saved-header h2 { margin: 0; font-size: 16px; }
+.pulse-saved-header p { margin: 4px 0 0; font-size: 12px; opacity: .75; }
+.pulse-saved-history { min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom; padding: 16px; }
+.pulse-saved-items { display: grid; gap: 12px; justify-items: end; }
+.pulse-saved-message { max-width: 92%; min-width: 0; border: 1px solid var(--line); border-radius: 16px 16px 4px 16px; padding: 12px 14px; background: var(--skeleton-light); color: var(--brand-burgundy); }
+.pulse-saved-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.pulse-saved-message time { display: block; margin-top: 8px; font-size: 10px; opacity: .7; }
+.pulse-saved-compose { display: flex; align-items: end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.pulse-saved-compose textarea { flex: 1; min-width: 0; max-height: 140px; resize: vertical; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--skeleton-light); color: var(--brand-burgundy); font: inherit; font-size: 16px; }
+.pulse-saved-compose button { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--brand-burgundy); color: var(--brand-gold); cursor: pointer; }
+.pulse-saved-compose button:disabled { opacity: .5; cursor: default; }
+.pulse-load-older, .pulse-users-more { display: block; margin: 12px auto; min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--brand-burgundy); background: var(--skeleton-light); font: inherit; font-size: 13px; cursor: pointer; }
+.pulse-saved-row:focus-visible, .pulse-saved-compose :focus-visible, .pulse-load-older:focus-visible, .pulse-users-more:focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -2px; }
