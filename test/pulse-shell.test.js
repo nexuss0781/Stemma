@@ -68,6 +68,19 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(html, /src="pulse-ui.js\?v=3" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
+test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {
+  const bar = css.match(/\.pulse-tabs \{([^}]+)\}/)[1];
+  const idle = css.match(/\.pulse-tab \{([^}]+)\}/)[1];
+  const selected = css.match(/\.pulse-tab\[aria-selected="true"\] \{([^}]+)\}/)[1];
+  assert.match(bar, /border-radius: 18px/);
+  assert.match(selected, /border-radius: 12px/);
+  assert.match(selected, /background: var\(--brand-burgundy\)/);
+  assert.match(selected, /color: var\(--brand-gold\)/);
+  assert.match(selected, /box-shadow: none/);
+  assert.match(idle, /background: transparent/);
+  assert.match(idle, /color: var\(--brand-burgundy\)/);
+  assert.match(idle, /border-radius: 0/);
+});
 test('Pulse source and styles are publicly served as static assets only', async () => {
   const server = http.createServer(createApp({ config: buildConfig({ NODE_ENV: 'test', SESSION_SECRET: 'pulse-static-test-secret-at-least-32-bytes' }) }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
