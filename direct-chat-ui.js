@@ -3,7 +3,7 @@
   'use strict';
   function view() {
     return `<section class="pulse-direct-chat" aria-label="Direct chat" hidden>
-      <header class="pulse-direct-header"><button type="button" class="pulse-search-close pulse-direct-back" aria-label="Back to Pulse conversations"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button><div><h2 class="pulse-direct-title">Chat</h2><p class="pulse-direct-handle"></p></div></header>
+      <header class="pulse-direct-header"><button type="button" class="pulse-search-close pulse-direct-back" aria-label="Back to Pulse conversations"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button><span class="pulse-person-mark pulse-direct-peer" aria-hidden="true"></span><div class="pulse-direct-identity"><h2 class="pulse-direct-title">Chat</h2><p class="pulse-direct-handle"></p></div><span class="pulse-direct-private">1:1</span></header>
       <div class="pulse-direct-history" tabindex="0" role="region" aria-label="Conversation messages"><button type="button" class="pulse-direct-older" hidden>Load earlier messages</button><div class="pulse-direct-messages" role="list" aria-label="Messages"></div></div>
       <p class="pulse-data-status pulse-direct-status" role="status" aria-live="polite"></p>
       <form class="pulse-saved-compose pulse-direct-compose"><label class="pulse-announcement" for="pulse-direct-text">Message</label><textarea id="pulse-direct-text" rows="1" maxlength="4000" placeholder="Message…" required disabled></textarea><button type="submit" aria-label="Send message" disabled><svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button></form>
@@ -54,7 +54,10 @@
         const item = node('article', `pulse-direct-message${message.mine ? ' is-mine' : ''}`);
         item.setAttribute('role', 'listitem');
         item.append(node('p', '', message.text));
-        const time = node('time', '', timestamp(message.createdAt));
+        const date = new Date(message.createdAt);
+        const time = node('time', '', Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+        time.setAttribute('title', timestamp(message.createdAt));
+        time.setAttribute('aria-label', timestamp(message.createdAt));
         if (message.createdAt) time.dateTime = message.createdAt;
         item.append(time); list.append(item);
       }
@@ -110,6 +113,8 @@
       const peer = next.peer || next;
       title.textContent = peer.nickName || `@${peer.username || ''}`;
       handle.textContent = peer.username ? `@${peer.username}` : '';
+      const avatar = panel.querySelector('.pulse-direct-peer');
+      if (avatar) avatar.textContent = (peer.nickName || peer.username || '?').trim().slice(0, 1).toUpperCase();
       panel.hidden = false; list.replaceChildren(); older.hidden = true;
       input.value = ''; input.disabled = send.disabled = true; status.textContent = '';
       back.focus({ preventScroll: true }); void load({ initial: true });

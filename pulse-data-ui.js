@@ -97,7 +97,10 @@
           const avatar = node('span', 'pulse-person-mark pulse-direct-avatar', initials(conversation)); avatar.setAttribute('aria-hidden', 'true');
           const copy = node('span', 'pulse-copy');
           const peer = conversation.peer || conversation;
-          copy.append(node('strong', '', peer.nickName || `@${peer.username || ''}`));
+          const heading = node('span', 'pulse-direct-row-heading');
+          heading.append(node('strong', '', peer.nickName || `@${peer.username || ''}`));
+          if (peer.username && peer.nickName) heading.append(node('span', 'pulse-direct-row-handle', `@${peer.username}`));
+          copy.append(heading);
           const message = conversation.lastMessage;
           const preview = message ? `${message.mine ? 'You: ' : ''}${String(message.text || '').replace(/\s+/g, ' ').trim()}` : 'No messages yet';
           copy.append(node('span', 'pulse-direct-preview', preview));
@@ -107,9 +110,9 @@
           }
           row.append(avatar, copy, meta); list.append(row);
         }
-        const message = conversations.length ? '' : conversationsState === 'loading' ? 'Loading conversations…' : conversationsState === 'error' ? 'Conversations could not be loaded. Check your connection and try again.' : 'No conversations yet.';
+        const message = conversations.length ? '' : conversationsState === 'loading' ? 'Loading conversations…' : conversationsState === 'error' ? 'Conversations could not be loaded. Check your connection and try again.' : '';
         const empty = node('p', 'pulse-list-empty', message); empty.setAttribute('role', 'status');
-        empty.hidden = Boolean(conversations.length); list.append(empty);
+        empty.hidden = !message; list.append(empty);
       }
     }
     function shortTime(value) {

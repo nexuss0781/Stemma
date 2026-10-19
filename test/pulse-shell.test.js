@@ -197,7 +197,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="direct-chat-ui.js\?v=2" defer><\/script>\s*<script src="pulse-data-ui.js\?v=2" defer><\/script>\s*<script src="pulse-ui.js\?v=9" defer/,
+  assert.match(html, /src="direct-chat-ui.js\?v=3" defer><\/script>\s*<script src="pulse-data-ui.js\?v=3" defer><\/script>\s*<script src="pulse-ui.js\?v=9" defer/,
     'the data client loads before Pulse rendering');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
