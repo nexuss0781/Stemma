@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import '../navigation-memory.js';
 
 const { StemmaNavigationMemory } = globalThis;
-const ROUTES = ['overview', 'cards', 'pulse', 'activity', 'goals', 'profile'];
-const EXISTING_ROUTES = ['overview', 'cards', 'activity', 'goals', 'profile'];
+const ROUTES = ['overview', 'cards', 'pulse', 'goals', 'profile'];
+const EXISTING_ROUTES = ['overview', 'cards', 'goals', 'profile'];
 const PREFIX = 'stemma:navigation:v1:';
 
 function makeStorage(overrides = {}) {
@@ -37,7 +37,7 @@ test('round-trips all existing routes and each of their three tab indexes', () =
       assert.deepEqual(memory.load(`google:${route}-${tab}@example.test`), input);
     }
   }
-  assert.equal(storage.values.size, 15);
+  assert.equal(storage.values.size, 12);
 });
 
 test('round-trips Pulse and each of its five category indexes', () => {
@@ -87,9 +87,9 @@ test('account keys are encoded and isolated; empty account keys never access sto
   assert.equal(memory.save('', state('cards')), false);
   assert.equal(memory.load(''), null);
   assert.equal(storage.values.size, 0);
-  memory.save('google:alice@example.test', state('activity', 1));
+  memory.save('google:alice@example.test', state('cards', 1));
   memory.save('google:bob@example.test', state('goals', 2));
-  assert.equal(memory.load('google:alice@example.test').route, 'activity');
+  assert.equal(memory.load('google:alice@example.test').route, 'cards');
   assert.equal(memory.load('google:bob@example.test').route, 'goals');
   assert.equal(storage.values.has(`${PREFIX}google%3Aalice%40example.test`), true);
   assert.equal(memory.load('google:missing@example.test'), null);
@@ -105,14 +105,20 @@ test('sanitizer rejects malformed, stale and invalid-route payloads and strips i
     assert.equal(memory.load('google:test@example.test'), null);
   }
 
+  const legacyActivity = { ...state('overview'), route: 'activity' };
+  assert.equal(StemmaNavigationMemory.sanitize(legacyActivity), null, 'Activity is no longer an accepted route');
+  storage.values.set(`${PREFIX}google%3Aremoved%40example.test`, JSON.stringify(legacyActivity));
+  assert.equal(memory.load('google:removed@example.test'), null, 'legacy Activity navigation memory is discarded');
+
   const injected = { ...state('overview'), route: 'overview', password: 'secret', html: '<script>x</script>',
     tabs: { overview: 9, cards: -1, activity: 1.5, goals: 2, profile: 0, injected: 2 } };
   assert.equal(memory.save('google:test@example.test', injected), true);
   const loaded = memory.load('google:test@example.test');
-  assert.deepEqual(loaded.tabs, { overview: 0, cards: 0, pulse: 0, activity: 0, goals: 2, profile: 0 });
+  assert.deepEqual(loaded.tabs, { overview: 0, cards: 0, pulse: 0, goals: 2, profile: 0 });
   assert.equal(Object.hasOwn(loaded, 'password'), false);
   assert.equal(Object.hasOwn(loaded, 'html'), false);
   assert.equal(Object.hasOwn(loaded.tabs, 'injected'), false);
+  assert.equal(Object.hasOwn(loaded.tabs, 'activity'), false, 'removed tab state is not retained');
   assert.equal(storage.values.get(key).includes('secret'), false);
 });
 
@@ -235,6 +241,7 @@ test('friend memory is a strict privacy whitelist and legacy v1 payloads receive
   const clean = StemmaNavigationMemory.sanitize;
   const legacy = { ...state('cards', 0) };
   delete legacy.tabs.pulse;
+  legacy.tabs.activity = 2;
   delete legacy.isFriend;
   delete legacy.friendBillId;
   delete legacy.friendUsernameQuery;

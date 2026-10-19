@@ -23,10 +23,10 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.doesNotMatch(markup, /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid/,
     'Story is not a category tab or panel');
   assert.match(markup, /class="pulse-stories"/);
-  assert.equal((markup.match(/class="pulse-story-ring/g) || []).length, 7,
-    'the avatar story strip remains visible as a preview');
-  assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 3,
-    'the main preview tiles remain in the shell');
+  assert.equal((markup.match(/class="pulse-story-ring/g) || []).length, 120,
+    'each category has two horizontally scrollable story stages');
+  assert.equal((markup.match(/class="pulse-preview-tile"/g) || []).length, 15,
+    'each category retains three preview tiles');
   assert.equal(markup.replace(/<[^>]*>/g, '').trim(), '', 'all content is skeletons, with no visible text');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
@@ -62,10 +62,10 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(source, /ArrowLeft.*ArrowRight.*Home.*End/);
   assert.match(source, /pointercancel/);
   assert.match(source, /AbortController/);
-  assert.match(css, /touch-action: pan-y pinch-zoom/);
+  assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="pulse-ui.js\?v=2" defer/);
+  assert.match(html, /src="pulse-ui.js\?v=3" defer/);
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse source and styles are publicly served as static assets only', async () => {
@@ -82,4 +82,15 @@ test('Pulse source and styles are publicly served as static assets only', async 
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('Pulse reveals four ordered full-height stages and retains a two-column skeleton grid', () => {
+  const markup = load().pulse.render();
+  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
+  assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
+  assert.match(css, /scroll-snap-type: y mandatory/);
+  assert.match(css, /scroll-snap-stop: always/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(source, /event.target.closest\('\.pulse-stories'\)/);
+  assert.match(source, /!event.target.closest\('\.pulse-tab'\)/);
 });

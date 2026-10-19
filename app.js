@@ -1,7 +1,6 @@
 const sections = [
   { id: 'cards', icon: 'card', label: 'Payment' },
   { id: 'pulse', icon: 'pulse', label: 'Pulse' },
-  { id: 'activity', icon: 'activity', label: 'Activity' },
   { id: 'overview', icon: 'grid', label: 'Overview' },
   { id: 'goals', icon: 'target', label: 'Goals' },
   { id: 'profile', icon: 'user', label: 'Profile' }
@@ -11,7 +10,6 @@ const pageTabs = {
   pulse: ['All', 'User', 'Group', 'Channel', 'App'],
   overview: ['Snapshot', 'Cash flow', 'This month'],
   cards: ['Pay fee', 'Deposit', 'History'],
-  activity: ['All activity', 'Incoming', 'Outgoing'],
   goals: ['Active goals', 'Completed', 'Create goal'],
   profile: ['Personal', 'Security', 'Preferences']
 };
@@ -92,7 +90,7 @@ function renderTabs() {
     </button>`).join('');
 }
 
-const cardTargets = ['activity', 'goals', 'cards', 'profile'];
+const cardTargets = ['overview', 'goals', 'cards', 'profile'];
 function renderSkeletonCards() {
   return cardTargets.map((route, index) => `
     <article class="skeleton-card" aria-label="Placeholder ${index + 1}">

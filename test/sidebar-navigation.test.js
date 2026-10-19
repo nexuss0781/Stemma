@@ -15,7 +15,7 @@ const controllerEnd = appSource.indexOf('function updateOnboardingAccess() {', c
 assert.ok(controllerStart >= 0 && controllerEnd > controllerStart, 'navigation controller block is present');
 const controllerSource = appSource.slice(controllerStart, controllerEnd);
 const PREFIX = 'stemma:navigation:v1:';
-const ROUTES = ['overview', 'cards', 'pulse', 'activity', 'goals', 'profile'];
+const ROUTES = ['overview', 'cards', 'pulse', 'goals', 'profile'];
 
 function makeState(route, { tab = 0, view = 'main', ...rest } = {}) {
   const tabs = Object.fromEntries(ROUTES.map(key => [key, 0]));
@@ -88,7 +88,7 @@ function makeHarness() {
   });
   vm.runInContext(memorySource, context, { filename: 'navigation-memory.js' });
   vm.runInContext(`
-    const activeTabs = { overview: 0, cards: 0, pulse: 0, activity: 0, goals: 0, profile: 0 };
+    const activeTabs = { overview: 0, cards: 0, pulse: 0, goals: 0, profile: 0 };
     let activeRoute = 'overview';
     let paymentSlideIndex = 0;
     let paymentDemoInterval = '15-days';
@@ -139,12 +139,12 @@ test('fresh account starts at Overview and ignores another account’s stored ro
 
 test('saved route, every tab index, and route-specific tab state are restored', () => {
   const h = makeHarness();
-  const saved = makeState('activity', { tab: 2 });
+  const saved = makeState('goals', { tab: 2 });
   saved.tabs.overview = 1;
   saved.tabs.profile = 2;
   assert.equal(h.save('google:tabs@example.test', saved), true);
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:tabs@example.test')");
-  assert.equal(h.evaluate('activeRoute'), 'activity');
+  assert.equal(h.evaluate('activeRoute'), 'goals');
   assert.deepEqual(JSON.parse(JSON.stringify(h.evaluate('activeTabs'))), saved.tabs);
   assert.equal(h.evaluate('paymentSlideIndex'), 1);
   assert.equal(h.evaluate('paymentDemoInterval'), '3-months');
@@ -207,7 +207,7 @@ test('bill, sheet, receipt and history details restore using UI flags and safe d
 
 test('account switching saves the active account separately and restores the target account', () => {
   const h = makeHarness();
-  assert.equal(h.save('google:alice@example.test', makeState('activity', { tab: 1 })), true);
+  assert.equal(h.save('google:alice@example.test', makeState('cards', { tab: 1 })), true);
   assert.equal(h.save('google:bob@example.test', makeState('profile', { tab: 2 })), true);
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:alice@example.test')");
   h.flushFrames();
@@ -228,6 +228,19 @@ test('invalid stored route falls back to Overview rather than honoring the URL h
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:bad@example.test')");
   assert.equal(h.evaluate('activeRoute'), 'overview');
   assert.equal(h.window.location.hash, '#overview');
+  h.flushFrames();
+});
+
+test('legacy Activity route is rejected and falls back to Overview', () => {
+  const h = makeHarness();
+  const legacy = makeState('overview');
+  legacy.route = 'activity';
+  h.storage.values.set(`${PREFIX}google%3Alegacy%40example.test`, JSON.stringify(legacy));
+  h.window.location.hash = '#activity';
+  h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:legacy@example.test')");
+  assert.equal(h.evaluate('activeRoute'), 'overview');
+  assert.equal(h.window.location.hash, '#overview');
+  assert.equal(h.load('google:legacy@example.test'), null);
   h.flushFrames();
 });
 
@@ -293,7 +306,13 @@ test('drawer puts Overview first and Pulse follows Cards in bottom-nav order; si
   const sectionsMatch = /^const sections = \[([\s\S]*?)^\];/m.exec(appSource);
   assert.ok(sectionsMatch, 'navigation section definition exists');
   assert.deepEqual([...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id),
-    ['cards', 'pulse', 'activity', 'overview', 'goals', 'profile'], 'Pulse follows Cards and Profile remains last');
+    ['cards', 'pulse', 'overview', 'goals', 'profile'], 'Pulse follows Payment and Profile remains last');
+  const cardTargetsMatch = /^const cardTargets = \[([^\]]*)\];/m.exec(appSource);
+  assert.ok(cardTargetsMatch, 'placeholder card destinations exist');
+  const cardTargets = [...cardTargetsMatch[1].matchAll(/'([^']+)'/g)].map(([, route]) => route);
+  const routeIds = [...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id);
+  assert.deepEqual(cardTargets, ['overview', 'goals', 'cards', 'profile']);
+  assert.ok(cardTargets.every(route => routeIds.includes(route)), 'every card destination remains a valid navigation route');
   const bottomNav = appSource.match(/function renderBottomNav\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(bottomNav, /sections\.map\(item\s*=>/);
   assert.match(bottomNav, /const drawerSections = \[sections\.find\(item => item\.id === 'overview'\), \.\.\.sections\.filter\(item => item\.id !== 'overview'\)\]/);

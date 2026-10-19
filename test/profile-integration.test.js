@@ -61,7 +61,7 @@ test('Profile remains far-right while Pulse sits immediately after Payment', () 
   assert.ok(routesStart >= 0 && routesEnd > routesStart);
   const routeBlock = app.slice(routesStart, routesEnd + 2);
   const routeIds = [...routeBlock.matchAll(/\bid:\s*'([^']+)'/g)].map(match => match[1]);
-  assert.deepEqual(routeIds, ['cards', 'pulse', 'activity', 'overview', 'goals', 'profile']);
+  assert.deepEqual(routeIds, ['cards', 'pulse', 'overview', 'goals', 'profile']);
   assert.match(routeBlock, /\{ id: 'profile', icon: 'user', label: 'Profile' \}\s*\];?$/,
     'Profile retains the far-right route position');
   assert.equal((app.match(/id:\s*'profile'/g) || []).length, 1, 'there is one Profile route, not an extra navigation tab');
