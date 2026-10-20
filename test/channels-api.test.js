@@ -63,7 +63,9 @@ test('Channels auth, all-channel listing, sanitized contracts, validation, owner
   assert.equal(response.status, 201);
   assert.deepEqual((await response.json()).channel, {
     id: '10', name: 'New channel', isOwner: true, createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z', lastPost: null
+    updatedAt: '2026-01-01T00:00:00.000Z', lastPost: null, subscriberCount: 0,
+    isSubscribed: false, muted: false, lastReadPostId: null, pinnedPost: null,
+    ownerName: null, avatarUrl: null
   });
   assert.deepEqual(calls.find(call => call[0] === 'create'), ['create', 'owner-a', 'New channel']);
   for (const body of [{}, { name: ' ' }, { name: 'x'.repeat(81) }, { name: 'okay', ownerSubject: 'forged' }, { name: 'nul\0name' }]) {
@@ -117,7 +119,9 @@ test('Channels SQL store scopes post INSERT to the channel owner and supports re
   assert.match(calls[0].sql, /INSERT INTO stemma_pulse_channel_posts[\s\S]*SELECT c\.id, \$3::text FROM stemma_pulse_channels c[\s\S]*c\.owner_subject = \$2/);
   assert.deepEqual(calls[0].values, ['31', 'not-owner', 'blocked']);
   await store.migrate();
-  assert.match(calls.at(-1).sql, /CREATE TABLE IF NOT EXISTS stemma_pulse_channels/);
+  assert.match(calls.at(-2).sql, /CREATE TABLE IF NOT EXISTS stemma_pulse_channels/);
+  assert.match(calls.at(-1).sql, /CREATE TABLE IF NOT EXISTS stemma_pulse_channel_subscribers/);
+  assert.match(calls.at(-1).sql, /ON DELETE SET NULL \(last_read_post_id\)/);
 });
 
 test('Channels static assets are explicitly served with safe cache policy', async t => {

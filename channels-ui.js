@@ -6,11 +6,13 @@
   const node = (tag, cls, value) => { const el = document.createElement(tag); el.className = cls; if (value != null) el.textContent = value; return el; };
   function view() {
     return `<section class="channel-view" aria-label="Channel" hidden>
-      <header class="channel-header"><button type="button" class="group-back" data-channel-back aria-label="Back to Pulse">${glyph('arrow-right')}</button><span class="pulse-person-mark" aria-hidden="true">${glyph('pulse-channel')}</span><div><h2 data-channel-name tabindex="-1"></h2><p data-channel-role>Channel · Only the owner can post</p></div></header>
+      <header class="channel-header"><button type="button" class="group-back" data-channel-back aria-label="Back to Pulse">${glyph('arrow-right')}</button><span class="pulse-person-mark channel-avatar" data-channel-avatar aria-hidden="true"></span><div><h2 data-channel-name tabindex="-1"></h2><p data-channel-role>Channel · Only the owner can post</p></div><button type="button" data-channel-leave hidden>Leave</button></header>
+      <button type="button" class="channel-pinned" data-channel-pinned hidden></button>
       <p class="channel-status" data-channel-status role="status" aria-live="polite"></p>
       <div class="channel-history" tabindex="0" role="region" aria-label="Channel posts"><button type="button" class="pulse-load-older" data-channel-older hidden>Load earlier posts</button><div data-channel-posts role="list" aria-label="Posts"></div></div>
       <p class="channel-read-only" data-channel-read-only hidden>Read only · Only the channel owner can publish posts.</p>
-      <form class="channel-compose" hidden><label class="visually-hidden" for="channel-post-input">Channel post</label><textarea id="channel-post-input" rows="2" maxlength="4000" placeholder="Write a post…" required disabled></textarea><button type="submit" aria-label="Publish post" disabled>${glyph('arrow-up-right')}</button></form>
+      <footer class="channel-reader-controls" hidden><button type="button" data-channel-subscribe>Subscribe</button><button type="button" data-channel-mute hidden>Mute</button></footer>
+      <form class="channel-compose" hidden><label class="visually-hidden" for="channel-post-input">Channel post</label>${root.StemmaChatAttachments?.control() || ''}<textarea id="channel-post-input" rows="2" maxlength="4000" placeholder="Broadcast…" required disabled></textarea><button type="submit" aria-label="Publish post" disabled>${glyph('arrow-up-right')}</button></form>
     </section>
     <dialog class="group-dialog channel-dialog" aria-labelledby="channel-create-title"><form class="group-dialog-card" data-channel-form><header class="group-create-header"><div><p class="groups-eyebrow">Pulse</p><h2 id="channel-create-title">New Channel</h2></div><button type="button" data-channel-cancel class="group-dialog-close" aria-label="Close new channel">×</button></header><p class="channel-create-copy">You publish posts. Other signed-in users can read them in Pulse.</p><label class="group-name-field">Channel name<input name="name" maxlength="80" required autocomplete="off" placeholder="Enter channel name"></label><p class="group-dialog-status" data-channel-create-status role="status" aria-live="polite"></p><footer class="group-dialog-actions"><button type="button" data-channel-cancel>Cancel</button><button type="submit" class="groups-primary">Create channel</button></footer></form></dialog>`;
   }
@@ -19,8 +21,48 @@
     const dialog = shell.querySelector('.channel-dialog'), createForm = dialog.querySelector('form');
     const status = view.querySelector('[data-channel-status]'), postsTarget = view.querySelector('[data-channel-posts]');
     const history = view.querySelector('.channel-history'), compose = view.querySelector('.channel-compose');
-    const input = compose.querySelector('textarea'), publish = compose.querySelector('button'), older = view.querySelector('[data-channel-older]');
+    const input = compose.querySelector('textarea'), publish = compose.querySelector('[type="submit"]'), older = view.querySelector('[data-channel-older]');
     let channels = [], current = null, posts = [], cursor = null, hasMore = false, revision = 0, timer = null, listBusy = false, postsBusy = false, sending = false, creating = false, returnFocus = null;
+    let portal = null, appInert = false, unreadAfter = null, initialPaint = true, readTimer = null, readPending = false, savedScroll = [], controlBusy = false;
+    const pinned = view.querySelector('[data-channel-pinned]'), mute = view.querySelector('[data-channel-mute]'), subscribe = view.querySelector('[data-channel-subscribe]'), leave = view.querySelector('[data-channel-leave]');
+    function resizeViewport() { if (portal) { view.style.setProperty('--channel-height', `${root.visualViewport?.height || root.innerHeight}px`); view.style.setProperty('--channel-top', `${root.visualViewport?.offsetTop || 0}px`); } }
+    function focusMode(open) {
+      const app = document.getElementById('app-shell');
+      if (open && !portal) {
+        savedScroll = [...shell.querySelectorAll('.pulse-panel, .pulse-feed, .pulse-viewport, .pulse-unified-list')].map(el => [el, el.scrollTop, el.scrollLeft]);
+        portal = document.createComment('Channel parent'); view.before(portal); document.body.append(view);
+        if (app) { appInert = app.inert; app.inert = true; } document.body.classList.add('stemma-channel-focus'); resizeViewport();
+      } else if (!open && portal) {
+        portal.replaceWith(view); portal = null; if (app) app.inert = appInert; document.body.classList.remove('stemma-channel-focus');
+        for (const [el, top, left] of savedScroll) { el.scrollTop = top; el.scrollLeft = left; }
+      }
+    }
+    if (root.visualViewport) { listen(root.visualViewport, 'resize', resizeViewport); listen(root.visualViewport, 'scroll', resizeViewport); }
+    listen(root, 'resize', resizeViewport);
+    function paintHeader() {
+      if (!current) return;
+      view.querySelector('[data-channel-name]').textContent = current.name;
+      view.querySelector('[data-channel-role]').textContent = `${Number(current.subscriberCount || 0).toLocaleString()} ${Number(current.subscriberCount || 0) === 1 ? 'subscriber' : 'subscribers'}`;
+      const avatar = view.querySelector('[data-channel-avatar]'); avatar.replaceChildren();
+      if (current.avatarUrl && /^\/api\//.test(current.avatarUrl)) { const image = node('img', ''); image.src = current.avatarUrl; image.alt = ''; avatar.append(image); }
+      else avatar.textContent = [...current.name.trim()].slice(0, 2).join('').toUpperCase();
+      const ownerLabel = current.isOwner ? 'Your channel · Only you can post' : 'Read only · Only the channel owner can publish posts.';
+      view.querySelector('[data-channel-read-only]').textContent = ownerLabel;
+      view.querySelector('.channel-reader-controls').hidden = current.isOwner;
+      subscribe.hidden = current.isSubscribed; mute.hidden = !current.isSubscribed; leave.hidden = current.isOwner || !current.isSubscribed;
+      mute.textContent = current.muted ? 'Unmute' : 'Mute'; mute.setAttribute('aria-pressed', String(Boolean(current.muted)));
+      pinned.hidden = !current.pinnedPost; pinned.replaceChildren();
+      if (current.pinnedPost) { pinned.append(node('strong', '', 'Pinned post'), node('span', '', current.pinnedPost.text)); pinned.dataset.postId = current.pinnedPost.id; }
+    }
+    async function markVisibleRead() {
+      if (!current?.isSubscribed || current.isOwner || document.hidden || readPending) return;
+      const box = history.getBoundingClientRect(); let last = null;
+      for (const article of postsTarget.querySelectorAll('[data-channel-post]')) { const rect = article.getBoundingClientRect(); if (rect.top < box.bottom && rect.bottom > box.top) last = article.dataset.channelPost; }
+      if (!last || (current.lastReadPostId && BigInt(last) <= BigInt(current.lastReadPostId))) return;
+      const id = current.id, version = revision; readPending = true;
+      try { await request(`${api}/${encodeURIComponent(id)}/read`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: last }) }); if (version === revision) current.lastReadPostId = last; } catch {} finally { readPending = false; }
+    }
+    function scheduleRead() { clearTimeout(readTimer); readTimer = setTimeout(markVisibleRead, 650); }
     async function request(url, options = {}) {
       const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', signal, ...options, headers: { Accept: 'application/json', ...options.headers } });
       let data = {}; try { data = await response.json(); } catch {}
@@ -50,17 +92,31 @@
       catch (error) { if (!signal.aborted) paintRows(error.message); }
       finally { listBusy = false; }
     }
-    function paintPosts(scrollBottom = false) {
+    function paintPosts(scrollBottom = false, earlier = false) {
       const beforeHeight = history.scrollHeight, beforeTop = history.scrollTop;
-      postsTarget.replaceChildren();
+      postsTarget.replaceChildren(); let dividerAdded = false;
       for (const post of posts) {
+        if (!dividerAdded && unreadAfter !== null && BigInt(post.id) > BigInt(unreadAfter)) {
+          const divider = node('div', 'channel-unread', 'Unread posts'); divider.setAttribute('role', 'separator'); postsTarget.append(divider); dividerAdded = true;
+        }
         const article = node('article', 'channel-post'); article.setAttribute('role', 'listitem'); article.dataset.channelPost = post.id;
+        article.append(node('strong', 'channel-post-author', current?.ownerName || current?.name || 'Channel owner'));
+        if (post.attachment) {
+          const a = post.attachment;
+          if (/^video\/(mp4|webm)$/.test(a.mimeType) && /^\/api\/pulse\/attachments\/[a-f0-9-]{36}$/i.test(a.url)) {
+            const video = node('video', 'channel-video'); video.src = a.url; video.controls = true; video.preload = 'metadata'; video.playsInline = true; video.setAttribute('aria-label', a.name); article.append(video);
+          } else { const media = root.StemmaChatAttachments?.render(a); if (media) article.append(media); }
+        }
         const time = node('time', '', new Date(post.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })); time.dateTime = post.createdAt;
-        article.append(node('p', '', post.text), time); postsTarget.append(article);
+        article.append(node('p', 'channel-caption', post.text), time);
+        if (current?.isOwner) { const pin = node('button', 'channel-pin-control', current.pinnedPost?.id === post.id ? 'Unpin' : 'Pin post'); pin.type = 'button'; pin.dataset.channelPin = post.id; pin.setAttribute('aria-label', `${pin.textContent} ${post.id}`); article.append(pin); }
+        postsTarget.append(article);
       }
       if (!posts.length) postsTarget.append(node('p', 'channel-empty', current?.isOwner ? 'Publish the first post in your channel.' : 'No posts yet. Posts from the owner will appear here.'));
       older.hidden = !hasMore;
-      history.scrollTop = scrollBottom ? history.scrollHeight : beforeTop + (history.scrollHeight - beforeHeight);
+      if (initialPaint) { const divider = postsTarget.querySelector('.channel-unread'); if (divider) history.scrollTop = Math.max(0, divider.offsetTop - 12); else history.scrollTop = history.scrollHeight; initialPaint = false; }
+      else history.scrollTop = scrollBottom ? history.scrollHeight : earlier ? beforeTop + history.scrollHeight - beforeHeight : beforeTop;
+      scheduleRead();
     }
     async function loadPosts(earlier = false) {
       if (!current || postsBusy || signal.aborted) return;
@@ -71,30 +127,30 @@
         const data = await request(`${api}/${encodeURIComponent(id)}/posts${earlier && cursor ? `?before=${encodeURIComponent(cursor)}` : ''}`);
         if (signal.aborted || version !== revision) return;
         const incoming = data.posts || [];
+        const changed = initialPaint || incoming.some(post => !posts.some(item => item.id === post.id));
         const unique = new Map([...posts, ...incoming].map(post => [String(post.id), post]));
         posts = [...unique.values()].sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
         if (earlier || !cursor) { cursor = data.nextBefore || null; hasMore = Boolean(data.hasMore); }
-        paintPosts(!earlier && nearBottom); status.textContent = '';
+        if (changed) paintPosts(!earlier && nearBottom, earlier); status.textContent = '';
       } catch (error) { if (!signal.aborted && version === revision) status.textContent = error.message; }
       finally { if (version === revision) { postsBusy = false; older.disabled = false; } }
     }
     function back(restoring = false) {
       if (!restoring && root.StemmaParentNavigation?.back('pulse-channel')) return;
-      revision++; current = null; postsBusy = false; posts = []; postsTarget.replaceChildren(); input.value = ''; compose.hidden = true; input.disabled = publish.disabled = true; view.hidden = true; feed.hidden = false; feed.inert = false;
+      clearTimeout(readTimer); focusMode(false); revision++; current = null; postsBusy = false; posts = []; postsTarget.replaceChildren(); input.value = ''; compose.hidden = true; input.disabled = publish.disabled = true; view.hidden = true; feed.hidden = false; feed.inert = false;
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
       void loadChannels();
     }
     async function open(id, trigger) {
-      const version = ++revision; current = null; postsBusy = false; posts = []; cursor = null; hasMore = false;
+      const version = ++revision; current = null; unreadAfter = null; initialPaint = true; clearTimeout(readTimer); postsBusy = false; posts = []; cursor = null; hasMore = false;
       returnFocus = trigger || shell.querySelector('[aria-selected="true"][data-pulse-tab]');
       root.StemmaParentNavigation?.enter('pulse-channel', () => back(true), { signal });
-      feed.hidden = true; feed.inert = true; view.hidden = false; compose.hidden = true; input.value = ''; input.disabled = publish.disabled = true; postsTarget.replaceChildren(); older.hidden = true;
-      view.querySelector('[data-channel-read-only]').hidden = true; view.querySelector('[data-channel-name]').textContent = ''; status.textContent = 'Opening channel…';
+      focusMode(true); feed.hidden = true; feed.inert = true; view.hidden = false; compose.hidden = true; input.value = ''; input.disabled = publish.disabled = true; postsTarget.replaceChildren(); older.hidden = true;
+      view.querySelector('[data-channel-read-only]').hidden = true; pinned.hidden = true; view.querySelector('.channel-reader-controls').hidden = true; leave.hidden = true; view.querySelector('[data-channel-name]').textContent = ''; status.textContent = 'Opening channel…';
       try {
         const data = await request(`${api}/${encodeURIComponent(id)}`);
         if (signal.aborted || version !== revision) return;
-        current = data.channel; view.querySelector('[data-channel-name]').textContent = current.name;
-        view.querySelector('[data-channel-role]').textContent = current.isOwner ? 'Your channel · Only you can post' : 'Channel · Only the owner can post';
+        current = data.channel; unreadAfter = current.isSubscribed && !current.isOwner ? (current.lastReadPostId || '0') : null; paintHeader();
         compose.hidden = !current.isOwner; input.disabled = publish.disabled = !current.isOwner;
         view.querySelector('[data-channel-read-only]').hidden = current.isOwner;
         view.querySelector('[data-channel-name]').focus({ preventScroll: true }); await loadPosts();
@@ -110,9 +166,30 @@
     listen(shell, 'click', event => {
       const row = event.target.closest('[data-channel-open]'); if (row) void open(row.dataset.channelOpen, row);
       if (event.target.closest('[data-channel-create]')) openCreate();
-      if (event.target.closest('[data-channel-back]')) back();
       if (event.target.closest('[data-channel-cancel]') && !creating) dialog.close();
     });
+    listen(view, 'click', async event => {
+      if (event.target.closest('[data-channel-back]')) { back(); return; }
+      if (!current || controlBusy) return;
+      const pin = event.target.closest('[data-channel-pin]');
+      let action = null, body = null;
+      if (pin && current.isOwner) { action = 'pin'; body = { postId: current.pinnedPost?.id === pin.dataset.channelPin ? null : pin.dataset.channelPin }; }
+      if (event.target.closest('[data-channel-mute]') && current.isSubscribed) { action = 'preferences'; body = { muted: !current.muted }; }
+      if (event.target.closest('[data-channel-subscribe]')) { action = 'subscription'; body = { subscribed: true }; }
+      if (event.target.closest('[data-channel-leave]')) { action = 'subscription'; body = { subscribed: false }; }
+      if (event.target.closest('[data-channel-pinned]')) {
+        let article = [...postsTarget.querySelectorAll('[data-channel-post]')].find(el => el.dataset.channelPost === current.pinnedPost?.id);
+        let pages = 0; while (!article && hasMore && !postsBusy && current && pages++ < 40) { const previous = cursor; await loadPosts(true); if (cursor === previous) break; article = [...postsTarget.querySelectorAll('[data-channel-post]')].find(el => el.dataset.channelPost === current?.pinnedPost?.id); }
+        article?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return;
+      }
+      if (!action) return;
+      const id = current.id, version = revision; controlBusy = true;
+      try { await request(`${api}/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await request(`${api}/${encodeURIComponent(id)}`); if (version !== revision) return; current = data.channel; paintHeader(); if (action === 'pin') paintPosts(); if (action === 'subscription' && !body.subscribed) back();
+      } catch (error) { if (version === revision) status.textContent = error.message; } finally { controlBusy = false; }
+    });
+    listen(history, 'scroll', scheduleRead);
+    root.StemmaChatAttachments?.mount(compose, { listen, signal, endpoint: () => current?.isOwner ? `${api}/${encodeURIComponent(current.id)}/attachments` : null, ready: () => Boolean(current?.isOwner && !sending), extraBody: () => input.value.trim() ? { caption: input.value.trim() } : {}, onMessage: post => { if (!current?.isOwner) return; if (!posts.some(item => item.id === post.id)) posts.push(post); input.value = ''; paintPosts(true); void loadChannels(); } });
     listen(dialog, 'close', () => root.StemmaParentNavigation?.forget('pulse-channel-create'));
     listen(dialog, 'cancel', event => { if (creating) event.preventDefault(); });
     listen(createForm, 'submit', async event => {
@@ -138,11 +215,11 @@
     });
     async function tick() {
       if (signal.aborted) return;
-      if (!document.hidden) { await loadChannels(); if (!view.hidden) await loadPosts(); }
+      if (!document.hidden) { await loadChannels(); if (!view.hidden) { await loadPosts(); const id = current?.id, version = revision; if (id) { try { const data = await request(`${api}/${encodeURIComponent(id)}`); if (version === revision) { current = data.channel; paintHeader(); } } catch {} } } }
       if (!signal.aborted) timer = setTimeout(tick, 8000);
     }
     listen(view, 'keydown', event => { if (event.key === 'Escape' && !event.target.closest('textarea')) { event.preventDefault(); back(); } });
-    listen(signal, 'abort', () => { revision++; clearTimeout(timer); dialog.close(); posts = []; channels = []; input.value = ''; });
+    listen(signal, 'abort', () => { focusMode(false); revision++; clearTimeout(timer); clearTimeout(readTimer); dialog.close(); posts = []; channels = []; input.value = ''; });
     void tick();
     return { open, loadChannels };
   }

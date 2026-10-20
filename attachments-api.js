@@ -102,7 +102,12 @@ export function createAttachmentStore(pool) {
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '007_chat_attachments.sql'), 'utf8'));
       const groupsReady = await pool.query("SELECT to_regclass('stemma_groups_messages') IS NOT NULL AS ready");
-      if (groupsReady.rows[0]?.ready) await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '011_group_chat_attachments.sql'), 'utf8'));
+      // Once channel media exists, replaying 011's older three-target CHECK would reject it.
+      const channelColumn = await pool.query("SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'stemma_pulse_attachments'::regclass AND attname = 'channel_post_id' AND NOT attisdropped) AS ready");
+      if (groupsReady.rows[0]?.ready && !channelColumn.rows[0]?.ready) await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '011_group_chat_attachments.sql'), 'utf8'));
+      // Server startup migrates Channels before attachments. Standalone attachment-store users may not have Channels yet.
+      const channelsReady = await pool.query("SELECT to_regclass('stemma_pulse_channel_posts') IS NOT NULL AS ready");
+      if (channelsReady.rows[0]?.ready) await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '016_channel_attachments.sql'), 'utf8'));
     },
     async createConversationAttachment(subject, conversationId, attachment) {
       const client = await pool.connect();
@@ -190,6 +195,30 @@ export function createAttachmentStore(pool) {
       } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
       finally { client.release(); }
     },
+    async createChannelAttachment(subject, channelId, attachment) {
+      const client = await pool.connect();
+      const id = crypto.randomUUID();
+      try {
+        await client.query('BEGIN');
+        // The owner check is in the INSERT predicate as well as the HTTP layer; a forged caller cannot bypass it.
+        const post = await client.query(
+          `INSERT INTO stemma_pulse_channel_posts (channel_id, text)
+           SELECT c.id, COALESCE(NULLIF($3::text, ''), $4::text)
+           FROM stemma_pulse_channels c
+           WHERE c.id = $1::bigint AND c.owner_subject = $2::varchar(255)
+           RETURNING id::text AS id, text, created_at AS "createdAt"`,
+          [channelId, subject, attachment.caption ?? '', attachment.name]);
+        const row = post.rows[0];
+        if (!row) { await client.query('ROLLBACK'); return null; }
+        await client.query(
+          `INSERT INTO stemma_pulse_attachments (id, google_subject, channel_post_id, name, mime_type, byte_size, data)
+           VALUES ($1::uuid, $2, $3::bigint, $4, $5, $6, $7)`,
+          [id, subject, row.id, attachment.name, attachment.mimeType, attachment.size, attachment.data]);
+        await client.query('COMMIT');
+        return { ...row, attachment: { id, url: `/api/pulse/attachments/${id}`, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size } };
+      } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
+      finally { client.release(); }
+    },
     async getAttachmentForSubject(subject, id) {
       const result = await pool.query(
         `SELECT a.id::text AS id, a.name, a.mime_type AS "mimeType", a.byte_size AS size, a.data
@@ -198,12 +227,14 @@ export function createAttachmentStore(pool) {
          LEFT JOIN stemma_direct_chat_messages m ON m.id = a.chat_message_id
          LEFT JOIN stemma_direct_chat_conversations c ON c.id = m.conversation_id
          LEFT JOIN stemma_groups_messages gm ON gm.id = a.group_message_id
+         LEFT JOIN stemma_pulse_channel_posts cp ON cp.id = a.channel_post_id
          WHERE a.id = $2::uuid AND (
            (a.saved_message_id IS NOT NULL AND s.google_subject = $1)
            OR (a.chat_message_id IS NOT NULL AND (c.participant_a = $1 OR c.participant_b = $1))
            OR (a.group_message_id IS NOT NULL AND EXISTS (
              SELECT 1 FROM stemma_groups_memberships member WHERE member.group_id = gm.group_id AND member.member_subject = $1
            ))
+           OR (a.channel_post_id IS NOT NULL AND cp.id IS NOT NULL)
          ) LIMIT 1`, [subject, id]);
       const row = result.rows[0];
       return row ? { ...row, data: Buffer.from(row.data), size: Number(row.size) } : null;
@@ -230,6 +261,12 @@ export function createAttachmentStore(pool) {
            FROM stemma_pulse_attachments a JOIN stemma_groups_messages m ON m.id = a.group_message_id
            WHERE m.group_id = $2::bigint AND a.group_message_id = ANY($3::bigint[])
              AND EXISTS (SELECT 1 FROM stemma_groups_memberships member WHERE member.group_id = m.group_id AND member.member_subject = $1)`, [subject, groupId, ids]);
+      } else if (typeof scope === 'string' && /^channel:[1-9][0-9]{0,18}$/.test(scope)) {
+        const channelId = scope.slice('channel:'.length);
+        result = await pool.query(
+          `SELECT a.id::text AS id, a.channel_post_id::text AS "messageId", a.name, a.mime_type AS "mimeType", a.byte_size AS size
+           FROM stemma_pulse_attachments a JOIN stemma_pulse_channel_posts p ON p.id = a.channel_post_id
+           WHERE p.channel_id = $1::bigint AND a.channel_post_id = ANY($2::bigint[])`, [channelId, ids]);
       } else return [];
       return result.rows.map(row => ({ ...attachmentDto(row), messageId: row.messageId }));
     }
@@ -253,6 +290,20 @@ function sameOriginJson(config) {
 
 function validConversationId(value) { return typeof value === 'string' && /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n; }
 function validAttachmentId(value) { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
+
+function validateChannelAttachmentBody(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).some(key => !['name', 'mimeType', 'data', 'caption'].includes(key)) ||
+      !['name', 'mimeType', 'data'].every(key => Object.hasOwn(value, key))) return null;
+  let caption = '';
+  if (Object.hasOwn(value, 'caption')) {
+    if (typeof value.caption !== 'string') return null;
+    caption = value.caption.trim();
+    if (caption.includes('\0') || [...caption].length > 4000) return null;
+  }
+  const attachment = validateAttachmentBody({ name: value.name, mimeType: value.mimeType, data: value.data });
+  return attachment ? { ...attachment, caption } : null;
+}
 
 export function registerAttachmentsApi(app, { attachmentStore = null, requireGoogleSession, config }) {
   if (typeof requireGoogleSession !== 'function') throw new TypeError('Google-session middleware is required.');
@@ -287,6 +338,18 @@ export function registerAttachmentsApi(app, { attachmentStore = null, requireGoo
       if (!row) return res.status(404).json({ error: 'Group not found.' });
       return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), mine: row.authorSubject === req.session.stemmaUser.subject,
         author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' }, attachment: row.attachment } });
+    } catch { return unavailable(res); }
+  });
+  app.post('/api/pulse/channels/:id/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {
+    noStore(res);
+    if (!attachmentStore) return unavailable(res);
+    if (!validConversationId(req.params.id)) return res.status(400).json({ error: 'Channel id is invalid.' });
+    const attachment = validateChannelAttachmentBody(req.body);
+    if (!attachment) return res.status(400).json({ error: 'Attachment file data, type, or caption is invalid.' });
+    try {
+      const row = await attachmentStore.createChannelAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
+      if (!row) return res.status(403).json({ error: 'Only the channel owner may post attachments.' });
+      return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), attachment: row.attachment } });
     } catch { return unavailable(res); }
   });
   app.post('/api/pulse/saved/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {

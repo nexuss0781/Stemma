@@ -99,10 +99,66 @@ test('stale navigation results are ignored; channel posts use the API before-cur
   assert.match(source, /cursor = data\.nextBefore \|\| null; hasMore = Boolean\(data\.hasMore\)/);
   assert.match(source, /older\.hidden = !hasMore/);
   assert.match(source, /setTimeout\(tick, 8000\)/);
-  assert.match(source, /if \(!document\.hidden\) \{ await loadChannels\(\); if \(!view\.hidden\) await loadPosts\(\); \}/);
+  assert.match(source, /if \(!document\.hidden\) \{ await loadChannels\(\); if \(!view\.hidden\) \{ await loadPosts\(\);/);
   const backend = read('channels-api.js');
   assert.match(backend, /nextBefore: hasMore \? page\.at\(-1\)\.id : null/);
   assert.match(backend, /id < \$2::bigint/);
+});
+
+test('subscription, mute, leave, pin, and read-cursor controls use explicit persisted API contracts', () => {
+  assert.match(source, /data-channel-subscribe/);
+  assert.match(source, /data-channel-mute/);
+  assert.match(source, /data-channel-leave/);
+  assert.match(source, /data-channel-pin/);
+  assert.match(source, /action = 'subscription'; body = \{ subscribed: true \}/);
+  assert.match(source, /action = 'subscription'; body = \{ subscribed: false \}/);
+  assert.match(source, /action = 'preferences'; body = \{ muted: !current\.muted \}/);
+  assert.match(source, /action = 'pin'; body = \{ postId: current\.pinnedPost\?\.id === pin\.dataset\.channelPin \? null : pin\.dataset\.channelPin \}/);
+  assert.match(source, /encodeURIComponent\(id\)\}\/read`, \{ method: 'POST'[\s\S]*JSON\.stringify\(\{ postId: last \}\)/);
+  assert.match(source, /unreadAfter = current\.isSubscribed && !current\.isOwner \? \(current\.lastReadPostId \|\| '0'\) : null/);
+  assert.match(source, /BigInt\(post\.id\) > BigInt\(unreadAfter\)/,
+    'the divider is derived from real post IDs after the persisted read cursor');
+  assert.match(source, /Number\(current\.subscriberCount \|\| 0\)\.toLocaleString\(\)/,
+    'subscriber display must use the server-provided count rather than a fabricated number');
+  const backend = read('channels-api.js');
+  assert.match(backend, /\/subscription'[\s\S]*validateExactBooleanBody\(req\.body, 'subscribed'\)/);
+  assert.match(backend, /\/preferences'[\s\S]*validateExactBooleanBody\(req\.body, 'muted'\)/);
+  assert.match(backend, /\/read'[\s\S]*validateReadBody\(req\.body\)/);
+  assert.match(backend, /\/pin'[\s\S]*validatePinBody\(req\.body\)/);
+});
+
+test('channel focus mode portals the screen, makes the app inert, and restores navigation and list scroll', () => {
+  assert.match(source, /view\.before\(portal\); document\.body\.append\(view\)/,
+    'the focused channel screen is moved outside the inert app shell');
+  assert.match(source, /app\.inert = true/);
+  assert.match(source, /portal\.replaceWith\(view\); portal = null; if \(app\) app\.inert = appInert/);
+  assert.match(source, /savedScroll = \[\.\.\.shell\.querySelectorAll\('\.pulse-panel, \.pulse-feed, \.pulse-viewport, \.pulse-unified-list'\)\]/,
+    'the scrollable Channel list itself must be captured, not only its non-scrolling ancestors');
+  assert.match(source, /for \(const \[el, top, left\] of savedScroll\) \{ el\.scrollTop = top; el\.scrollLeft = left; \}/);
+  assert.match(source, /StemmaParentNavigation\?\.enter\('pulse-channel', \(\) => back\(true\)/,
+    'browser Back closes the focused view through parent navigation');
+  assert.match(source, /StemmaParentNavigation\?\.back\('pulse-channel'\)/,
+    'the in-view Back button uses the same navigation stack');
+  assert.match(source, /returnFocus = trigger \|\| shell\.querySelector\('\[aria-selected="true"\]\[data-pulse-tab\]'\)/);
+  assert.match(source, /if \(returnFocus\?\.isConnected\) returnFocus\.focus\(\{ preventScroll: true \}\)/);
+});
+
+test('owner attachments are gated and channel posts render image and video previews safely', () => {
+  assert.match(source, /endpoint: \(\) => current\?\.isOwner \? `\$\{api\}\/\$\{encodeURIComponent\(current\.id\)\}\/attachments` : null/);
+  assert.match(source, /ready: \(\) => Boolean\(current\?\.isOwner && !sending\)/);
+  assert.match(source, /if \(\/\^video\\\/\(mp4\|webm\)\$\/\.test\(a\.mimeType\)/,
+    'video attachments use an inline video player');
+  assert.match(source, /root\.StemmaChatAttachments\?\.render\(a\)/,
+    'supported image attachments use the shared safe renderer');
+  const attachmentUi = read('chat-attachments-ui.js');
+  assert.match(attachmentUi, /root\.StemmaChatAttachments/);
+  assert.match(attachmentUi, /\^\\\/api\\\/pulse\\\/attachments\\\/\[a-f0-9-\]\{36\}/i,
+    'only same-origin attachment API URLs are rendered');
+  const attachments = read('attachments-api.js');
+  assert.match(attachments, /app\.post\('\/api\/pulse\/channels\/:id\/attachments'/);
+  assert.match(attachments, /Only the channel owner may post attachments/);
+  assert.match(attachments, /app\.get\('\/api\/pulse\/attachments\/:id', requireGoogleSession/,
+    'downloads require an authenticated reader');
 });
 
 test('Pulse retains All, direct, group, channel, Saved Messages, stories, and palette navigation without new dependencies', () => {

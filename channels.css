@@ -1,24 +1,42 @@
-/* Broadcasts reuse Pulse's cream and burgundy surfaces. */
-.channel-view { height: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; color: var(--brand-burgundy); background: var(--paper-soft); }
-.channel-view[hidden], .channel-compose[hidden], .channel-read-only[hidden] { display: none; }
-.channel-header { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-.channel-header > div { min-width: 0; }
-.channel-header h2 { margin: 0; overflow-wrap: anywhere; font-size: 18px; color: var(--brand-burgundy-deep); }
-.channel-header p { margin: 5px 0 0; font-size: 12px; opacity: .75; }
-.channel-header .group-back { margin: 0; flex: 0 0 auto; }
-.channel-header .pulse-person-mark { flex: 0 0 44px; width: 44px; height: 44px; background: var(--brand-burgundy); color: var(--brand-gold-light); }
-.channel-status { margin: 0; padding: 4px 20px; min-height: 24px; flex: 0 0 auto; font-size: 12px; }
-.channel-history { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px clamp(12px, 3vw, 28px) 20px; scrollbar-width: thin; }
-.channel-post { max-width: 760px; margin: 0 auto 14px; border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: var(--brand-gold-light); }
-.channel-post p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; }
-.channel-post time { display: block; text-align: right; font-size: 11px; opacity: .65; }
+/* One-way broadcasts, using the existing Stemma palette. */
+.channel-view { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; color: var(--brand-burgundy); background: var(--paper-soft); }
+.channel-view[hidden], .channel-view [hidden] { display: none; }
+body.stemma-channel-focus #app-shell { visibility: hidden; pointer-events: none; }
+body.stemma-channel-focus > .channel-view { position: fixed; inset: var(--channel-top, 0px) 0 auto; width: 100%; height: var(--channel-height, 100dvh); z-index: 100; box-sizing: border-box; }
+.channel-header { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; min-height: 68px; padding: max(10px, env(safe-area-inset-top)) max(16px, calc((100vw - 920px) / 2)) 10px; box-sizing: border-box; border-bottom: 1px solid var(--line); background: var(--paper-soft); box-shadow: 0 2px 12px var(--line); }
+.channel-header > div { min-width: 0; flex: 1; }
+.channel-header h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; color: var(--brand-burgundy-deep); }
+.channel-header p { margin: 4px 0 0; font-size: 12px; opacity: .75; }
+.channel-header .group-back { margin: 0; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; background: var(--brand-gold-light); }
+.channel-header .channel-avatar { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; overflow: hidden; background: var(--brand-burgundy); color: var(--brand-gold-light); font-size: 14px; font-weight: 700; }
+.channel-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.channel-header [data-channel-leave] { border: 1px solid var(--line); padding: 8px 10px; border-radius: 20px; font: inherit; font-size: 12px; background: transparent; color: var(--brand-burgundy); cursor: pointer; }
+.channel-status { margin: 0; flex: 0 0 auto; font-size: 12px; }
+.channel-status:not(:empty) { padding: 7px 18px; }
+.channel-pinned { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; width: min(calc(100% - 24px), 880px); box-sizing: border-box; margin: 9px auto 0; padding: 9px 14px; border: 1px solid var(--line); border-left: 3px solid var(--brand-gold); border-radius: 12px; background: var(--brand-gold-light); text-align: left; color: var(--brand-burgundy); cursor: pointer; }
+.channel-pinned strong { font-size: 12px; }
+.channel-pinned span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-size: 12px; opacity: .8; }
+.channel-history { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 18px max(12px, calc((100vw - 880px) / 2)) 24px; scrollbar-width: thin; background-image: radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--brand-gold) 19%, transparent), transparent 65%); overflow-anchor: none; }
+.channel-post { max-width: 760px; margin: 0 auto 15px; border: 1px solid var(--line); border-radius: 20px 20px 20px 6px; overflow: hidden; padding: 15px; background: color-mix(in srgb, var(--brand-gold-light) 68%, var(--paper-soft)); box-shadow: 0 3px 12px var(--line); }
+.channel-post-author { display: block; margin: 0 0 10px; font-size: 12px; }
+.channel-post p { margin: 12px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.65; }
+.channel-post time { display: block; text-align: right; font-size: 10px; opacity: .7; }
+.channel-post .pulse-file-attachment.is-image { display: block; width: 100%; aspect-ratio: 4 / 3; max-width: 100%; margin: 0; border-radius: 12px; overflow: hidden; }
+.channel-post .pulse-file-attachment.is-image img { display: block; width: 100%; height: 100%; max-height: none; object-fit: contain; background: var(--paper-soft); }
+.channel-post .is-image .pulse-file-copy { display: none; }
+.channel-video { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 62dvh; border-radius: 12px; background: var(--brand-burgundy-deep); }
+.channel-pin-control { border: 0; border-radius: 12px; margin-top: 7px; padding: 6px 9px; background: var(--paper-soft); color: var(--brand-burgundy); font: inherit; font-size: 11px; cursor: pointer; }
+.channel-unread { margin: 8px -12px 17px; padding: 8px 12px; background: var(--brand-gold-light); border-block: 1px solid var(--line); text-align: center; font-size: 12px; font-weight: 650; }
 .channel-empty { text-align: center; margin: 24px 0; font-size: 13px; opacity: .75; }
-.channel-read-only { margin: 0; padding: 16px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; }
-.channel-compose { display: flex; flex: 0 0 auto; align-items: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
-.channel-compose textarea { flex: 1; width: 0; min-height: 48px; max-height: 150px; resize: vertical; border: 1px solid var(--line); border-radius: 14px; padding: 12px; font: inherit; font-size: 14px; color: var(--brand-burgundy-deep); background: var(--paper-soft); }
-.channel-compose button { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border: 1px solid var(--brand-burgundy); border-radius: 50%; color: var(--brand-gold-light); background: var(--brand-burgundy); cursor: pointer; }
+.channel-read-only { margin: 0; padding: 7px 16px 0; text-align: center; font-size: 10px; opacity: .7; }
+.channel-reader-controls { display: flex; justify-content: center; flex: 0 0 auto; padding: 10px 16px max(12px, env(safe-area-inset-bottom)); }
+.channel-reader-controls button { width: min(100%, 760px); min-height: 45px; border: 1px solid var(--line); border-radius: 28px; background: var(--brand-gold-light); color: var(--brand-burgundy); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+.channel-compose { display: flex; flex: 0 0 auto; align-items: flex-end; gap: 8px; padding: 12px max(12px, calc((100vw - 880px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.channel-compose textarea { flex: 1; width: 0; min-height: 46px; max-height: min(150px, 25dvh); resize: vertical; box-sizing: border-box; border: 1px solid var(--line); border-radius: 22px; padding: 12px 16px; font: inherit; font-size: 16px; color: var(--brand-burgundy-deep); background: var(--brand-gold-light); }
+.channel-compose button { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border: 1px solid var(--brand-burgundy); border-radius: 50%; color: var(--brand-gold-light); background: var(--brand-burgundy); cursor: pointer; }
+.channel-compose .pulse-attach-button { position: relative; }
 .channel-compose button:disabled { opacity: .5; cursor: default; }
 .channel-create-copy { font-size: 13px; line-height: 1.6; }
 .pulse-create-channel { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--brand-gold); border-radius: 15px; background: var(--brand-burgundy); color: var(--brand-gold-light); box-shadow: 0 6px 16px var(--line); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; visibility: hidden; opacity: 0; pointer-events: none; }
 .is-create-open .pulse-create-channel { visibility: visible; opacity: 1; pointer-events: auto; }
-@media (max-width: 480px) { .channel-header { padding: 12px; gap: 9px; } .channel-header h2 { font-size: 16px; } .channel-header .pulse-person-mark { flex-basis: 36px; width: 36px; height: 36px; } .channel-compose { padding: 10px; } .channel-dialog { max-width: calc(100vw - 24px); } }
+@media (max-width: 480px) { .channel-header { padding-inline: 8px; gap: 8px; } .channel-header h2 { font-size: 16px; } .channel-header .channel-avatar { flex-basis: 38px; width: 38px; height: 38px; } .channel-post { padding: 12px; } .channel-dialog { max-width: calc(100vw - 24px); } }

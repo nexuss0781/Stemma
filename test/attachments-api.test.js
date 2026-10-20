@@ -8,6 +8,7 @@ import session from 'express-session';
 import pg from 'pg';
 import { buildConfig, createApp } from '../server.js';
 import { createAttachmentStore, validateAttachmentBody, MAX_ATTACHMENT_BYTES } from '../attachments-api.js';
+import { createChannelStore } from '../channels-api.js';
 
 const SESSION_SECRET = 'attachments-api-tests-use-a-long-session-secret';
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -158,6 +159,42 @@ test('group attachments upload into the shared store and remain scoped to curren
   assert.equal(response.status, 404);
 });
 
+test('channel attachments are owner-only, accept optional captions, and downloads require a signed-in session', async t => {
+  const created = [];
+  const store = {
+    async createChannelAttachment(subject, id, attachment) {
+      created.push([subject, id, attachment.caption, attachment.name]);
+      if (subject !== 'channel-owner' || id !== '17') return null;
+      return { id: '91', text: attachment.caption || attachment.name, createdAt: new Date('2026-02-04T00:00:00Z'),
+        attachment: { id: ATTACHMENT_ID, url: `/api/pulse/attachments/${ATTACHMENT_ID}`, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size } };
+    },
+    async getAttachmentForSubject(subject, id) {
+      return ['channel-owner', 'channel-reader'].includes(subject) && id === ATTACHMENT_ID
+        ? { id, name: 'sample.png', mimeType: 'image/png', size: PNG.length, data: PNG } : null;
+    }
+  };
+  const h = await createHarness({ attachmentStore: store });
+  t.after(() => h.close());
+  const owner = await h.cookieFor('channel-owner-session', google('channel-owner'));
+  const reader = await h.cookieFor('channel-reader-session', google('channel-reader'));
+
+  let response = await jsonPost(`${h.origin}/api/pulse/channels/17/attachments`, reader, h.origin, fileBody());
+  assert.equal(response.status, 403, 'a forged non-owner request is rejected');
+  response = await jsonPost(`${h.origin}/api/pulse/channels/17/attachments`, owner, h.origin, { ...fileBody(), caption: '  A channel image  ' });
+  assert.equal(response.status, 201);
+  assert.deepEqual((await response.json()).message, { id: '91', text: 'A channel image', createdAt: '2026-02-04T00:00:00.000Z',
+    attachment: { id: ATTACHMENT_ID, url: `/api/pulse/attachments/${ATTACHMENT_ID}`, name: 'sample.png', mimeType: 'image/png', size: 8 } });
+  assert.deepEqual(created, [['channel-reader', '17', '', 'sample.png'], ['channel-owner', '17', 'A channel image', 'sample.png']]);
+  response = await jsonPost(`${h.origin}/api/pulse/channels/17/attachments`, owner, h.origin, { ...fileBody(), caption: 'x'.repeat(4001) });
+  assert.equal(response.status, 400, 'captions longer than 4000 characters are rejected');
+
+  response = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`);
+  assert.equal(response.status, 401, 'anonymous downloads remain denied');
+  response = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`, { headers: { cookie: reader } });
+  assert.equal(response.status, 200, 'any authenticated channel reader can download channel media');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), PNG);
+});
+
 test('PostgreSQL attachments persist across store recreation and authorize saved owners and chat participants', {
   skip: process.env.STEMMA_ATTACHMENTS_POSTGRES_TEST !== '1', timeout: 120000
 }, async t => {
@@ -178,8 +215,11 @@ test('PostgreSQL attachments persist across store recreation and authorize saved
     await pool.query(`CREATE TABLE stemma_groups (id BIGSERIAL PRIMARY KEY)`);
     await pool.query(`CREATE TABLE stemma_groups_memberships (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES stemma_groups ON DELETE CASCADE, member_subject VARCHAR(255) NOT NULL REFERENCES stemma_google_identities ON DELETE CASCADE)`);
     await pool.query(`CREATE TABLE stemma_groups_messages (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES stemma_groups ON DELETE CASCADE, author_subject VARCHAR(255) NOT NULL REFERENCES stemma_google_identities ON DELETE CASCADE, text TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+    await pool.query(`CREATE TABLE stemma_student_profiles (google_subject VARCHAR(255) PRIMARY KEY, nick_name TEXT, username TEXT)`);
     await pool.query(`INSERT INTO stemma_google_identities (google_subject) VALUES ('attach-owner'), ('attach-peer'), ('attach-outsider')`);
     await pool.query(`INSERT INTO stemma_direct_chat_conversations (participant_a, participant_b) VALUES ('attach-owner', 'attach-peer')`);
+    const channels = createChannelStore(pool);
+    await channels.migrate();
     let store = createAttachmentStore(pool);
     await store.migrate();
     await store.migrate();
@@ -197,8 +237,22 @@ test('PostgreSQL attachments persist across store recreation and authorize saved
     assert.equal(await store.getAttachmentForSubject('attach-peer', saved.attachment.id).then(Boolean), false);
     assert.equal(await store.getAttachmentForSubject('attach-outsider', chat.attachment.id).then(Boolean), false);
     assert.equal(await store.getAttachmentForSubject('attach-owner', chat.attachment.id).then(Boolean), true);
+    const channel = await channels.createChannel('attach-owner', 'Attachment integration channel');
+    assert.equal(await store.createChannelAttachment('attach-peer', channel.id, { ...attachment, caption: 'forged reader upload' }), null,
+      'the database INSERT predicate denies non-owner uploads');
+    const channelPost = await store.createChannelAttachment('attach-owner', channel.id, { ...attachment, caption: 'Channel image caption' });
+    assert.equal(channelPost.text, 'Channel image caption');
+    assert.equal(await store.getAttachmentForSubject('attach-outsider', channelPost.attachment.id).then(Boolean), true,
+      'channel attachment downloads are available to any authenticated signed-in reader');
+    assert.deepEqual((await store.getAttachmentsForMessages('attach-outsider', `channel:${channel.id}`, [channelPost.id])).map(item => item.messageId), [channelPost.id]);
+    const filenamePost = await store.createChannelAttachment('attach-owner', channel.id, attachment);
+    assert.equal(filenamePost.text, attachment.name, 'filename is used when caption is omitted');
     await pool.end(); pool = new Pool(scoped);
     store = createAttachmentStore(pool);
+    await store.migrate();
+    await store.migrate();
+    assert.deepEqual((await store.getAttachmentForSubject('attach-peer', channelPost.attachment.id)).data, PNG,
+      'repeated startup migrations preserve existing channel media and its private signed-in download');
     const reopened = await store.getAttachmentForSubject('attach-owner', saved.attachment.id);
     assert.deepEqual(reopened.data, PNG, 'bytea survives database pool/store recreation');
     assert.deepEqual((await store.getAttachmentsForMessages('attach-owner', 'saved', [saved.id])).map(item => item.messageId), [saved.id]);

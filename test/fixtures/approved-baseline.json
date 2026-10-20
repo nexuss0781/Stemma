@@ -53,6 +53,14 @@
     {
       "name": "014_pulse_channels.sql",
       "sha256": "d931b10fa4883279d06d8118fbf4c54b48181e5f00aa9ba634b548843429b1c3"
+    },
+    {
+      "name": "015_pulse_channels_membership.sql",
+      "sha256": "92acd5a420abbeec53afe9773daf126d3a538aaff0621ee85ec056fdf8e6e806"
+    },
+    {
+      "name": "016_channel_attachments.sql",
+      "sha256": "7b3c104e106d75b367be1df3b1dd073c8ec42abf99de5fefea746e63a3db380c"
     }
   ]
 }
