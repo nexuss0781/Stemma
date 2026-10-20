@@ -301,15 +301,14 @@
 #pulse-panel-0 .pulse-saved-row { border-bottom: 1px solid var(--line); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-direct-row:hover { background: var(--brand-gold-light); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-person-mark { flex-basis: 42px; width: 42px; height: 42px; }
-:is(#pulse-panel-0, #pulse-panel-1) .pulse-saved-row .pulse-person-mark { background: var(--brand-burgundy); color: var(--brand-gold); }
+:is(#pulse-panel-0, #pulse-panel-1) .pulse-saved-row .pulse-person-mark { color: var(--brand-burgundy); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-copy { gap: 4px; }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-direct-row-heading strong { font-size: 13px; }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-saved-row strong { font-size: 13px; }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-direct-preview { font-size: 11px; }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-list-empty { color: var(--brand-burgundy); }
 .pulse-feed :is(.pulse-tab, .pulse-panel, .pulse-direct-row, .pulse-saved-row):focus-visible { outline-color: var(--brand-burgundy); }
-/* Boundaries frame only the Group, Channel, and App list containers. */
-:is(#pulse-panel-2, #pulse-panel-3, #pulse-panel-4) .pulse-conversations { background: var(--paper-soft); border-block: 1px solid var(--brand-burgundy); }
+/* All category filters use the same unframed conversation canvas. */
 
 /* Private conversation glass: existing cream, burgundy and gold only. */
 .pulse-direct-chat { position: relative; background: var(--paper-soft); background-image: radial-gradient(ellipse at 8% 18%, color-mix(in srgb, var(--brand-gold) 28%, transparent), transparent 58%), radial-gradient(ellipse at 95% 80%, color-mix(in srgb, var(--brand-gold) 18%, transparent), transparent 55%); border: 1px solid color-mix(in srgb, var(--brand-gold-light) 75%, var(--line)); border-radius: 28px; box-shadow: inset 0 1px 0 var(--brand-gold-light), 0 10px 32px var(--line); }
