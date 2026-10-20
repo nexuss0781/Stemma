@@ -21,6 +21,8 @@ class Element {
     this.isConnected = true;
     this.clicks = 0;
     this.parentNode = null;
+    this.classNames = new Set();
+    this.classList = { add: name => this.classNames.add(name), contains: name => this.classNames.has(name) };
   }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   addEventListener(type, fn) {
@@ -29,7 +31,7 @@ class Element {
     this.listeners.set(type, list);
   }
   dispatch(type, event = {}) {
-    for (const fn of this.listeners.get(type) || []) fn({ preventDefault() {}, stopPropagation() {}, ...event });
+    for (const fn of this.listeners.get(type) || []) fn({ type, target: this, currentTarget: this, preventDefault() {}, stopPropagation() {}, ...event });
   }
   click() { this.clicks += 1; this.dispatch('click'); }
   focus() {}
@@ -43,12 +45,27 @@ class Element {
   }
   remove() { this.isConnected = false; if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(item => item !== this); }
   close() { this.closed = true; }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+    if (name.startsWith('data-')) this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = String(value);
+  }
+  getAttribute(name) { return this.attributes[name] ?? null; }
   showModal() { this.open = true; }
   querySelector(selector) {
     const found = this.elements?.get(selector);
     if (found) return found;
-    if (selector === 'span') return this.children.find(child => child.tagName === 'span') || null;
-    if (selector === 'button') return this.children.find(child => child.tagName === 'button') || null;
+    const matches = node => selector === node.tagName || selector.startsWith('.') && node.className === selector.slice(1) ||
+      selector.startsWith('[aria-label="') && node.getAttribute('aria-label') === selector.slice(13, -2);
+    const visit = node => {
+      for (const child of node.children || []) {
+        if (matches(child)) return child;
+        const nested = visit(child);
+        if (nested) return nested;
+      }
+      return null;
+    };
+    const child = visit(this);
+    if (child) return child;
     return null;
   }
   querySelectorAll(selector) {
@@ -104,13 +121,14 @@ function createPicker() {
   const body = new Element('body');
   body.append = dialog => { dialog.parentNode = body; body.children.push(dialog); dialogs.push(dialog); };
   const revoked = [];
+  const created = [];
   const root = {
     document: {
       body,
       createElement(tag) { return tag === 'dialog' ? new Dialog() : new Element(tag); }
     },
     URL: {
-      createObjectURL(file) { return `blob:test-${file.name}`; },
+      createObjectURL(file) { created.push(file); return `blob:test-${file.name}`; },
       revokeObjectURL(url) { revoked.push(url); }
     },
     AbortController,
@@ -121,7 +139,21 @@ function createPicker() {
   const button = new Element('button');
   const signal = new AbortController().signal;
   const pickPhoto = options => root.StemmaChatAttachments.pickPhoto({ button, signal, ...options });
-  return { root, button, dialogs, revoked, pickPhoto };
+  return { root, button, dialogs, revoked, created, pickPhoto };
+}
+
+function createChatPicker() {
+  const h = createPicker();
+  const input = new Element('input');
+  const form = { querySelector: selector => selector === '.pulse-attach-button' ? h.button : selector === '.pulse-attach-input' ? input : null };
+  const signal = new AbortController().signal;
+  h.root.StemmaChatAttachments.mount(form, {
+    listen: (target, type, listener) => target.addEventListener(type, listener),
+    signal,
+    endpoint: () => '/attachments'
+  });
+  h.button.click();
+  return { ...h, input: h.dialogs[0].querySelector('[data-modal-input]') };
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -154,7 +186,7 @@ test('photo selection applies caller accept and size limits and returns the chos
   const localInput = dialog.querySelector('[data-modal-input]');
   const gallery = dialog.querySelector('[data-attachment-category="Gallery"]');
   gallery.click();
-  assert.equal(localInput.accept, '.png');
+  assert.equal(localInput.accept, 'image/png');
   assert.equal(localInput.clicks, 1);
   localInput.files = [file, { name: 'too-large.png', size: 17, lastModified: 2, type: 'image/png' }];
   localInput.dispatch('change');
@@ -165,6 +197,84 @@ test('photo selection applies caller accept and size limits and returns the chos
   assert.deepEqual(selected, [file]);
   assert.equal(dialog.closed, true);
   assert.equal(h.revoked.length, 1);
+});
+
+test('Gallery opens the native chooser synchronously and chosen File objects persist across tabs, selection changes, and preview', () => {
+  const h = createChatPicker();
+  const dialog = h.dialogs[0];
+  const localInput = h.input;
+  const grid = dialog.querySelector('.attachment-grid');
+  const photo = new File(['image bytes'], 'gallery-photo.png', { type: 'image/png', lastModified: 10 });
+  const document = new File(['document bytes'], 'notes.pdf', { type: 'application/pdf', lastModified: 11 });
+  const gallery = dialog.querySelector('[data-attachment-category="Gallery"]');
+  const fileTab = dialog.querySelector('[data-attachment-category="File"]');
+
+  gallery.click();
+  assert.equal(localInput.clicks, 1, 'the native Gallery input is clicked before the tab click handler returns');
+  localInput.files = [photo];
+  localInput.dispatch('change');
+  assert.deepEqual(h.created, [photo], 'the selected browser File object is passed intact to object-URL creation');
+  assert.equal(grid.children.length, 1);
+  assert.equal(grid.children[0].children[0].getAttribute('aria-label'), 'Preview gallery-photo.png');
+
+  fileTab.click();
+  assert.equal(localInput.clicks, 2, 'File tab also opens its native chooser synchronously');
+  assert.equal(grid.children.length, 1, 'switching tabs does not discard the chosen Gallery file');
+  localInput.files = [document];
+  localInput.dispatch('change');
+  assert.deepEqual(h.created, [photo, document], 'both original File object references populate picker entries');
+  assert.equal(grid.children.length, 2, 'File shows both previously chosen and newly chosen files');
+
+  const checkboxFor = name => {
+    const card = grid.children.find(tile => tile.children[0].getAttribute('aria-label') === `Preview ${name}`);
+    assert.ok(card, `${name} has a rendered tile`);
+    return card.children[1].children[0];
+  };
+  const photoCheckbox = checkboxFor('gallery-photo.png');
+  photoCheckbox.checked = false;
+  photoCheckbox.dispatch('change');
+  assert.equal(dialog.querySelector('[data-attachment-count]').textContent, '1', 'deselecting updates the count without removing the File');
+
+  gallery.click();
+  assert.equal(grid.children.length, 1, 'Gallery filtering hides the PDF but keeps the image entry');
+  fileTab.click();
+  assert.equal(grid.children.length, 2, 'returning to File restores both original files');
+  assert.equal(checkboxFor('gallery-photo.png').checked, false, 'the deselected state survives a tab round trip');
+  assert.equal(checkboxFor('notes.pdf').checked, true, 'the other file remains selected');
+
+  checkboxFor('gallery-photo.png').checked = true;
+  checkboxFor('gallery-photo.png').dispatch('change');
+  assert.equal(dialog.querySelector('[data-attachment-count]').textContent, '2', 'reselection restores the selected count');
+  gallery.click();
+  fileTab.click();
+  assert.equal(checkboxFor('gallery-photo.png').checked, true, 'the reselected File remains selected across tabs');
+
+  grid.children.find(tile => tile.children[0].getAttribute('aria-label') === 'Preview gallery-photo.png').children[0].click();
+  assert.equal(dialog.querySelector('.attachment-preview').hidden, false, 'preview opens as a separate layer');
+  assert.equal(grid.hidden, true, 'the selection grid is hidden while preview is open');
+  assert.equal(dialog.querySelector('.attachment-preview-media').children[0].src, 'blob:test-gallery-photo.png');
+  dialog.querySelector('[data-preview-close]').click();
+  assert.equal(dialog.querySelector('.attachment-preview').hidden, true, 'closing preview returns to selection');
+  assert.equal(grid.hidden, false);
+  assert.equal(grid.children.length, 2, 'closing preview leaves the original selected files intact');
+  assert.equal(dialog.querySelector('[data-attachment-count]').textContent, '2');
+  assert.deepEqual(h.created, [photo, document]);
+});
+
+test('chat picker accepts a 5 MiB File and rejects one byte over the chat attachment limit', () => {
+  const h = createChatPicker();
+  const dialog = h.dialogs[0];
+  const localInput = h.input;
+  const exactLimit = new File([new Uint8Array(5 * 1024 * 1024)], 'exact-limit.png', { type: 'image/png' });
+  const overLimit = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'over-limit.png', { type: 'image/png' });
+
+  dialog.querySelector('[data-attachment-category="Gallery"]').click();
+  assert.equal(localInput.clicks, 1, 'Gallery launches the native chooser without deferral');
+  localInput.files = [exactLimit, overLimit];
+  localInput.dispatch('change');
+  assert.deepEqual(h.created, [exactLimit], 'only the valid actual File object is retained');
+  assert.equal(dialog.querySelector('.attachment-grid').children.length, 1);
+  assert.match(dialog.querySelector('.attachment-feedback').textContent, /over-limit\.png: choose a nonempty file up to 5\.0 MB/);
 });
 
 test('camera action opens the dedicated camera input and the File tab keeps the caller photo filter', () => {

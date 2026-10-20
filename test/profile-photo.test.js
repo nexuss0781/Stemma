@@ -230,6 +230,12 @@ test('prepare resizes decoded images without changing aspect ratio and requests 
   const prepared = await portrait.Store.prepare({ naturalWidth: 320, naturalHeight: 1200 });
   assert.equal(prepared, webp);
   assert.deepEqual([portrait.canvases[0].width, portrait.canvases[0].height], [205, 768]);
+
+  const boundary = createHarness();
+  const oneMiB = new Blob([new Uint8Array(1024 * 1024)], { type: 'image/webp' });
+  boundary.canvasConfig.responses = [oneMiB];
+  assert.equal(await boundary.Store.prepare({ naturalWidth: 640, naturalHeight: 640 }), oneMiB,
+    'avatar preparation accepts output at the exact 1 MiB upload limit');
 });
 
 test('prepare rejects invalid dimensions, unavailable canvas, null encodes, and oversized output', async () => {

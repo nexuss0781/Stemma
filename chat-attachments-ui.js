@@ -4,6 +4,9 @@
   const MAX_BYTES = 5 * 1024 * 1024;
   const ACCEPT = '.jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.csv,.zip,.docx,.xlsx,.pptx,.mp3,.wav,.ogg,.mp4,.webm';
   const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', zip: 'application/zip', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', webm: 'video/webm' };
+  // Android chooser routing uses MIME filters; validation still uses the original allowlist.
+  const PHOTO_MIME = { ...MIME, avif: 'image/avif', bmp: 'image/bmp', heic: 'image/heic', heif: 'image/heif' };
+  const GALLERY_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm';
   const clip = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7L13 3a2 2 0 0 1 3 3L6.5 15.5a.8.8 0 0 1-1-1L14 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function control() {
     return `<button type="button" class="pulse-attach-button" aria-label="Attach file" aria-haspopup="dialog" title="Attach file · up to 5 MB">${clip}<span class="pulse-attachment-plus" aria-hidden="true">+</span></button><input type="file" class="pulse-attach-input" aria-label="Choose files to attach" accept="${ACCEPT}" multiple hidden>`;
@@ -87,6 +90,12 @@
       const confirm = dialog.querySelector('[data-attachment-send]');
       const browse = dialog.querySelector('[data-attachment-browse]');
       let entries = [], serial = 0, sending = false, category = 'Gallery', closed = false, afterPreview = null;
+      const galleryAccept = photo ? [...new Set(accept.split(',').map(ext => PHOTO_MIME[ext.trim().replace(/^\./, '')]).filter(Boolean))].join(',') || 'image/*' : GALLERY_ACCEPT;
+      localInput.accept = galleryAccept;
+      const guidance = root.document.createElement('small');
+      guidance.className = 'attachment-device-help';
+      guidance.textContent = 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.';
+      empty.append(guidance);
       function close() {
         if (closed) return;
         closed = true; controller.abort();
@@ -105,7 +114,7 @@
       function choose(nextCategory) {
         if (sending || closed) return;
         category = nextCategory;
-        localInput.accept = photo ? accept : category === 'Gallery' ? '.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm' : ACCEPT;
+        localInput.accept = category === 'Gallery' ? galleryAccept : photo ? accept : ACCEPT;
         localInput.value = '';
         for (const item of dialog.querySelectorAll('[data-attachment-category]')) {
           const selected = item.dataset.attachmentCategory === category;
@@ -115,6 +124,9 @@
         paint();
         browse.querySelector('span').textContent = category === 'Gallery' ? 'Choose photos' : 'Choose files';
         browse.setAttribute('aria-label', category === 'Gallery' ? 'Choose photos' : 'Choose files');
+        guidance.textContent = category === 'Gallery' ? 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.' : 'Tap File to open your device file chooser. Only files you choose appear here.';
+        feedback.textContent = '';
+        // Keep this synchronous in the explicit tap handler to preserve browser user activation.
         try { localInput.click(); } catch { feedback.textContent = 'File access is unavailable. Try again in your browser.'; }
       }
       function camera() {
@@ -189,13 +201,15 @@
         for (const file of [...input.files]) {
           if (!file.size || file.size > maxBytes) { errors.push(`${file.name}: choose a nonempty file up to ${sizeLabel(maxBytes)}.`); continue; }
           if (!(photo ? accept : ACCEPT).split(',').some(ext => file.name.toLowerCase().endsWith(ext))) { errors.push(`${file.name}: unsupported file type.`); continue; }
-          if (entries.some(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) continue;
-          if (photo) { for (const old of entries) root.URL.revokeObjectURL(old.url); entries = []; }
+          const existing = entries.find(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified);
+          if (photo) entries.forEach(item => { item.selected = false; });
+          if (existing) { existing.selected = true; continue; }
           entries.push({ id: ++serial, file, kind: kind(file), selected: true, url: root.URL.createObjectURL(file) });
         }
         feedback.textContent = errors.join(' '); input.value = ''; paint();
       }
       localInput.addEventListener('change', () => receiveFiles(localInput), { signal: controller.signal });
+      localInput.addEventListener('cancel', () => { feedback.textContent = entries.length ? 'No new files chosen. Your previous choices are still here.' : 'No files chosen. Tap Gallery or File and select items in your device chooser.'; }, { signal: controller.signal });
       cameraInput.addEventListener('change', () => receiveFiles(cameraInput), { signal: controller.signal });
       dialog.querySelector('[data-attachment-camera]').addEventListener('click', camera, { signal: controller.signal });
       dialog.querySelector('[data-attachment-add]').addEventListener('click', () => choose(category), { signal: controller.signal });

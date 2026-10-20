@@ -403,6 +403,7 @@ body.stemma-chat-focus .pulse-direct-compose { padding-left: max(10px, calc((100
 .attachment-empty { display: grid; place-items: center; min-height: 240px; }
 .pulse-attachment-dialog .attachment-empty button { display: flex; align-items: center; flex-direction: column; gap: 12px; padding: 28px; font-size: 12px; }
 .attachment-empty svg { width: 36px; height: 36px; }
+.attachment-device-help { display: block; max-width: 32ch; padding: 0 20px 20px; text-align: center; font-size: 12px; line-height: 1.5; }
 .attachment-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
 .attachment-tile { position: relative; min-width: 0; border-radius: 5px; overflow: hidden; background: var(--paper-soft); }
 .pulse-attachment-dialog .attachment-thumbnail { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border-radius: 0; background: var(--brand-gold-light); overflow: hidden; }
