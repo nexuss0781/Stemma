@@ -1,5 +1,5 @@
 {
-  "serverSha256": "70f86e51bba4d396135f49e581989e7d52aefd03b5ed1d19cf0a9101fcfc22a2",
+  "serverSha256": "ca5e28e7ff8a5b03d100371b91832dc8b9d9eef445b349f85f15911c4e013fd1",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -33,6 +33,10 @@
     {
       "name": "008_direct_chat_replies.sql",
       "sha256": "5c69339720becf15b994eba6d9f02ba2627c8b335956b5c431a0438c3a0e0427"
+    },
+    {
+      "name": "009_groups.sql",
+      "sha256": "0f93d19c10e720a8916dd9e3d5cb7b78f6b01c02ad4bf2c1ad534ba2c5c2fa2c"
     }
   ]
 }

@@ -61,7 +61,7 @@ test('Pulse search categories are icon-only and provide local tab affordances', 
     'category selection is scoped to the local search-tab preview controls');
 });
 
-test('public Pulse lookup searches and renders only usernames and nicknames safely', () => {
+test('public Pulse lookup searches users and public groups safely in their supported categories', () => {
   const start = dataSource.indexOf('async function lookup(');
   const end = dataSource.indexOf('function paintNotes()', start);
   assert.ok(start >= 0 && end > start, 'the public-user lookup has a bounded implementation');
@@ -70,14 +70,26 @@ test('public Pulse lookup searches and renders only usernames and nicknames safe
     'a leading @ is removed before searching');
   assert.match(lookup, /`\/api\/pulse\/users\?q=\$\{encodeURIComponent\(query\)\}&offset=\$\{offset\}`/,
     'queries are encoded and sent to the public-user lookup endpoint');
-  assert.match(lookup, /Number\(tab\.dataset\.pulseSearchTab\) < 2/,
-    'lookup is available in All and User categories only');
+  assert.match(lookup, /const wantUsers = activeTab === 0 \|\| activeTab === 1/,
+    'All and User categories search public usernames');
+  assert.match(lookup, /const wantGroups = activeTab === 0 \|\| activeTab === 2/,
+    'All and Group categories search public groups');
+  assert.match(lookup, /wantGroups && groups\?\.search \? groups\.search\(query, controller\.signal\)/,
+    'group lookup delegates to the public group search client');
+  assert.match(lookup, /filter\(item => item\.visibility === 'public'\)/,
+    'private group results are discarded before rendering');
+  assert.match(lookup, /row\.dataset\.groupOpen = group\.id/);
+  assert.match(lookup, /node\('strong', '', group\.name \|\| 'Group'\)/);
+  assert.match(lookup, /node\('span', '', `\$\{Number\(group\.memberCount\) \|\| 0\} members`\)/);
   assert.match(lookup, /node\('strong', '', user\.nickName \|\| `@\$\{user\.username\}`\)/);
   assert.match(lookup, /node\('span', '', `@\$\{user\.username\}`\)/);
   assert.match(lookup, /user\.nickName \|\| user\.username/);
   const userFields = [...lookup.matchAll(/user\.([A-Za-z_$][\w$]*)/g)].map(match => match[1]);
   assert.deepEqual([...new Set(userFields)].sort(), ['nickName', 'username'],
     'public results use no legal name, email, or other private profile fields');
+  const groupFields = [...lookup.matchAll(/group\.([A-Za-z_$][\w$]*)/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(groupFields)].sort(), ['id', 'memberCount', 'name'],
+    'rendered public group results expose only their identifier, public name, and member count');
   assert.match(dataSource, /el\.textContent = value/,
     'user-provided result labels are assigned as text, not interpreted markup');
   assert.doesNotMatch(lookup, /\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML/,

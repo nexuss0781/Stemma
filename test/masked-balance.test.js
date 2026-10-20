@@ -29,7 +29,7 @@ test('Overview identity updates retain fallback skeletons and dashboard card ske
 });
 
 test('approved bill navigation remains visual-only and makes no financial API or money requests', () => {
-  assert.match(html, /<script src="payment-ui\.js\?v=\d+" defer><\/script>/);
+  assert.match(html, /<script src="\/payment-ui\.js\?v=\d+" defer><\/script>/);
   assert.match(app, /const payments = new PaymentExperience\(\)/);
   assert.match(app, /data-open-bill/);
   assert.match(paymentUi, /renderBill\(\)/);

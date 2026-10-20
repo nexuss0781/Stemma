@@ -5,10 +5,11 @@ import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { createApp, buildConfig } from '../server.js';
 const root = new URL('../', import.meta.url);
-const [source, dataSource, css, html, app] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js'].map(name => readFile(new URL(name, root), 'utf8')));
+const [source, dataSource, css, html, app, groupsSource] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js', 'groups-ui.js'].map(name => readFile(new URL(name, root), 'utf8')));
 function load(fetchImpl) {
   const effects = [];
   const context = vm.createContext({ fetch: fetchImpl || (() => effects.push('fetch')), XMLHttpRequest: () => effects.push('xhr') });
+  vm.runInContext(groupsSource, context);
   vm.runInContext(dataSource, context);
   vm.runInContext(source, context);
   return { pulse: context.StemmaPulse, data: context.StemmaPulseData, effects };
@@ -39,7 +40,12 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
     'All retains the four gesture-stage containers');
   assert.equal((panels[0].match(/\bpulse-saved-row\b/g) || []).length, 4,
     'the same actual Saved Messages row appears in each All stage');
-  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'there is no visible non-row feed copy');
+  assert.equal(withoutSavedRowText(panels[0]).replace(/<[^>]*>/g, '').trim(), '',
+    'All contains no visible non-row feed copy');
+  assert.match(panels[2], /Loading groups…/,
+    'the Groups view can show its async loading status');
+  assert.match(markup, /class="pulse-create-group"[^>]*data-group-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> New group<\/button>/,
+    'create-menu copy belongs to the separately scoped Groups action');
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
@@ -79,7 +85,7 @@ test('All stages render only the Saved Messages row with an inline bookmark-stac
   assert.match(dataSource, /request\('\/api\/pulse\/saved', \{ method: 'POST'/,
     'the compose action saves notes only to that private collection');
 });
-test('User retains four empty direct-conversation containers while Group, Channel, and App stay empty', () => {
+test('User retains direct conversations; Group exposes group rows while Channel and App stay empty', () => {
   const markup = load().pulse.render();
   const panels = panelsFrom(markup);
   assert.equal(panels.length, 5);
@@ -88,13 +94,18 @@ test('User retains four empty direct-conversation containers while Group, Channe
     assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
     if (index === 0) continue;
     for (const [stageIndex, stage] of stages.entries()) {
-      assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `category ${index} has no visible feed content`);
       if (index === 1) {
+        assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `User stage ${stageIndex} stays empty until direct conversations load`);
         assert.match(stage, /aria-label="Direct conversations"/);
         assert.match(stage, /<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"><\/div>/,
           'each User stage mounts the empty direct-conversation list for async population');
         assert.doesNotMatch(stage, /pulse-saved-row|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/);
+      } else if (index === 2) {
+        assert.match(stage, /data-group-lists role="list" aria-label="Group conversations"/,
+          `Group stage ${stageIndex} exposes an async group-list target`);
+        assert.doesNotMatch(stage, /pulse-saved-row|pulse-direct-list|pulse-stories|pulse-preview|skeleton|pulse-app-grid/);
       } else {
+        assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `category ${index} has no visible feed content`);
         assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation\b|pulse-direct-list|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
           `category ${index} stage ${stageIndex} has no saved row, chat, story, discovery, app-grid, or skeleton placeholder`);
       }
@@ -142,20 +153,17 @@ test('the create-preview toggle is accessible and retains its inline layered-plu
   assert.doesNotMatch(toggle[1], /<use\b/i,
     'the create artwork is inline rather than an external symbol reference');
 });
-test('create previews are three hidden, inert, decorative skeleton placeholders only', () => {
+test('create menu offers only the functional New group action and remains hidden until opened', () => {
   const markup = load().pulse.render();
   const previews = markup.match(/<(div|section)\b(?=[^>]*\bclass="[^"]*\bpulse-create-previews\b)(?=[^>]*\bid="pulse-create-previews")[^>]*>([\s\S]*?)<\/\1>/);
   assert.ok(previews, 'the preview container is present with the controlled id');
   assert.match(previews[0], /aria-hidden="true"/);
   assert.match(previews[0], /\binert(?:\s|>)/);
-  const items = [...previews[2].matchAll(/<span\b(?=[^>]*\bclass="(?:[^\"]*\s)?pulse-create-preview(?:\s[^\"]*)?")[^>]*>([\s\S]*?)<\/span>/g)];
-  assert.equal(items.length, 3, 'exactly three preview placeholders are rendered');
-  for (const [, content] of items) {
-    assert.equal(content.replace(/<[^>]*>/g, '').trim(), '', 'placeholders contain no visible labels');
-    assert.doesNotMatch(content, /<(?:a|button|input|select|textarea)\b|\b(?:role|tabindex|onclick|data-pulse-[\w-]+)=/i,
-      'placeholders expose no controls or action hooks');
-  }
-  assert.equal(withoutSavedRowText(markup.split('<section class="pulse-search"')[0]).replace(/<[^>]*>/g, '').trim(), '', 'the non-saved Pulse shell remains text-free');
+  assert.match(previews[2], /<button[^>]*class="pulse-create-group"[^>]*data-group-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> New group<\/button>/,
+    'the single menu entry is actionable and creates only groups');
+  assert.doesNotMatch(previews[2], /Channel|App|skeleton|pulse-create-preview/,
+    'unfinished Channel and App actions are not presented as enabled');
+  assert.equal((previews[2].match(/data-group-create/g) || []).length, 1);
 });
 test('create previews toggle from the shell and support Escape and outside dismissal', () => {
   assert.match(source, /classList\.toggle\(['"]is-create-open['"]/,
@@ -166,14 +174,11 @@ test('create previews toggle from the shell and support Escape and outside dismi
   assert.match(source, /listen\(document,\s*['"]pointerdown['"][\s\S]*?setCreateOpen\(false\)/,
     'an outside pointer interaction closes the create previews');
 });
-test('create preview transitions stagger bottom-up and are disabled for reduced motion', () => {
-  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(3\)[^{]*\{[^}]*transition-delay:\s*0ms/);
-  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(2\)[^{]*\{[^}]*transition-delay:\s*70ms/);
-  assert.match(css, /[^{}]*\.pulse-create-preview:nth-child\(1\)[^{]*\{[^}]*transition-delay:\s*140ms/);
-  const reducedMotion = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
-  assert.ok(reducedMotion, 'a reduced-motion media query is defined');
-  assert.match(reducedMotion[1], /\.pulse-create-preview[^{]*\{[^}]*transition:\s*none/,
-    'reduced motion disables the per-item preview transition');
+test('the New group menu has a restrained transition and honors reduced motion', async () => {
+  const groupsCss = await readFile(new URL('../groups.css', import.meta.url), 'utf8');
+  assert.match(groupsCss, /\.is-create-open \.pulse-create-group[^{}]*\{[^}]*visibility:\s*visible/);
+  assert.match(groupsCss, /\.pulse-create-group[^{}]*\{[^}]*transition:/);
+  assert.match(groupsCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)[^{]*\{[^}]*\.pulse-create-group[^{}]*\{[^}]*transition:\s*none/);
 });
 test('each of the five categories can be selected without changing the Saved Messages-only feed', () => {
   const { pulse } = load();
@@ -197,8 +202,10 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="pulse-ui.js\?v=\d+" defer/,
+  assert.match(html, /src="\/direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-ui.js\?v=\d+" defer/,
     'the data client loads before Pulse rendering');
+  assert.match(html, /<script src="\/groups-ui.js\?v=\d+" defer><\/script>/,
+    'the Groups client uses a root-relative asset URL');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
 });
 test('Pulse rounds its category bar and highlights only the selected category in existing burgundy and gold', () => {

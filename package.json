@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check app.js"
+    "check": "node --check server.js && node --check app.js && node --check groups-api.js && node --check groups-ui.js"
   },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",

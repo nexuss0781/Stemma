@@ -135,6 +135,17 @@ function makeTextElement() {
   };
 }
 
+test('public group and private invite links open Pulse without changing other account memory', () => {
+  for (const pathname of ['/Stemma_Circle', '/invite/abcdefghijklmnopqrstuvwxyz123456']) {
+    const h = makeHarness();
+    h.window.location.pathname = pathname;
+    h.save('google:shared@example.test', makeState('profile'));
+    h.evaluate("restoreNavigationLocation('google:shared@example.test')");
+    assert.equal(h.evaluate('activeRoute'), 'pulse');
+    assert.equal(h.window.location.hash, '#pulse');
+  }
+});
+
 test('fresh account starts at Overview and ignores another account’s stored route and stale hash', () => {
   const h = makeHarness();
   assert.equal(h.save('google:other@example.test', makeState('profile', { tab: 2 })), true);
@@ -327,13 +338,13 @@ test('drawer puts Overview first and Pulse follows Cards in bottom-nav order; si
   assert.match(bottomNav, /const drawerSections = \[sections\.find\(item => item\.id === 'overview'\), \.\.\.sections\.filter\(item => item\.id !== 'overview'\)\]/);
   assert.match(bottomNav, /drawerSections\.map\(item\s*=>/);
 
-  assert.match(htmlSource, /<img class="drawer-college-crest" src="assets\/tafari-makonnen-sidebar-crest\.png" alt="Tafari Makonnen College crest"\s*\/>/);
+  assert.match(htmlSource, /<img class="drawer-college-crest" src="\/assets\/tafari-makonnen-sidebar-crest\.png" alt="Tafari Makonnen College crest"\s*\/>/);
   const crest = await readFile(new URL('../assets/tafari-makonnen-sidebar-crest.png', import.meta.url));
   assert.equal(crest.subarray(1, 4).toString(), 'PNG');
   assert.equal(crest[25], 6, 'sidebar crest is a true RGBA PNG with an alpha channel');
   assert.equal(crest.readUInt32BE(16), 672);
   assert.equal(crest.readUInt32BE(20), 582);
-  assert.match(htmlSource, /<img class="welcome-college-logo" src="assets\/tafari-makonnen-college-logo\.png"/);
+  assert.match(htmlSource, /<img class="welcome-college-logo" src="\/assets\/tafari-makonnen-college-logo\.png"/);
   await readFile(new URL('../assets/tafari-makonnen-college-logo.png', import.meta.url));
   assert.match(cssSource, /@font-face\s*\{[^}]*font-family:\s*'Fraunces Deadline'[^}]*url\('\/assets\/fraunces-deadline\.ttf'\)/s);
   assert.match(cssSource, /\.drawer-student-name\s*\{[^}]*font-family:\s*'Fraunces Deadline'/s);

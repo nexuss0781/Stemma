@@ -11,9 +11,11 @@
   // Match the supplied stacked-bookmark silhouette using the existing avatar palette.
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
-    if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations" role="list" aria-label="${kind === 'app' ? 'App' : kind === 'group' ? 'Group' : 'Channel'} conversations"></div>`;
+    if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
+    if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
     const saved = kind === 'all' ? `<button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span></button>` : '';
-    return `<div class="pulse-conversations">${saved}<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div></div>`;
+    const groups = kind === 'all' ? `<div class="pulse-group-conversations" data-group-lists role="list" aria-label="Your groups"></div>` : '';
+    return `<div class="pulse-conversations">${saved}<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div>${groups}</div>`;
   }
   function stages(kind) {
     // Keep gesture/stage state intact without showing unfinished stories or grids.
@@ -23,13 +25,13 @@
   function searchView() {
     return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search" hidden>
       <div class="pulse-search-header">
-        <label class="pulse-search-field">${glyph('pulse-search')}<input id="pulse-search-input" type="search" placeholder="Username or nickname" aria-label="Search Pulse" aria-describedby="pulse-search-hint" autocomplete="off" spellcheck="false"></label>
+        <label class="pulse-search-field">${glyph('pulse-search')}<input id="pulse-search-input" type="search" placeholder="Search users or groups" aria-label="Search Pulse" aria-describedby="pulse-search-hint" autocomplete="off" spellcheck="false"></label>
         <button type="button" class="pulse-search-close" aria-label="Close Pulse search">${glyph('close')}</button>
       </div>
-      <span id="pulse-search-hint" class="pulse-announcement">Search app users by username or nickname only.</span>
+      <span id="pulse-search-hint" class="pulse-announcement">Search users and public groups by name.</span>
       <nav class="pulse-search-tabs pulse-tabs" role="tablist" aria-label="Search categories">${categories.map((item, i) => `<button type="button" class="pulse-search-tab pulse-tab" role="tab" aria-label="Search ${item.label}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-pulse-search-tab="${i}" aria-controls="pulse-search-results">${glyph(item.icon)}</button>`).join('')}</nav>
       <div class="pulse-search-body" id="pulse-search-results" role="region" aria-label="Pulse search results">
-        <p class="pulse-data-status pulse-user-status" role="status" aria-live="polite" hidden></p><div class="pulse-user-results" role="list" aria-label="Users" hidden></div><button type="button" class="pulse-users-more" hidden>Load more users</button>
+        <p class="pulse-data-status pulse-user-status" role="status" aria-live="polite" hidden></p><div class="pulse-user-results" role="list" aria-label="Users" hidden></div><div class="pulse-group-results" data-pulse-group-results role="list" aria-label="Public groups" hidden></div><button type="button" class="pulse-users-more" hidden>Load more users</button>
         <div class="pulse-search-suggestions" tabindex="0" role="region" aria-label="Suggested previews, scroll horizontally"><div aria-hidden="true">${Array.from({ length: 8 }, () => `<div class="pulse-search-suggestion">${bone('pulse-search-circle')}${bone('pulse-search-caption')}</div>`).join('')}</div></div>
         <div class="pulse-search-recent-heading"><h2>Recent</h2><button type="button" class="pulse-search-clear" disabled title="Recent history is coming later">Clear All</button></div>
         <div class="pulse-search-recents" role="list" aria-label="Recent search placeholders">${Array.from({ length: 6 }, (_, i) => `<div class="pulse-search-recent-row" role="listitem" aria-label="Recent search placeholder ${i + 1}"><div class="pulse-search-row-skeleton" aria-hidden="true">${bone('pulse-avatar')}<div class="pulse-copy">${bone(`pulse-name pulse-length-${i % 3}`)}${bone('pulse-preview')}</div></div><button type="button" class="pulse-search-remove" aria-label="Remove recent search placeholder ${i + 1}" disabled title="Recent history is coming later">${glyph('close')}</button></div>`).join('')}</div>
@@ -44,7 +46,7 @@
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
         <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'app'][i])}</section>`).join('')}</div></div>
         <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
-          ${[1, 2, 3].map(order => `<span class="pulse-create-preview" style="--preview-order:${order}">${bone('pulse-create-preview-icon')}${bone('pulse-create-preview-line')}</span>`).join('')}
+          <button type="button" class="pulse-create-group" data-group-create><span aria-hidden="true">＋</span> New group</button>
         </div>
         <button type="button" class="pulse-create-affordance" aria-label="Toggle create previews" aria-expanded="false" aria-controls="pulse-create-previews">
           <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
@@ -56,6 +58,7 @@
       </div>
       ${root.StemmaDirectChat ? root.StemmaDirectChat.view() : ''}
       ${searchView()}
+      ${root.StemmaGroups ? root.StemmaGroups.view() : ''}
       ${root.StemmaPulseData ? root.StemmaPulseData.savedView() : ''}
     </section>`;
   }
@@ -76,10 +79,14 @@
     function setCreateOpen(open) {
       shell.classList.toggle('is-create-open', open);
       createToggle.setAttribute('aria-expanded', String(open));
+      const menu = shell.querySelector('#pulse-create-previews');
+      menu.inert = !open;
+      if (open) menu.removeAttribute('aria-hidden'); else menu.setAttribute('aria-hidden', 'true');
     }
     listen(createToggle, 'click', () => setCreateOpen(createToggle.getAttribute('aria-expanded') !== 'true'));
     listen(document, 'pointerdown', event => {
-      if (!createToggle.contains(event.target)) setCreateOpen(false);
+      const createMenu = shell.querySelector('#pulse-create-previews');
+      if (!createToggle.contains(event.target) && !createMenu.contains(event.target)) setCreateOpen(false);
     });
     listen(document, 'keydown', event => {
       if (event.key === 'Escape' && createToggle.getAttribute('aria-expanded') === 'true') {
@@ -337,7 +344,8 @@
     });
     listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
-    root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true) });
+    const groups = root.StemmaGroups?.mount(shell, { listen, signal: abort.signal });
+    root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true), groups });
     cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories, unmount: () => { cleanup(); cleanup = () => {}; } });

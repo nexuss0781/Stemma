@@ -18,7 +18,7 @@ test('Profile heading keeps its title and only one accessible notification butto
   assert.match(html, /id="notifications-back"[^>]*aria-label="Back to previous page"/);
   assert.match(html, /id="notifications-content"[^>]*aria-live="polite"/);
   assert.doesNotMatch(html, /id="notifications-dialog"|id="notifications-close"/);
-  assert.match(html, /src="notifications-ui\.js\?v=\d+" defer/);
+  assert.match(html, /src="\/notifications-ui\.js\?v=\d+" defer/);
 });
 
 test('bell appears at far right only on Profile and other pages preserve their grid', () => {

@@ -9,12 +9,13 @@
       <form class="pulse-saved-compose">${root.StemmaChatAttachments?.control() || ''}<label class="pulse-announcement" for="pulse-saved-text">Message to save</label><textarea id="pulse-saved-text" rows="2" maxlength="4000" placeholder="Save a note…" required disabled></textarea><button type="submit" aria-label="Save message" disabled><svg class="icon" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button></form>
     </section>`;
   }
-  function mount(shell, { listen, signal, closeSearch }) {
+  function mount(shell, { listen, signal, closeSearch, groups }) {
     const feed = shell.querySelector('.pulse-feed');
     const saved = shell.querySelector('.pulse-saved');
     const search = shell.querySelector('.pulse-search');
     const field = shell.querySelector('#pulse-search-input');
     const results = shell.querySelector('.pulse-user-results');
+    const groupResults = shell.querySelector('[data-pulse-group-results]');
     const recent = [...shell.querySelectorAll('.pulse-search-suggestions, .pulse-search-recent-heading, .pulse-search-recents')];
     const searchStatus = shell.querySelector('.pulse-user-status');
     const history = saved.querySelector('.pulse-saved-history');
@@ -53,25 +54,30 @@
     }
     function resetSearch() {
       clearTimeout(searchTimer); searchRequest?.abort(); sequence++;
-      results.replaceChildren(); searchStatus.textContent = ''; more.hidden = true; offset = 0;
+      results.replaceChildren(); groupResults?.replaceChildren(); if (groupResults) groupResults.hidden = true; searchStatus.textContent = ''; more.hidden = true; offset = 0;
     }
     async function lookup(append = false) {
       clearTimeout(searchTimer); searchRequest?.abort(); searchRequest = new AbortController();
       const controller = searchRequest, revision = ++sequence;
       const query = field.value.trim().replace(/^@/, '');
       const tab = search.querySelector('[aria-selected="true"][data-pulse-search-tab]');
-      const supported = !tab || Number(tab.dataset.pulseSearchTab) < 2;
+      const activeTab = tab ? Number(tab.dataset.pulseSearchTab) : 0;
+      const wantUsers = activeTab === 0 || activeTab === 1;
+      const wantGroups = activeTab === 0 || activeTab === 2;
       recent.forEach(el => { el.hidden = Boolean(query); });
-      results.hidden = !query; searchStatus.hidden = !query;
+      results.hidden = !query || !wantUsers; groupResults.hidden = !query || !wantGroups; searchStatus.hidden = !query;
       more.hidden = true;
-      if (!append) { results.replaceChildren(); offset = 0; }
+      if (!append) { results.replaceChildren(); groupResults.replaceChildren(); offset = 0; }
       if (!query) { searchStatus.textContent = ''; return; }
-      if (!supported) { searchStatus.textContent = 'User lookup is available in All and User.'; return; }
+      if (!wantUsers && !wantGroups) { searchStatus.textContent = 'Search is available for users and public groups.'; return; }
       searchStatus.textContent = 'Searching…'; more.disabled = true;
       try {
-        const data = await request(`/api/pulse/users?q=${encodeURIComponent(query)}&offset=${offset}`, { signal: controller.signal });
+        const [data, found] = await Promise.all([
+          wantUsers ? request(`/api/pulse/users?q=${encodeURIComponent(query)}&offset=${offset}`, { signal: controller.signal }) : Promise.resolve(null),
+          wantGroups && groups?.search ? groups.search(query, controller.signal) : Promise.resolve(null)
+        ]);
         if (signal.aborted || revision !== sequence || search.hidden) return;
-        for (const user of data.users) {
+        for (const user of data?.users || []) {
           const row = node('button', 'pulse-user-result'); row.type = 'button'; row.setAttribute('role', 'listitem');
           row.dataset.pulseChatUsername = user.username;
           const avatar = node('span', 'pulse-person-mark'); avatar.setAttribute('aria-hidden', 'true'); avatar.textContent = (user.nickName || user.username || '?').slice(0, 1).toUpperCase();
@@ -80,9 +86,15 @@
           if (user.username) copy.append(node('span', '', `@${user.username}`));
           row.append(avatar, copy); results.append(row);
         }
-        offset += data.users.length;
-        searchStatus.textContent = offset ? '' : 'No users found by username or nickname.';
-        more.hidden = !data.hasMore;
+        offset += data?.users?.length || 0;
+        let hasGroups = false;
+        for (const group of (found || []).filter(item => item.visibility === 'public')) {
+          const row = node('button', 'pulse-user-result pulse-public-group-result'); row.type = 'button'; row.setAttribute('role', 'listitem'); row.dataset.groupOpen = group.id;
+          const avatar = node('span', 'pulse-person-mark', String(group.name || '?').slice(0, 1).toUpperCase()); avatar.setAttribute('aria-hidden', 'true');
+          const copy = node('span', 'pulse-copy'); copy.append(node('strong', '', group.name || 'Group'), node('span', '', `${Number(group.memberCount) || 0} members`)); row.append(avatar, copy); groupResults.append(row); hasGroups = true;
+        }
+        searchStatus.textContent = wantGroups && !hasGroups && !offset ? 'No matching users or public groups found.' : wantUsers && !offset && !wantGroups ? 'No users found by username or nickname.' : '';
+        more.hidden = !data?.hasMore;
       } catch (error) { if (!signal.aborted && revision === sequence && error.name !== 'AbortError') searchStatus.textContent = error.message; }
       finally { if (revision === sequence) more.disabled = false; }
     }

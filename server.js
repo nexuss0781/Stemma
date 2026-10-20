@@ -15,6 +15,7 @@ import { createNotificationStore, registerNotificationsApi } from './notificatio
 import { createPulseStore, registerPulseApi } from './pulse-api.js';
 import { createDirectChatStore, registerDirectChatApi } from './direct-chat-api.js';
 import { createAttachmentStore, registerAttachmentsApi } from './attachments-api.js';
+import { createGroupStore, registerGroupsApi, isValidGroupSlug } from './groups-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -36,6 +37,12 @@ const GOOGLE_DISCOVERY_URL = `${GOOGLE_ISSUER}/.well-known/openid-configuration`
 
 function trimTrailingSlashes(value) {
   return value.replace(/\/+$/, '');
+}
+
+function validGroupReturnTo(value) {
+  if (typeof value !== 'string') return false;
+  if (value.startsWith('/invite/')) return /^\/invite\/[A-Za-z0-9_-]{40,64}$/.test(value);
+  return value.startsWith('/') && !value.includes('?') && !value.includes('#') && isValidGroupSlug(value.slice(1));
 }
 
 function parseOrigin(value, name) {
@@ -473,7 +480,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, groupStore = null, friendBillStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -638,6 +645,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   registerNotificationsApi(app, { notificationStore, requireGoogleSession, config });
   registerPulseApi(app, { pulseStore, attachmentStore, requireGoogleSession, config });
   registerDirectChatApi(app, { directChatStore, attachmentStore, requireGoogleSession, config });
+  registerGroupsApi(app, { groupsStore: groupStore, requireGoogleSession, config });
   registerAttachmentsApi(app, { attachmentStore, requireGoogleSession, config });
 
   function requireProfileStore(_req, res, next) {
@@ -882,6 +890,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     setNoStore(res);
     if (!isGoogleConfigured(config)) return res.redirect(303, '/?auth=unavailable');
 
+    const returnTo = validGroupReturnTo(req.query.returnTo) ? req.query.returnTo : '/';
     let metadata;
     try {
       metadata = await getGoogleMetadata();
@@ -903,7 +912,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       const [oldestState] = ordered.shift();
       delete transactions[oldestState];
     }
-    transactions[state] = { provider: 'google', nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    transactions[state] = { provider: 'google', nonce, codeVerifier, returnTo, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
     req.session.oidcTransactions = transactions;
     await sessionOperation(req, 'save');
 
@@ -986,7 +995,8 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
         profile
       };
       await sessionOperation(req, 'save');
-      return res.redirect(303, '/?auth=success');
+      const destination = validGroupReturnTo(transaction.returnTo) ? transaction.returnTo : '/';
+      return res.redirect(303, `${destination}?auth=success`);
     } catch {
       return res.redirect(303, '/?auth=failed');
     }
@@ -1022,7 +1032,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'groups-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', ['parent-navigation.js', 'direct-chat-ui.js', 'chat-attachments-ui.js'].includes(asset) ? 'no-store' : 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
@@ -1040,6 +1050,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('text/css').sendFile(path.join(ROOT, 'styles.css'));
   });
+  app.get('/groups.css', (_req, res) => {
+    res.set({ 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer' });
+    res.type('text/css').sendFile(path.join(ROOT, 'groups.css'));
+  });
   app.use('/assets', express.static(path.join(ROOT, 'assets'), {
     dotfiles: 'deny',
     index: false,
@@ -1048,6 +1062,16 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     immutable: false
   }));
 
+  app.get('/invite/:token', (req, res, next) => {
+    if (!/^[A-Za-z0-9_-]{40,64}$/.test(req.params.token)) return next();
+    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+    return res.sendFile(path.join(ROOT, 'index.html'));
+  });
+  app.get('/:slug', (req, res, next) => {
+    if (!isValidGroupSlug(req.params.slug)) return next();
+    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+    return res.sendFile(path.join(ROOT, 'index.html'));
+  });
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found.' });
   });
@@ -1079,6 +1103,7 @@ async function startServer() {
   let pulseStore;
   let directChatStore;
   let attachmentStore;
+  let groupStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -1103,6 +1128,8 @@ async function startServer() {
     await directChatStore.migrate();
     attachmentStore = createAttachmentStore(postgresPool);
     await attachmentStore.migrate();
+    groupStore = createGroupStore(postgresPool);
+    await groupStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,
@@ -1111,7 +1138,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });
