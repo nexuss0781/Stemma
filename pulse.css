@@ -298,7 +298,7 @@
 .pulse-feed > .pulse-tabs .pulse-tab:hover:not([aria-selected="true"]) { background: var(--brand-gold-light); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-conversations { padding: 6px 16px 76px; }
 :is(#pulse-panel-0, #pulse-panel-1) :is(.pulse-direct-row, .pulse-saved-row) { min-height: 64px; padding: 9px 0; gap: 12px; color: var(--brand-burgundy); border: 0; }
-#pulse-panel-0 .pulse-saved-row { border-block: 1px solid var(--brand-burgundy); }
+#pulse-panel-0 .pulse-saved-row { border-bottom: 1px solid var(--line); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-direct-row:hover { background: var(--brand-gold-light); }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-person-mark { flex-basis: 42px; width: 42px; height: 42px; }
 :is(#pulse-panel-0, #pulse-panel-1) .pulse-saved-row .pulse-person-mark { background: var(--brand-burgundy); color: var(--brand-gold); }
