@@ -12,6 +12,7 @@
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
     if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations pulse-unified-list" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
+    if (kind === 'channel') return `<div class="pulse-conversations pulse-unified-list" data-channel-lists role="list" aria-label="Channels"><p class="pulse-list-empty" role="status">Loading channels…</p></div>`;
     if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations pulse-unified-list" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
     const saved = kind === 'all' ? `<button type="button" class="pulse-conversation pulse-direct-row pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span><span class="pulse-direct-meta"><time hidden></time></span></button>` : '';
     return kind === 'all'
@@ -19,7 +20,7 @@
       : `<div class="pulse-conversations pulse-direct-list pulse-unified-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div>`;
   }
   function stages(kind) {
-    const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : kind === 'group' ? 'Group conversations' : 'Empty conversations';
+    const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : kind === 'group' ? 'Group conversations' : kind === 'channel' ? 'Channels' : 'Empty conversations';
     return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => {
       const content = i === 0 ? rows(kind) : (root.StemmaStories ? root.StemmaStories.stageView(kind, i) : '');
       return `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${i === 0 ? label : (['', 'Circular story rail', 'Story preview rail', 'Two-column story grid'][i])}">${content}</section>`;
@@ -51,6 +52,7 @@
         <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
           <button type="button" class="pulse-create-story" data-story-create><span aria-hidden="true">＋</span> Story</button>
           <button type="button" class="pulse-create-group" data-group-create><span aria-hidden="true">＋</span> New group</button>
+          <button type="button" class="pulse-create-channel" data-channel-create><span aria-hidden="true">＋</span> New Channel</button>
         </div>
         <button type="button" class="pulse-create-affordance" aria-label="Toggle create previews" aria-expanded="false" aria-controls="pulse-create-previews">
           <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
@@ -63,6 +65,7 @@
       ${root.StemmaDirectChat ? root.StemmaDirectChat.view() : ''}
       ${searchView()}
       ${root.StemmaGroups ? root.StemmaGroups.view() : ''}
+      ${root.StemmaChannels ? root.StemmaChannels.view() : ''}
       ${root.StemmaPulseData ? root.StemmaPulseData.savedView() : ''}
     </section>`;
   }
@@ -107,6 +110,7 @@
     const searchInput = shell.querySelector('#pulse-search-input');
     const searchTrigger = document.querySelector('.pulse-topbar-search');
     const searchTabs = [...shell.querySelectorAll('.pulse-search-tab')];
+    let searchChannel = null;
     function setSearchOpen(open, restoring = false) {
       if (!open && !restoring && root.StemmaParentNavigation?.back('pulse-search')) return;
       if (open && !restoring) root.StemmaParentNavigation?.enter('pulse-search', () => setSearchOpen(false, true), { signal: abort.signal });
@@ -117,9 +121,13 @@
       states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); });
       const saved = shell.querySelector('.pulse-saved');
       if (saved) saved.hidden = true;
+      const channelView = shell.querySelector('.channel-view');
+      if (open && channelView && !channelView.hidden) { searchChannel = channelView; channelView.hidden = true; }
+      const restoreChannel = !open && searchChannel;
+      if (restoreChannel) { restoreChannel.hidden = false; searchChannel = null; }
       search.hidden = !open;
-      feed.hidden = open;
-      feed.inert = open;
+      feed.hidden = open || Boolean(restoreChannel);
+      feed.inert = open || Boolean(restoreChannel);
       searchTrigger?.setAttribute('aria-expanded', String(open));
       if (open) searchInput.focus({ preventScroll: true });
       else searchTrigger?.focus({ preventScroll: true });
@@ -348,6 +356,7 @@
     });
     listen(motion, 'change', () => { states.forEach(state => reveal(state.panel, Number(state.panel.dataset.stage))); });
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
+    root.StemmaChannels?.mount(shell, { listen, signal: abort.signal });
     const groups = root.StemmaGroups?.mount(shell, { listen, signal: abort.signal });
     root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true), groups });
     root.StemmaStories?.mount(shell, { listen, signal: abort.signal });

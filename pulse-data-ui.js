@@ -34,11 +34,12 @@
     // All is one scroll owner with peer rows, never stacked category containers.
     function composeAll() {
       if (!allList || !savedRow) return;
-      const rows = [savedRow, ...shell.querySelectorAll('[data-pulse-conversations] > [data-pulse-conversation], [data-group-lists] > [data-group-open]')];
+      const rows = [savedRow, ...shell.querySelectorAll('[data-pulse-conversations] > [data-pulse-conversation], [data-group-lists] > [data-group-open], [data-channel-lists] > [data-channel-open]')];
       const ordered = rows.map((row, index) => ({ row, index })).sort((a, b) => activity(b.row) - activity(a.row) || a.index - b.index);
       allList.replaceChildren(...ordered.map(({ row }) => row === savedRow ? row : row.cloneNode(true)));
     }
     listen(shell, 'pulse:groups-updated', composeAll);
+    listen(shell, 'pulse:channels-updated', composeAll);
     let directParentSearch = false;
     const directView = root.StemmaDirectChat?.mount(shell, { listen, signal, onClose: () => {
       if (!root.StemmaParentNavigation?.back('pulse-chat')) returnToFeed();

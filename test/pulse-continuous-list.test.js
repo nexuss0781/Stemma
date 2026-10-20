@@ -9,7 +9,7 @@ function composition(saved, peers) {
   let result;
   const allList = { replaceChildren(...rows) { result = rows; } };
   const shell = { querySelectorAll(selector) {
-    assert.equal(selector, '[data-pulse-conversations] > [data-pulse-conversation], [data-group-lists] > [data-group-open]');
+    assert.equal(selector, '[data-pulse-conversations] > [data-pulse-conversation], [data-group-lists] > [data-group-open], [data-channel-lists] > [data-channel-open]');
     return peers;
   } };
   const fn = source.slice(source.indexOf('    const activity ='), source.indexOf("    listen(shell, 'pulse:groups-updated'"));
@@ -17,10 +17,10 @@ function composition(saved, peers) {
   vm.runInContext(fn + '\ncomposeAll();', context);
   return result;
 }
-test('All merges Saved, direct and actual group rows by available activity, without category buckets', () => {
+test('All merges Saved, direct, group and channel rows by available activity, without category buckets', () => {
   const saved = row('saved', '2026-10-20T10:00:00Z');
-  const result = composition(saved, [row('direct', '2026-10-20T11:00:00Z'), row('group', '2026-10-20T12:00:00Z'), row('undated')]);
-  assert.deepEqual(result.map(r => r.id), ['group', 'direct', 'saved', 'undated']);
+  const result = composition(saved, [row('direct', '2026-10-20T11:00:00Z'), row('group', '2026-10-20T12:00:00Z'), row('channel', '2026-10-20T09:00:00Z'), row('undated')]);
+  assert.deepEqual(result.map(r => r.id), ['group', 'direct', 'saved', 'channel', 'undated']);
   assert.equal(result[2], saved, 'the actual Saved row keeps its preview and focus identity');
   assert.ok(result[0].cloned && result[1].cloned, 'filtered sources remain intact');
 });

@@ -1,0 +1,24 @@
+/* Broadcasts reuse Pulse's cream and burgundy surfaces. */
+.channel-view { height: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; color: var(--brand-burgundy); background: var(--paper-soft); }
+.channel-view[hidden], .channel-compose[hidden], .channel-read-only[hidden] { display: none; }
+.channel-header { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.channel-header > div { min-width: 0; }
+.channel-header h2 { margin: 0; overflow-wrap: anywhere; font-size: 18px; color: var(--brand-burgundy-deep); }
+.channel-header p { margin: 5px 0 0; font-size: 12px; opacity: .75; }
+.channel-header .group-back { margin: 0; flex: 0 0 auto; }
+.channel-header .pulse-person-mark { flex: 0 0 44px; width: 44px; height: 44px; background: var(--brand-burgundy); color: var(--brand-gold-light); }
+.channel-status { margin: 0; padding: 4px 20px; min-height: 24px; flex: 0 0 auto; font-size: 12px; }
+.channel-history { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px clamp(12px, 3vw, 28px) 20px; scrollbar-width: thin; }
+.channel-post { max-width: 760px; margin: 0 auto 14px; border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: var(--brand-gold-light); }
+.channel-post p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; }
+.channel-post time { display: block; text-align: right; font-size: 11px; opacity: .65; }
+.channel-empty { text-align: center; margin: 24px 0; font-size: 13px; opacity: .75; }
+.channel-read-only { margin: 0; padding: 16px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; }
+.channel-compose { display: flex; flex: 0 0 auto; align-items: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.channel-compose textarea { flex: 1; width: 0; min-height: 48px; max-height: 150px; resize: vertical; border: 1px solid var(--line); border-radius: 14px; padding: 12px; font: inherit; font-size: 14px; color: var(--brand-burgundy-deep); background: var(--paper-soft); }
+.channel-compose button { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border: 1px solid var(--brand-burgundy); border-radius: 50%; color: var(--brand-gold-light); background: var(--brand-burgundy); cursor: pointer; }
+.channel-compose button:disabled { opacity: .5; cursor: default; }
+.channel-create-copy { font-size: 13px; line-height: 1.6; }
+.pulse-create-channel { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--brand-gold); border-radius: 15px; background: var(--brand-burgundy); color: var(--brand-gold-light); box-shadow: 0 6px 16px var(--line); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; visibility: hidden; opacity: 0; pointer-events: none; }
+.is-create-open .pulse-create-channel { visibility: visible; opacity: 1; pointer-events: auto; }
+@media (max-width: 480px) { .channel-header { padding: 12px; gap: 9px; } .channel-header h2 { font-size: 16px; } .channel-header .pulse-person-mark { flex-basis: 36px; width: 36px; height: 36px; } .channel-compose { padding: 10px; } .channel-dialog { max-width: calc(100vw - 24px); } }

@@ -170,8 +170,9 @@ test('create menu retains New group, adds the Story composer action, and remains
     'the existing New group action remains available');
   assert.match(previews[2], /<button[^>]*class="pulse-create-story"[^>]*data-story-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> Story<\/button>/,
     'Story opens the story composer');
-  assert.doesNotMatch(previews[2], /Channel|App|skeleton|pulse-create-preview/,
-    'unfinished Channel and App actions are not presented as enabled');
+  assert.match(previews[2], /data-channel-create[^>]*>.*New Channel/);
+  assert.doesNotMatch(previews[2], /App|skeleton|pulse-create-preview/,
+    'unfinished App action is not presented as enabled');
   assert.equal((previews[2].match(/data-group-create/g) || []).length, 1);
   assert.equal((previews[2].match(/data-story-create/g) || []).length, 1);
 });
