@@ -78,7 +78,8 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
       google_subject VARCHAR(255) PRIMARY KEY REFERENCES stemma_google_identities(google_subject) ON DELETE CASCADE,
       first_name VARCHAR(80) NOT NULL DEFAULT 'Synthetic', middle_name VARCHAR(80) NOT NULL DEFAULT '',
       last_name VARCHAR(80) NOT NULL DEFAULT 'Tester', student_id VARCHAR(64) NOT NULL DEFAULT 'groups-it',
-      department VARCHAR(100) NOT NULL DEFAULT 'integration-test', nick_name TEXT NOT NULL DEFAULT '', username TEXT NOT NULL DEFAULT ''
+      department VARCHAR(100) NOT NULL DEFAULT 'integration-test', nick_name TEXT NOT NULL DEFAULT '', username TEXT NOT NULL DEFAULT '',
+      profile_image BYTEA, profile_image_mime TEXT
     )`);
     const subjects = ['groups-it-owner', 'groups-it-member', 'groups-it-outsider'];
     await pool.query('INSERT INTO stemma_google_identities (google_subject) SELECT unnest($1::text[])', [subjects]);
@@ -86,6 +87,7 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
       ('groups-it-owner', 'owner_user', 'Owner One'),
       ('groups-it-member', 'member_user', 'Member Two'),
       ('groups-it-outsider', 'outsider_user', 'Outsider Three')`);
+    await pool.query(`UPDATE stemma_student_profiles SET profile_image = $1, profile_image_mime = 'image/png' WHERE username = 'outsider_user'`, [Buffer.from('stored profile photo')]);
 
     const createStore = groupsApi.createGroupStore ?? groupsApi.createGroupsStore;
     assert.equal(typeof createStore, 'function', 'groups API exports a PostgreSQL store factory');
@@ -106,12 +108,54 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
     const sendGroup = (id, cookie, text) => postJson(`${origin}/api/pulse/groups/${id}/messages`, cookie, origin, { text });
 
     assert.equal((await get('/api/pulse/groups', owner)).status, 200);
+    assert.deepEqual(await (await get('/api/pulse/groups/availability?slug=free-slug', owner)).json(), { available: true });
+    assert.deepEqual(await (await get('/api/pulse/groups/availability?slug=private_urls', owner)).json(), { available: false });
+    const candidateList = await get('/api/pulse/groups/candidates', owner);
+    const candidates = await candidateList.json();
+    assert.deepEqual(candidates.users.map(user => user.username), ['member_user', 'outsider_user']);
+    assert.equal(candidates.users.find(user => user.username === 'outsider_user').photoUrl, '/api/pulse/groups/candidates/outsider_user/photo');
+    const outsiderPhoto = await get('/api/pulse/groups/candidates/outsider_user/photo', owner);
+    assert.equal(outsiderPhoto.status, 200);
+    assert.equal((await outsiderPhoto.arrayBuffer()).byteLength, Buffer.byteLength('stored profile photo'));
+
+    const avatarBytes = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
+    const preselectedToken = 'K'.repeat(43);
+    const twoStepResponse = await createGroup(owner, { name: 'Two Step Circle', description: '', visibility: 'private',
+      inviteToken: preselectedToken, memberUsernames: ['outsider_user'], avatarDataUrl: `data:image/gif;base64,${avatarBytes.toString('base64')}` });
+    assert.equal(twoStepResponse.status, 201);
+    const twoStepGroup = (await twoStepResponse.json()).group;
+    assert.equal(twoStepGroup.inviteUrl, `/private_urls/${preselectedToken}`);
+    assert.equal(twoStepGroup.avatarUrl, `/api/pulse/groups/${twoStepGroup.id}/avatar`);
+    const persistedDetails = await (await get(`/api/pulse/groups/${twoStepGroup.id}`, owner)).json();
+    assert.equal(persistedDetails.group.avatarUrl, twoStepGroup.avatarUrl, 'durable avatar URL survives detail serialization');
+    assert.equal(persistedDetails.group.inviteUrl, twoStepGroup.inviteUrl, 'generated private URL survives detail serialization');
+    assert.ok(twoStepGroup.slug.startsWith('private-'), 'private group slug is generated when omitted');
+    assert.equal(twoStepGroup.memberCount, 2, 'owner and selected existing user are added within creation transaction');
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_groups_memberships WHERE group_id=$1::bigint', [twoStepGroup.id])).rows[0].n, 2);
+    assert.equal((await get(`/api/pulse/groups/${twoStepGroup.id}/avatar`, member)).status, 404, 'private avatar denies nonmembers');
+    const groupAvatar = await get(`/api/pulse/groups/${twoStepGroup.id}/avatar`, owner);
+    assert.equal(groupAvatar.status, 200);
+    assert.equal(groupAvatar.headers.get('content-type'), 'image/gif');
+    assert.deepEqual(Buffer.from(await groupAvatar.arrayBuffer()), avatarBytes);
+    assert.equal((await get(`/api/pulse/groups/private_urls/${preselectedToken}`, member)).status, 200);
+    assert.equal((await get(`/api/pulse/groups/invite/${preselectedToken}`, member)).status, 200, 'legacy invitation resolver still works');
+    assert.equal((await patchJson(`${origin}/api/pulse/groups/${twoStepGroup.id}`, owner, origin,
+      { avatarDataUrl: `data:image/gif;base64,${avatarBytes.toString('base64')}` })).status, 200, 'owner can replace avatar through settings PATCH');
+    const groupsBeforeInvalid = (await pool.query('SELECT count(*)::int AS n FROM stemma_groups')).rows[0].n;
+    const membershipsBeforeInvalid = (await pool.query('SELECT count(*)::int AS n FROM stemma_groups_memberships')).rows[0].n;
+    const invalidSelection = await createGroup(owner, { name: 'Atomic Failure', slug: 'atomic-failure', description: '', visibility: 'private', memberUsernames: ['missing_user'] });
+    assert.equal(invalidSelection.status, 400, 'invalid selected usernames fail cleanly');
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_groups')).rows[0].n, groupsBeforeInvalid,
+      'invalid selection leaves no partial group');
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM stemma_groups_memberships')).rows[0].n, membershipsBeforeInvalid,
+      'invalid selection rolls back owner membership and group insert atomically');
     const publicCreate = await createGroup(owner, { name: 'Open Study Circle', slug: 'study-circle', description: 'Public study group', visibility: 'public' });
     assert.equal(publicCreate.status, 201);
     const publicGroup = (await publicCreate.json()).group;
     assert.equal(publicGroup.visibility, 'public');
     assert.equal(publicGroup.isOwner, true);
     assert.equal(publicGroup.publicUrl, '/study-circle');
+    assert.deepEqual(await (await get('/api/pulse/groups/availability?slug=STUDY-CIRCLE', owner)).json(), { available: false });
 
     const privateCreate = await createGroup(owner, { name: 'Private Book Circle', slug: 'book-circle', description: 'Invitation only', visibility: 'private' });
     assert.equal(privateCreate.status, 201);

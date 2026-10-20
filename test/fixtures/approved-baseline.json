@@ -1,5 +1,5 @@
 {
-  "serverSha256": "ca5e28e7ff8a5b03d100371b91832dc8b9d9eef445b349f85f15911c4e013fd1",
+  "serverSha256": "d7d7d9e9619704161f656e4782e0794c6f048d32f7c0b7a0055a4894a78776ac",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -37,6 +37,10 @@
     {
       "name": "009_groups.sql",
       "sha256": "0f93d19c10e720a8916dd9e3d5cb7b78f6b01c02ad4bf2c1ad534ba2c5c2fa2c"
+    },
+    {
+      "name": "010_group_avatars.sql",
+      "sha256": "705906ddb7f71ef74a1e8f6bed84990424f9ea1126d7c3555025f03088e663bb"
     }
   ]
 }

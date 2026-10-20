@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { validateProfileImage } from './profile-image.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_SIZE = 50;
@@ -18,7 +19,7 @@ const RESERVED_SLUGS = new Set([
   'navigation-memory', 'navigation-memory-js', 'parent-navigation', 'parent-navigation-js',
   'friend-ui', 'friend-ui-js', 'notifications-ui', 'notifications-ui-js', 'pulse-ui', 'pulse-ui-js',
   'direct-chat-ui', 'direct-chat-ui-js', 'chat-attachments-ui', 'chat-attachments-ui-js',
-  'pulse-data-ui', 'pulse-data-ui-js', 'pulse-css', 'styles', 'styles-css', 'groups-ui', 'groups-ui-js', 'groups-css'
+  'pulse-data-ui', 'pulse-data-ui-js', 'pulse-css', 'styles', 'styles-css', 'groups-ui', 'groups-ui-js', 'groups-css', 'private_urls'
 ]);
 
 export function createGroupsStore(pool) {
@@ -37,6 +38,7 @@ export function createGroupsStore(pool) {
   }
   const summarySql = `SELECT g.id::text AS id, g.name, g.slug, g.description, g.visibility,
       g.owner_subject AS "ownerSubject", g.invite_token AS "inviteToken",
+      EXISTS (SELECT 1 FROM stemma_group_avatars a WHERE a.group_id = g.id) AS "hasAvatar",
       (SELECT count(*)::int FROM stemma_groups_memberships m WHERE m.group_id = g.id) AS "memberCount",
       EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1) AS "isMember",
       (g.owner_subject = $1 AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1 AND m.role = 'owner')) AS "isOwner"
@@ -44,6 +46,7 @@ export function createGroupsStore(pool) {
   return {
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '009_groups.sql'), 'utf8'));
+      await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '010_group_avatars.sql'), 'utf8'));
     },
     async listMine(subject) {
       const result = await pool.query(`${summarySql} WHERE EXISTS (
@@ -58,16 +61,60 @@ export function createGroupsStore(pool) {
         ORDER BY g.name, g.id LIMIT $3`, [subject, `%${escaped}%`, limit]);
       return result.rows;
     },
-    async createGroup(subject, { name, slug, description, visibility }) {
-      const token = crypto.randomBytes(32).toString('base64url');
+    async isSlugAvailable(slug) {
+      const result = await pool.query('SELECT NOT EXISTS (SELECT 1 FROM stemma_groups WHERE lower(slug) = lower($1)) AS available', [slug]);
+      return result.rows[0]?.available === true;
+    },
+    async listCandidates(subject, query = '', limit = PAGE_SIZE) {
+      const escaped = query.replace(/[\\%_]/g, '\\$&');
+      const result = await pool.query(`SELECT p.username, p.nick_name AS "nickName",
+          (p.profile_image IS NOT NULL) AS "hasPhoto"
+        FROM stemma_student_profiles p
+        WHERE p.google_subject <> $1 AND btrim(p.username) <> ''
+          AND ($2 = '' OR p.username ILIKE $3 ESCAPE E'\\\\' OR p.nick_name ILIKE $3 ESCAPE E'\\\\')
+        ORDER BY lower(p.nick_name), lower(p.username) LIMIT $4`,
+      [subject, query, `%${escaped}%`, limit]);
+      return result.rows;
+    },
+    async getCandidatePhoto(username) {
+      const result = await pool.query(`SELECT profile_image AS data, profile_image_mime AS "mimeType"
+        FROM stemma_student_profiles WHERE lower(username) = lower($1) AND profile_image IS NOT NULL LIMIT 1`, [username]);
+      return result.rows[0] ? { data: Buffer.from(result.rows[0].data), mimeType: result.rows[0].mimeType } : null;
+    },
+    async getAvatar(subject, id) {
+      const result = await pool.query(`SELECT a.image_data AS data, a.image_mime AS "mimeType"
+        FROM stemma_group_avatars a JOIN stemma_groups g ON g.id = a.group_id
+        WHERE g.id = $1::bigint AND (g.visibility = 'public' OR EXISTS (
+          SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $2
+        )) LIMIT 1`, [id, subject]);
+      return result.rows[0] ? { data: Buffer.from(result.rows[0].data), mimeType: result.rows[0].mimeType } : null;
+    },
+    async createGroup(subject, { name, slug, description, visibility, inviteToken, avatar, memberUsernames = [] }) {
+      const actualSlug = slug || `private-${crypto.randomBytes(12).toString('hex')}`;
+      const token = inviteToken || crypto.randomBytes(32).toString('base64url');
       return transaction(async client => {
         const inserted = await client.query(`INSERT INTO stemma_groups
           (name, slug, description, visibility, owner_subject, invite_token)
           VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id::text AS id, name, slug, description, visibility, owner_subject AS "ownerSubject", invite_token AS "inviteToken"`,
-        [name, slug, description, visibility, subject, token]);
+        [name, actualSlug, description, visibility, subject, token]);
         const group = inserted.rows[0];
         await client.query(`INSERT INTO stemma_groups_memberships (group_id, member_subject, role) VALUES ($1::bigint, $2, 'owner')`, [group.id, subject]);
+        if (memberUsernames.length) {
+          const selected = await client.query(`SELECT google_subject AS subject FROM stemma_student_profiles
+            WHERE lower(username) = ANY($1::text[])`, [memberUsernames.map(username => username.toLowerCase())]);
+          if (selected.rows.length !== memberUsernames.length) {
+            const error = new Error('One or more selected members are no longer available.');
+            error.code = 'GROUP_MEMBER_SELECTION_INVALID';
+            throw error;
+          }
+          for (const member of selected.rows) {
+            await client.query(`INSERT INTO stemma_groups_memberships (group_id, member_subject, role)
+              VALUES ($1::bigint, $2, 'member') ON CONFLICT (group_id, member_subject) DO NOTHING`, [group.id, member.subject]);
+          }
+        }
+        if (avatar) await client.query(`INSERT INTO stemma_group_avatars (group_id, image_data, image_mime)
+          VALUES ($1::bigint, $2, $3)`, [group.id, avatar.data, avatar.mimeType]);
         return (await getSummary(client, group.id, subject));
       });
     },
@@ -128,13 +175,30 @@ export function createGroupsStore(pool) {
     async updateGroup(subject, id, changes) {
       const keys = Object.keys(changes);
       const columns = { name: 'name', description: 'description', visibility: 'visibility', slug: 'slug' };
-      const values = [id, subject];
-      const updates = keys.map(key => { values.push(changes[key]); return `${columns[key]} = $${values.length}`; });
-      const result = await pool.query(`UPDATE stemma_groups g SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
-        WHERE g.id = $1::bigint AND g.owner_subject = $2
-          AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $2 AND m.role = 'owner')
-        RETURNING g.id::text AS id`, values);
-      return result.rows[0] ? getSummary(pool, id, subject) : null;
+      return transaction(async client => {
+        const updates = keys.filter(key => columns[key]);
+        let changed;
+        if (updates.length) {
+          const values = [id, subject];
+          const setters = updates.map(key => { values.push(changes[key]); return `${columns[key]} = $${values.length}`; });
+          changed = await client.query(`UPDATE stemma_groups g SET ${setters.join(', ')}, updated_at = CURRENT_TIMESTAMP
+            WHERE g.id = $1::bigint AND g.owner_subject = $2
+              AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $2 AND m.role = 'owner')
+            RETURNING g.id::text AS id`, values);
+        } else {
+          changed = await client.query(`SELECT g.id::text AS id FROM stemma_groups g
+            WHERE g.id = $1::bigint AND g.owner_subject = $2
+              AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $2 AND m.role = 'owner')`, [id, subject]);
+        }
+        if (!changed.rows[0]) return null;
+        if (Object.hasOwn(changes, 'avatar')) {
+          if (changes.avatar) await client.query(`INSERT INTO stemma_group_avatars (group_id, image_data, image_mime)
+            VALUES ($1::bigint, $2, $3) ON CONFLICT (group_id) DO UPDATE SET image_data = EXCLUDED.image_data,
+              image_mime = EXCLUDED.image_mime, created_at = CURRENT_TIMESTAMP`, [id, changes.avatar.data, changes.avatar.mimeType]);
+          else await client.query('DELETE FROM stemma_group_avatars WHERE group_id = $1::bigint', [id]);
+        }
+        return getSummary(client, id, subject);
+      });
     },
     async listMessages(subject, id, before, limit) {
       const result = await pool.query(`SELECT m.id::text AS id, m.text, m.created_at AS "createdAt",
@@ -166,6 +230,7 @@ async function getSummary(client, id, subject) {
 async function fetchSummary(client, subject, condition, values) {
   const result = await client.query(`SELECT g.id::text AS id, g.name, g.slug, g.description, g.visibility,
       g.owner_subject AS "ownerSubject", g.invite_token AS "inviteToken",
+      EXISTS (SELECT 1 FROM stemma_group_avatars a WHERE a.group_id = g.id) AS "hasAvatar",
       (SELECT count(*)::int FROM stemma_groups_memberships m WHERE m.group_id = g.id) AS "memberCount",
       EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1) AS "isMember",
       (g.owner_subject = $1 AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1 AND m.role = 'owner')) AS "isOwner"
@@ -185,9 +250,10 @@ function groupDto(row) {
     id: row.id, name: row.name, slug: row.slug, description: row.description, visibility: row.visibility,
     memberCount: Number(row.memberCount) || 0, isMember: row.isMember === true, isOwner: row.isOwner === true,
     ...(row.visibility === 'public' ? { publicUrl: `/${row.slug}` } : {}),
+    ...((row.hasAvatar === true || row.avatarUrl === `/api/pulse/groups/${row.id}/avatar`) && (row.visibility === 'public' || row.isMember === true) ? { avatarUrl: `/api/pulse/groups/${row.id}/avatar` } : {}),
     ...(row.isMember === true && row.visibility === 'private' && typeof row.inviteToken === 'string' && validToken(row.inviteToken)
-      ? { inviteUrl: `/invite/${row.inviteToken}` }
-      : row.isMember === true && row.visibility === 'private' && typeof row.inviteUrl === 'string' && /^\/invite\/[A-Za-z0-9_-]{40,64}$/.test(row.inviteUrl)
+      ? { inviteUrl: `/private_urls/${row.inviteToken}` }
+      : row.isMember === true && row.visibility === 'private' && typeof row.inviteUrl === 'string' && /^\/(?:invite|private_urls)\/[A-Za-z0-9_-]{40,64}$/.test(row.inviteUrl)
         ? { inviteUrl: row.inviteUrl } : {})
   };
 }
@@ -220,16 +286,46 @@ function validateDescription(value) {
   const description = value.trim();
   return [...description].length <= 500 ? description : null;
 }
+function validateGroupAvatarDataUrl(value) {
+  if (typeof value !== 'string' || value.length > 1_400_000) return null;
+  const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]*={0,2})$/.exec(value);
+  if (!match || !match[2] || match[2].length % 4 !== 0) return null;
+  const data = Buffer.from(match[2], 'base64');
+  if (!data.length || data.length > 1024 * 1024 || data.toString('base64') !== match[2]) return null;
+  const mimeType = match[1];
+  if (mimeType === 'image/gif') {
+    if (data.length < 14 || !['GIF87a', 'GIF89a'].includes(data.toString('ascii', 0, 6))) return null;
+    const width = data.readUInt16LE(6), height = data.readUInt16LE(8);
+    if (!width || !height || width > 2048 || height > 2048 || width * height > 4_194_304) return null;
+    return { data, mimeType };
+  }
+  const image = validateProfileImage(data, mimeType);
+  return image ? { data: image.data, mimeType: image.mimeType } : null;
+}
 function validateCreate(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['name', 'slug', 'description', 'visibility'].includes(key))) return null;
+  const allowed = ['name', 'slug', 'description', 'visibility', 'avatarDataUrl', 'memberUsernames', 'inviteToken'];
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) return null;
   const name = validateName(body.name), description = validateDescription(body.description);
   const slug = typeof body.slug === 'string' ? body.slug.trim().toLowerCase() : '';
-  if (!name || description === null || !validSlug(slug) || !['public', 'private'].includes(body.visibility)) return null;
-  return { name, slug, description, visibility: body.visibility };
+  if (!name || description === null || !['public', 'private'].includes(body.visibility) ||
+      (slug && !validSlug(slug)) || (!slug && body.visibility !== 'private')) return null;
+  let avatar;
+  if (Object.hasOwn(body, 'avatarDataUrl')) { avatar = validateGroupAvatarDataUrl(body.avatarDataUrl); if (!avatar) return null; }
+  let memberUsernames = [];
+  if (Object.hasOwn(body, 'memberUsernames')) {
+    if (!Array.isArray(body.memberUsernames) || body.memberUsernames.length > 100 ||
+        body.memberUsernames.some(username => typeof username !== 'string' || !/^[A-Za-z0-9_.]{3,30}$/.test(username)) ||
+        new Set(body.memberUsernames.map(username => username.toLowerCase())).size !== body.memberUsernames.length) return null;
+    memberUsernames = [...body.memberUsernames];
+  }
+  const inviteToken = body.inviteToken;
+  if (inviteToken !== undefined && (typeof inviteToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(inviteToken))) return null;
+  return { name, slug: slug || null, description, visibility: body.visibility, ...(avatar ? { avatar } : {}),
+    ...(Object.hasOwn(body, 'memberUsernames') ? { memberUsernames } : {}), ...(inviteToken ? { inviteToken } : {}) };
 }
 function validatePatch(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
-  const allowed = ['name', 'description', 'visibility', 'slug'];
+  const allowed = ['name', 'description', 'visibility', 'slug', 'avatarDataUrl'];
   const keys = Object.keys(body);
   if (!keys.length || keys.some(key => !allowed.includes(key))) return null;
   const changes = {};
@@ -237,6 +333,10 @@ function validatePatch(body) {
   if (Object.hasOwn(body, 'description')) { changes.description = validateDescription(body.description); if (changes.description === null) return null; }
   if (Object.hasOwn(body, 'visibility')) { if (!['public', 'private'].includes(body.visibility)) return null; changes.visibility = body.visibility; }
   if (Object.hasOwn(body, 'slug')) { if (typeof body.slug !== 'string' || !validSlug(body.slug.trim().toLowerCase())) return null; changes.slug = body.slug.trim().toLowerCase(); }
+  if (Object.hasOwn(body, 'avatarDataUrl')) {
+    if (body.avatarDataUrl === null) changes.avatar = null;
+    else { changes.avatar = validateGroupAvatarDataUrl(body.avatarDataUrl); if (!changes.avatar) return null; }
+  }
   return changes;
 }
 function validateMessage(body, allowed = ['text']) {
@@ -277,7 +377,36 @@ function registerGroupsApi(app, { groupsStore = null, requireGoogleSession, conf
       return res.json({ groups: (rows || []).map(safeGroup).filter(Boolean) });
     } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
   });
-  app.post('/api/pulse/groups', ...auth, sameOriginJson(config), express.json({ limit: '20kb', strict: true }), async (req, res) => {
+  app.get('/api/pulse/groups/availability', ...auth, async (req, res) => {
+    if (!available(res)) return;
+    const slug = typeof req.query.slug === 'string' ? req.query.slug.trim().toLowerCase() : '';
+    if (!validSlug(slug)) return res.json({ available: false });
+    try { return res.json({ available: await groupsStore.isSlugAvailable(slug) }); }
+    catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
+  });
+  app.get('/api/pulse/groups/candidates', ...auth, async (req, res) => {
+    if (!available(res)) return;
+    const query = req.query.q === undefined ? '' : req.query.q;
+    if (typeof query !== 'string' || [...query.trim()].length > 80 || CONTROL_RE.test(query)) return res.status(400).json({ error: 'A valid candidate search query is required.' });
+    try {
+      const rows = await groupsStore.listCandidates(req.session.stemmaUser.subject, query.trim(), PAGE_SIZE);
+      const users = (rows || []).filter(row => row && typeof row.username === 'string' && typeof row.nickName === 'string')
+        .map(row => ({ username: row.username, nickName: row.nickName,
+          ...(row.hasPhoto === true ? { photoUrl: `/api/pulse/groups/candidates/${encodeURIComponent(row.username)}/photo` } : {}) }));
+      return res.json({ users });
+    } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
+  });
+  app.get('/api/pulse/groups/candidates/:username/photo', ...auth, async (req, res) => {
+    if (!available(res)) return;
+    if (!/^[A-Za-z0-9_.]{3,30}$/.test(req.params.username)) return res.status(404).json({ error: 'Photo not found.' });
+    try {
+      const photo = await groupsStore.getCandidatePhoto(req.params.username);
+      if (!photo) return res.status(404).json({ error: 'Photo not found.' });
+      res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Type': photo.mimeType });
+      return res.send(photo.data);
+    } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
+  });
+  app.post('/api/pulse/groups', ...auth, sameOriginJson(config), express.json({ limit: '1500kb', strict: true }), async (req, res) => {
     if (!available(res)) return;
     const body = validateCreate(req.body);
     if (!body) return res.status(400).json({ error: 'Group name, valid slug, description, and visibility are required.' });
@@ -286,6 +415,7 @@ function registerGroupsApi(app, { groupsStore = null, requireGoogleSession, conf
       const group = safeGroup(row);
       return group ? res.status(201).json({ group }) : res.status(503).json({ error: 'Groups service is unavailable.' });
     } catch (error) {
+      if (error?.code === 'GROUP_MEMBER_SELECTION_INVALID') return res.status(400).json({ error: 'One or more selected members are no longer available.' });
       if (error?.code === '23505') return res.status(409).json({ error: 'That group name or URL is already in use.' });
       return res.status(503).json({ error: 'Groups service is unavailable.' });
     }
@@ -307,6 +437,20 @@ function registerGroupsApi(app, { groupsStore = null, requireGoogleSession, conf
   app.get('/api/pulse/groups/invite/:token', ...auth, async (req, res) => {
     if (!validToken(req.params.token)) return res.status(404).json({ error: 'Group not found.' });
     return detailHandler(req, res, subject => groupsStore.resolveInvite(subject, req.params.token));
+  });
+  app.get('/api/pulse/groups/private_urls/:token', ...auth, async (req, res) => {
+    if (!validToken(req.params.token)) return res.status(404).json({ error: 'Group not found.' });
+    return detailHandler(req, res, subject => groupsStore.resolveInvite(subject, req.params.token));
+  });
+  app.get('/api/pulse/groups/:id/avatar', ...auth, async (req, res) => {
+    if (!available(res)) return;
+    if (!validId(req.params.id)) return res.status(404).json({ error: 'Group avatar not found.' });
+    try {
+      const avatar = await groupsStore.getAvatar(req.session.stemmaUser.subject, req.params.id);
+      if (!avatar) return res.status(404).json({ error: 'Group avatar not found.' });
+      res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Type': avatar.mimeType });
+      return res.send(avatar.data);
+    } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
   });
   app.get('/api/pulse/groups/:id', ...auth, async (req, res) => {
     if (!validId(req.params.id)) return res.status(400).json({ error: 'Group ID is invalid.' });

@@ -42,6 +42,7 @@ function trimTrailingSlashes(value) {
 function validGroupReturnTo(value) {
   if (typeof value !== 'string') return false;
   if (value.startsWith('/invite/')) return /^\/invite\/[A-Za-z0-9_-]{40,64}$/.test(value);
+  if (value.startsWith('/private_urls/')) return /^\/private_urls\/[A-Za-z0-9_-]{40,64}$/.test(value);
   return value.startsWith('/') && !value.includes('?') && !value.includes('#') && isValidGroupSlug(value.slice(1));
 }
 
@@ -1067,6 +1068,11 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
     return res.sendFile(path.join(ROOT, 'index.html'));
   });
+  app.get('/private_urls/:token', (req, res, next) => {
+    if (!/^[A-Za-z0-9_-]{40,64}$/.test(req.params.token)) return next();
+    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+    return res.sendFile(path.join(ROOT, 'index.html'));
+  });
   app.get('/:slug', (req, res, next) => {
     if (!isValidGroupSlug(req.params.slug)) return next();
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
@@ -1078,12 +1084,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
-    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read' || req.path === '/api/pulse/saved' || req.path === '/api/pulse/conversations' || /^\/api\/pulse\/(?:saved\/attachments|attachments\/[^/]+|conversations\/[^/]+\/(?:messages|attachments))$/.test(req.path)) {
+    if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read' || req.path === '/api/pulse/saved' || req.path === '/api/pulse/conversations' || /^\/api\/pulse\/(?:saved\/attachments|attachments\/[^/]+|conversations\/[^/]+\/(?:messages|attachments))$/.test(req.path) || req.path === '/api/pulse/groups') {
       if (error?.status === 413 || error?.type === 'entity.too.large') {
-        return res.status(413).json({ error: req.path.includes('/attachments') ? 'Attachments must not exceed 5 MiB.' : req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : 'Student profile request is too large.' });
+        return res.status(413).json({ error: req.path.includes('/attachments') ? 'Attachments must not exceed 5 MiB.' : req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : req.path === '/api/pulse/groups' ? 'Group avatar data must not exceed 1 MiB.' : 'Student profile request is too large.' });
       }
       if (error?.status === 400 || error?.type === 'entity.parse.failed') {
-        return res.status(400).json({ error: req.path.includes('/attachments') ? 'Attachment request is invalid.' : req.path === '/api/notifications/read' ? 'Notification read request is invalid.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is invalid.' : req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : 'Student profile data is invalid.' });
+        return res.status(400).json({ error: req.path.includes('/attachments') ? 'Attachment request is invalid.' : req.path === '/api/notifications/read' ? 'Notification read request is invalid.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is invalid.' : req.path.endsWith('/photo') ? 'Profile photo request is invalid.' : req.path === '/api/pulse/groups' ? 'Group creation request is invalid.' : 'Student profile data is invalid.' });
       }
     }
     res.status(500).json({ error: 'The request could not be completed.' });

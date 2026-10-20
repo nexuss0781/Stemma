@@ -38,6 +38,9 @@ test('group SPA URLs serve the app without exposing invite tokens as referrers',
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.match(response.headers.get('content-type'), /text\/html/);
+  response = await fetch(`${h.origin}/private_urls/${token}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   response = await fetch(`${h.origin}/my-club`);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
@@ -67,7 +70,7 @@ test('Groups API auth, validation, privacy, membership, owner settings and messa
   const cookie = await h.cookieFor('group-user', google('subject-alice'));
   assert.equal((await get(`${h.origin}/api/pulse/groups`)).status, 401);
   let response = await get(`${h.origin}/api/pulse/groups`, cookie);
-  assert.deepEqual((await response.json()).groups, [{ id: '15', name: 'Secret group', slug: 'secret-hangout', description: 'secret detail', visibility: 'private', memberCount: 3, isMember: true, isOwner: true, inviteUrl: memberGroup.inviteUrl }]);
+  assert.deepEqual((await response.json()).groups, [{ id: '15', name: 'Secret group', slug: 'secret-hangout', description: 'secret detail', visibility: 'private', memberCount: 3, isMember: true, isOwner: true, inviteUrl: `/private_urls/${memberGroup.inviteUrl.split('/').at(-1)}` }]);
   assert.doesNotMatch(JSON.stringify(await (await get(`${h.origin}/api/pulse/groups`, cookie)).json()), /inviteToken/);
   assert.deepEqual(calls.at(-1), ['mine', 'subject-alice']);
   response = await get(`${h.origin}/api/pulse/groups/search?q=club`, cookie);
@@ -102,6 +105,73 @@ test('Groups API auth, validation, privacy, membership, owner settings and messa
   assert.equal((await post(`${h.origin}/api/pulse/groups/15/messages`, cookie, null, { text: 'hi' })).status, 403);
 });
 
+test('two-step group API exposes only public candidate fields and validates durable avatars/private links', async t => {
+  const calls = [];
+  const token = 'Z'.repeat(43);
+  const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
+  const storedGroup = { id: '20', name: 'New circle', slug: 'private-1234567890abcdef', description: '', visibility: 'private',
+    inviteToken: token, hasAvatar: true, memberCount: 2, isMember: true, isOwner: true };
+  const store = {
+    async isSlugAvailable(slug) { calls.push(['availability', slug]); return slug !== 'taken-slug'; },
+    async listCandidates(subject, query, limit) { calls.push(['candidates', subject, query, limit]); return [
+      { username: 'beta_user', nickName: 'Beta', hasPhoto: true }, { username: 'gamma_user', nickName: 'Gamma', hasPhoto: false }
+    ]; },
+    async getCandidatePhoto(username) { return username === 'beta_user' ? { data: Buffer.from('photo'), mimeType: 'image/png' } : null; },
+    async getAvatar(subject, id) { calls.push(['avatar', subject, id]); return subject === 'group-member' && id === '20' ? { data: gif, mimeType: 'image/gif' } : null; },
+    async createGroup(subject, input) { calls.push(['create', subject, input]); return storedGroup; },
+    async updateGroup(subject, id, changes) { calls.push(['update', subject, id, changes]); return { ...storedGroup, hasAvatar: Boolean(changes.avatar) }; },
+    async resolveInvite(subject, received) { return received === token ? { group: { ...storedGroup, isMember: false, isOwner: false } } : null; }
+  };
+  const h = await harness(store); t.after(() => h.close());
+  const member = await h.cookieFor('group-member-cookie', google('group-member'));
+  const outsider = await h.cookieFor('group-outsider-cookie', google('group-outsider'));
+  assert.deepEqual(await (await get(`${h.origin}/api/pulse/groups/availability?slug=Taken-Slug`, member)).json(), { available: false });
+  assert.deepEqual(await (await get(`${h.origin}/api/pulse/groups/availability?slug=available-slug`, member)).json(), { available: true });
+  assert.deepEqual(await (await get(`${h.origin}/api/pulse/groups/availability?slug=private_urls`, member)).json(), { available: false });
+  assert.equal((await get(`${h.origin}/api/pulse/groups/availability?slug=available-slug`)).status, 401);
+  const candidates = await get(`${h.origin}/api/pulse/groups/candidates?q=beta`, member);
+  assert.deepEqual(await candidates.json(), { users: [
+    { username: 'beta_user', nickName: 'Beta', photoUrl: '/api/pulse/groups/candidates/beta_user/photo' },
+    { username: 'gamma_user', nickName: 'Gamma' }
+  ] });
+  assert.deepEqual(calls.find(call => call[0] === 'candidates'), ['candidates', 'group-member', 'beta', 50]);
+  assert.equal((await get(`${h.origin}/api/pulse/groups/candidates/beta_user/photo`, member)).status, 200);
+  let response = await get(`${h.origin}/api/pulse/groups/20/avatar`, outsider);
+  assert.equal(response.status, 404, 'private avatars are only visible to group members');
+  response = await get(`${h.origin}/api/pulse/groups/20/avatar`, member);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/gif');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), gif);
+
+  const create = await post(`${h.origin}/api/pulse/groups`, member, h.origin, {
+    name: ' New circle ', description: '', visibility: 'private', inviteToken: token,
+    avatarDataUrl: `data:image/gif;base64,${gif.toString('base64')}`, memberUsernames: ['beta_user']
+  });
+  assert.equal(create.status, 201);
+  const result = await create.json();
+  assert.equal(result.group.inviteUrl, `/private_urls/${token}`);
+  assert.equal(result.group.avatarUrl, '/api/pulse/groups/20/avatar');
+  assert.doesNotMatch(JSON.stringify(result), /group-member|inviteToken|ownerSubject/);
+  const createCall = calls.find(call => call[0] === 'create');
+  assert.equal(createCall[2].slug, null, 'private slug can be omitted for server-side generation');
+  assert.deepEqual(createCall[2].memberUsernames, ['beta_user']);
+  assert.deepEqual(createCall[2].avatar, { data: gif, mimeType: 'image/gif' });
+  assert.equal(createCall[2].inviteToken, token);
+  assert.equal((await get(`${h.origin}/api/pulse/groups/private_urls/${token}`, member)).status, 200);
+  assert.equal((await get(`${h.origin}/api/pulse/groups/invite/${token}`, member)).status, 200, 'legacy invite resolver stays supported');
+
+  assert.equal((await post(`${h.origin}/api/pulse/groups`, member, h.origin, {
+    name: 'Wrong mime', slug: 'wrong-mime', description: '', visibility: 'public',
+    avatarDataUrl: `data:image/png;base64,${gif.toString('base64')}`
+  })).status, 400);
+  assert.equal((await post(`${h.origin}/api/pulse/groups`, member, h.origin, {
+    name: 'Duplicate members', slug: 'duplicate-members', description: '', visibility: 'public', memberUsernames: ['Beta_user', 'beta_user']
+  })).status, 400);
+  response = await patch(`${h.origin}/api/pulse/groups/20`, member, h.origin, { avatarDataUrl: `data:image/gif;base64,${gif.toString('base64')}` });
+  assert.equal(response.status, 200);
+  assert.ok(calls.find(call => call[0] === 'update')[3].avatar);
+});
+
 test('PostgreSQL groups persist, isolate private discovery, transfer ownership and gate messages', { skip: process.env.STEMMA_CHAT_POSTGRES_TEST !== '1', timeout: 120000 }, async t => {
   const { Pool } = await import('pg');
   const crypto = await import('node:crypto');
@@ -112,7 +182,7 @@ test('PostgreSQL groups persist, isolate private discovery, transfer ownership a
     await admin.query(`CREATE SCHEMA ${schema}`);
     pool = new Pool({ ...connection, options: `-c search_path=${schema}` });
     await pool.query(`CREATE TABLE stemma_google_identities (google_subject VARCHAR(255) PRIMARY KEY, verified_email VARCHAR(320) NOT NULL DEFAULT '')`);
-    await pool.query(`CREATE TABLE stemma_student_profiles (google_subject VARCHAR(255) PRIMARY KEY REFERENCES stemma_google_identities(google_subject) ON DELETE CASCADE, username TEXT NOT NULL DEFAULT '', nick_name TEXT NOT NULL DEFAULT '')`);
+    await pool.query(`CREATE TABLE stemma_student_profiles (google_subject VARCHAR(255) PRIMARY KEY REFERENCES stemma_google_identities(google_subject) ON DELETE CASCADE, username TEXT NOT NULL DEFAULT '', nick_name TEXT NOT NULL DEFAULT '', profile_image BYTEA, profile_image_mime TEXT)`);
     await pool.query(`INSERT INTO stemma_google_identities (google_subject) VALUES ('alpha'), ('beta'), ('gamma')`);
     await pool.query(`INSERT INTO stemma_student_profiles (google_subject, username, nick_name) VALUES ('alpha','alpha_user','Alpha'), ('beta','beta_user','Beta'), ('gamma','gamma_user','Gamma')`);
     const store = createGroupStore(pool); await store.migrate(); await store.migrate();

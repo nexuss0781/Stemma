@@ -187,3 +187,80 @@
 .group-about-card { order: 3; border-top: 0; padding-top: 0; }
 .group-settings-section { order: 4; border-top: 0; padding-top: 0; }
 .group-detail.is-member.is-info .group-detail-header { padding-top: 24px; }
+
+/* Two-step group setup: a quiet photo-led sheet, then a searchable member picker. */
+.group-dialog { width: min(calc(100% - 24px), 500px); max-height: min(94dvh, 850px); overflow-y: auto; overscroll-behavior: contain; }
+.group-dialog-card { gap: 0; padding: 20px 24px 18px; }
+.group-create-header { display: flex; align-items: center; gap: 13px; padding-bottom: 12px; }
+.group-create-header > div { flex: 1; }
+.group-create-header .groups-eyebrow { margin: 0 0 5px; font-size: 9px; opacity: .62; }
+.group-create-header h2 { margin: 0; font-size: 25px; }
+.group-create-back { display: grid; place-items: center; width: 38px; height: 38px; padding: 9px; border: 0; border-radius: 50%; color: var(--brand-burgundy); background: transparent; cursor: pointer; }
+.group-create-back .icon { width: 21px; height: 21px; transform: rotate(180deg); }
+.group-create-header .group-dialog-close { position: static; flex: 0 0 auto; }
+.group-create-details { display: grid; gap: 17px; }
+.group-photo-field { display: grid; justify-items: center; gap: 10px; margin: 7px 0 5px; }
+.group-photo-field > span { font-size: 11px; color: color-mix(in srgb, var(--brand-burgundy) 65%, transparent); }
+.group-photo-upload { position: relative; display: grid; place-items: center; width: 96px; height: 96px; padding: 0; border: 3px solid var(--brand-gold); border-radius: 50%; color: var(--brand-gold-light); background: var(--brand-burgundy); box-shadow: 0 7px 20px rgba(104,27,29,.12); cursor: pointer; }
+.group-photo-upload > [data-group-photo-preview] { display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; border-radius: 50%; }
+.group-photo-upload > [data-group-photo-preview] > svg { width: 45px; height: 45px; }
+.group-photo-camera { position: absolute; right: -4px; bottom: 1px; display: grid; place-items: center; width: 31px; height: 31px; border: 3px solid var(--paper-soft); border-radius: 50%; color: var(--brand-burgundy); background: var(--brand-gold); }
+.group-photo-camera svg { width: 19px; height: 19px; }
+.group-photo-upload img, .group-avatar img, .group-list-avatar img, .group-conversation-avatar img, .group-member-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.group-avatar, .group-list-avatar, .group-conversation-avatar, .group-member-avatar { overflow: hidden; }
+.group-dialog-card .group-name-field { font-size: 11px; }
+.group-dialog-card .group-name-field input { min-height: 44px; padding: 9px 0; border-width: 0 0 1px; border-radius: 0; background: transparent; font-size: 18px; font-weight: 600; }
+.group-dialog-card label { gap: 7px; font-size: 12px; }
+.group-dialog-card textarea { min-height: 64px; max-height: 120px; line-height: 1.4; }
+.group-dialog-card input:focus-visible, .group-dialog-card textarea:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+.group-dialog-card small { color: color-mix(in srgb, var(--brand-burgundy) 68%, transparent); font-size: 11px; font-weight: 400; line-height: 1.4; opacity: 1; }
+.group-visibility-options { display: grid; gap: 13px; min-width: 0; margin: 0; padding: 13px 0 0; border: 0; border-top: 1px solid var(--line); }
+.group-visibility-options legend { float: left; width: 100%; padding: 0 0 12px; font-size: 11px; font-weight: 750; }
+.group-dialog-card .group-visibility-options label { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.group-dialog-card .group-visibility-options input { flex: 0 0 19px; width: 19px; height: 19px; min-height: 0; margin: 0; padding: 0; accent-color: var(--brand-burgundy); }
+.group-visibility-options label > span { display: grid; gap: 3px; }
+.group-visibility-options strong { font-size: 14px; font-weight: 750; }
+.group-public-link, .group-private-link { display: grid; gap: 7px; min-width: 0; padding: 12px 13px; border: 1px solid var(--line); border-radius: 14px; background: rgba(241,223,155,.18); }
+.group-public-link > label, .group-private-link > span { font-size: 11px; font-weight: 750; }
+.group-link-editor { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; gap: 2px; font-size: 12px; line-height: 1.8; }
+.group-link-editor > span { flex: 0 0 auto; color: color-mix(in srgb, var(--brand-burgundy) 75%, transparent); }
+.group-dialog-card .group-link-editor input { flex: 1 1 95px; width: 0; min-width: 85px; min-height: 29px; padding: 2px 4px; border: 0; border-bottom: 1px solid var(--brand-gold); border-radius: 0; background: transparent; font-size: 13px; font-weight: 650; }
+[data-link-availability][data-state="error"] { color: #a62c35; }
+[data-link-availability][data-state="available"] { color: #3c664c; }
+.group-private-link p { max-width: 100%; margin: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; user-select: all; }
+.group-dialog-actions { position: sticky; bottom: 0; align-items: center; justify-content: space-between; min-height: 62px; padding: 7px 0 1px; background: var(--paper-soft); z-index: 2; }
+.group-dialog-actions > .group-create-next { width: 52px; height: 52px; min-height: 52px; padding: 14px; border: 2px solid var(--brand-gold); border-radius: 50%; }
+.group-create-next > .icon, .group-create-next > svg { display: block; width: 23px; height: 23px; }
+.group-dialog-card button:focus-visible { outline: 3px solid var(--brand-gold); outline-offset: 3px; }
+.group-dialog-card button:disabled { opacity: .5; cursor: wait; }
+.group-dialog-card .group-dialog-status { min-height: 0; margin: 7px 0 0; line-height: 1.4; }
+.group-dialog-status:empty { display: none; }
+.group-create-members { display: grid; gap: 12px; min-height: 430px; padding-top: 4px; }
+.group-members-intro { margin: 0 0 4px; font-size: 13px; line-height: 1.5; color: color-mix(in srgb, var(--brand-burgundy) 75%, transparent); }
+.group-dialog-card .groups-search-field { display: flex; padding: 0 12px; }
+.group-dialog-card .groups-search-field input { border: 0; background: transparent; padding: 8px 0; }
+.group-selection-count { margin: 1px 0 0; font-size: 11px; font-weight: 700; }
+.group-selection-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.group-selection-chips:empty { display: none; }
+.group-member-chip { min-height: 30px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 20px; color: var(--brand-burgundy); background: var(--brand-gold-light); font: inherit; font-size: 11px; cursor: pointer; }
+.group-candidates-status { margin: 0; font-size: 12px; opacity: .7; }
+.group-member-candidates { display: grid; align-content: start; min-height: 190px; max-height: 360px; overflow: auto; scrollbar-width: thin; }
+.group-candidate { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 68px; padding: 10px 4px; border: 0; border-bottom: 1px solid var(--line); color: var(--brand-burgundy); background: transparent; text-align: left; cursor: pointer; }
+.group-candidate .group-member-avatar { width: 42px; height: 42px; }
+.group-candidate-copy { display: grid; flex: 1; min-width: 0; gap: 4px; }
+.group-candidate-copy strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.group-candidate-tick { display: grid; place-items: center; width: 24px; height: 24px; border: 1.5px solid var(--line); border-radius: 50%; color: transparent; font-size: 15px; }
+.group-candidate.is-selected .group-candidate-tick { border-color: var(--brand-burgundy); color: var(--brand-gold-light); background: var(--brand-burgundy); }
+.group-candidate.is-selected { background: rgba(241,223,155,.18); }
+.group-create-details[hidden], .group-create-members[hidden], .group-public-link[hidden], .group-private-link[hidden], .group-photo-field input[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  .group-dialog { width: calc(100% - 18px); max-height: 96dvh; border-radius: 23px; }
+  .group-dialog-card { padding: 17px 18px 15px; }
+  .group-create-header { padding-bottom: 10px; }
+  .group-create-details { gap: 14px; }
+  .group-photo-field { margin: 2px 0 1px; gap: 8px; }
+  .group-photo-upload { width: 88px; height: 88px; }
+  .group-create-header h2 { font-size: 24px; }
+  .group-dialog-actions { bottom: 0; }
+  .group-member-candidates { max-height: 40dvh; }
+}

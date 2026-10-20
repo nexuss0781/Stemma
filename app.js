@@ -981,7 +981,7 @@ function restoreNavigationLocation(accountKey) {
   payments.friendBill = null;
   activeRoute = saved?.route || 'overview';
   // A shared group or invite link takes precedence over account navigation memory.
-  if (window.location.pathname !== '/dashboard' && /^\/(?:[A-Za-z0-9_-]{3,40}|invite\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname)) activeRoute = 'pulse';
+  if (window.location.pathname !== '/dashboard' && /^\/(?:[A-Za-z0-9_-]{3,40}|(?:invite|private_urls)\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname)) activeRoute = 'pulse';
   for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
   paymentSlideIndex = saved?.paymentSlide || 0;
   paymentDemoInterval = saved?.interval || '15-days';
@@ -1663,7 +1663,7 @@ googleContinue.addEventListener('click', async () => {
       googleContinue.disabled = false;
       return;
     }
-    const groupPath = /^\/(?:[A-Za-z0-9_-]{3,40}|invite\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname) ? window.location.pathname : '';
+    const groupPath = /^\/(?:[A-Za-z0-9_-]{3,40}|(?:invite|private_urls)\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname) ? window.location.pathname : '';
     window.location.assign('/auth/google/start' + (groupPath ? `?returnTo=${encodeURIComponent(groupPath)}` : ''));
   } catch {
     faydaFeedback.textContent = 'Google sign-in is unavailable right now. You can still use Skip to continue as a guest.';
