@@ -9,6 +9,7 @@ import { buildConfig, createApp } from '../server.js';
 import * as groupsApi from '../groups-api.js';
 import { createPulseStore } from '../pulse-api.js';
 import { createDirectChatStore } from '../direct-chat-api.js';
+import { createAttachmentStore } from '../attachments-api.js';
 
 const SESSION_SECRET = 'groups-postgres-integration-test-session-secret';
 const google = subject => ({ provider: 'google', subject });
@@ -23,10 +24,10 @@ const patchJson = (url, cookie, origin, body) => fetch(url, {
   body: JSON.stringify(body)
 });
 
-async function createHarness({ groupsStore, pulseStore, directChatStore }) {
+async function createHarness({ groupsStore, pulseStore, directChatStore, attachmentStore }) {
   const config = buildConfig({ NODE_ENV: 'test', SESSION_SECRET });
   const sessionStore = new session.MemoryStore();
-  const app = createApp({ config, sessionStore, groupStore: groupsStore, groupsStore, pulseStore, directChatStore });
+  const app = createApp({ config, sessionStore, groupStore: groupsStore, groupsStore, pulseStore, directChatStore, attachmentStore });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -94,11 +95,13 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
     const groupsStore = createStore(pool);
     const pulseStore = createPulseStore(pool);
     const directChatStore = createDirectChatStore(pool);
+    const attachmentStore = createAttachmentStore(pool);
     await groupsStore.migrate();
     await groupsStore.migrate();
     await pulseStore.migrate();
     await directChatStore.migrate();
-    harness = await createHarness({ groupsStore, pulseStore, directChatStore });
+    await attachmentStore.migrate();
+    harness = await createHarness({ groupsStore, pulseStore, directChatStore, attachmentStore });
     const [owner, member, outsider] = await Promise.all(subjects.map((subject, index) =>
       harness.cookieFor(`groups-it-session-${index}`, google(subject))));
     const { origin } = harness;
@@ -208,6 +211,25 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
     assert.equal(memberMessage.author.username, 'member_user');
     assert.equal(memberMessage.author.nickName, 'Member Two');
     assert.equal((await sendGroup(publicGroup.id, outsider, 'Not a member')).status, 404, 'nonmembers cannot send to public groups');
+    const groupPng = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const uploadGroupAttachment = (cookie, bytes = groupPng) => postJson(`${origin}/api/pulse/groups/${publicGroup.id}/attachments`, cookie, origin,
+      { name: 'group.png', mimeType: 'image/png', data: bytes.toString('base64') });
+    response = await uploadGroupAttachment(owner);
+    assert.equal(response.status, 201, 'current member can upload a validated group attachment');
+    const groupAttachmentMessage = (await response.json()).message;
+    assert.equal(groupAttachmentMessage.text, 'Attachment: group.png');
+    assert.deepEqual(groupAttachmentMessage.attachment, { id: groupAttachmentMessage.attachment.id,
+      url: `/api/pulse/attachments/${groupAttachmentMessage.attachment.id}`, name: 'group.png', mimeType: 'image/png', size: 8 });
+    assert.equal((await uploadGroupAttachment(outsider)).status, 404, 'public visibility does not grant attachment upload access');
+    response = await get(`/api/pulse/groups/${publicGroup.id}/messages`, member);
+    const messagesWithAttachment = (await response.json()).messages;
+    const memberAttachment = messagesWithAttachment.find(message => message.id === groupAttachmentMessage.id);
+    assert.deepEqual(memberAttachment.attachment, groupAttachmentMessage.attachment, 'member message history returns attachment metadata');
+    response = await get(groupAttachmentMessage.attachment.url, member);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), groupPng);
+    assert.equal((await get(groupAttachmentMessage.attachment.url, outsider)).status, 404, 'nonmembers cannot fetch group attachment bytes');
+    assert.equal((await uploadGroupAttachment(owner, Buffer.from('<script>'))).status, 400, 'signature mismatch is rejected before persistence');
     response = await get(`/api/pulse/groups/${publicGroup.id}/messages`, outsider);
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).messages, [], 'public visibility does not grant access to message history');
@@ -226,6 +248,7 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
     assert.equal((await postJson(`${origin}/api/pulse/groups/${publicGroup.id}/leave`, member, origin, {})).status, 200);
     response = await get(`/api/pulse/groups/${publicGroup.id}/messages`, member);
     assert.deepEqual((await response.json()).messages, [], 'leaving immediately revokes read access');
+    assert.equal((await get(groupAttachmentMessage.attachment.url, member)).status, 404, 'leaving immediately revokes attachment download access');
     assert.equal((await sendGroup(publicGroup.id, member, 'After leaving')).status, 404, 'leaving immediately revokes send access');
     assert.equal((await join(publicGroup.id, member)).status, 404, 'private members cannot rejoin without an invitation');
     assert.equal((await join(publicGroup.id, member, transitionedInvite)).status, 200, 'private members can rejoin with the valid invitation');
@@ -250,10 +273,10 @@ test('PostgreSQL Groups privacy, membership, messaging, settings and legacy Puls
     assert.deepEqual(pageOne.messages[0].author, { username: 'owner_user', nickName: 'Owner One' });
     response = await get(`/api/pulse/groups/${publicGroup.id}/messages?before=${pageOne.messages.at(-1).id}`, owner);
     const pageTwo = await response.json();
-    assert.equal(pageTwo.messages.length, 4, 'cursor pagination returns only the remaining older rows');
+    assert.equal(pageTwo.messages.length, 5, 'cursor pagination returns only the remaining older rows');
     assert.equal(pageTwo.hasMore, false);
     assert.ok(pageOne.messages.every(message => !pageTwo.messages.some(older => older.id === message.id)), 'message pages do not overlap');
-    assert.deepEqual(pageTwo.messages.map(message => message.text), ['page-seed-2', 'page-seed-1', 'Hello from member', 'Hello from owner']);
+    assert.deepEqual(pageTwo.messages.map(message => message.text), ['page-seed-2', 'page-seed-1', 'Attachment: group.png', 'Hello from member', 'Hello from owner']);
 
     const transferCreate = await createGroup(owner, { name: 'Ownership Transfer Group', slug: 'transfer-group', description: '', visibility: 'private' });
     assert.equal(transferCreate.status, 201);

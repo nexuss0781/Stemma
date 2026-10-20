@@ -47,6 +47,8 @@ export function createGroupsStore(pool) {
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '009_groups.sql'), 'utf8'));
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '010_group_avatars.sql'), 'utf8'));
+      const attachmentsReady = await pool.query("SELECT to_regclass('stemma_pulse_attachments') IS NOT NULL AS ready");
+      if (attachmentsReady.rows[0]?.ready) await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '011_group_chat_attachments.sql'), 'utf8'));
     },
     async listMine(subject) {
       const result = await pool.query(`${summarySql} WHERE EXISTS (
@@ -348,12 +350,18 @@ function validGroupRow(row) {
   return row && validId(row.id) && typeof row.name === 'string' && typeof row.slug === 'string' &&
     typeof row.description === 'string' && ['public', 'private'].includes(row.visibility);
 }
+function safeAttachment(row) {
+  if (!row || typeof row.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
+      typeof row.name !== 'string' || !row.name.trim() || row.name.length > 255 || typeof row.mimeType !== 'string' ||
+      !Number.isSafeInteger(Number(row.size)) || Number(row.size) < 1 || Number(row.size) > 5 * 1024 * 1024) return null;
+  return { id: row.id, url: `/api/pulse/attachments/${row.id}`, name: row.name, mimeType: row.mimeType, size: Number(row.size) };
+}
 function safeDate(value) { const d = value instanceof Date ? value : new Date(value); return Number.isNaN(d.getTime()) ? null : d.toISOString(); }
 function publicGroup(row) {
   if (!validGroupRow(row)) return null;
   return groupDto(row);
 }
-function registerGroupsApi(app, { groupsStore = null, requireGoogleSession, config }) {
+function registerGroupsApi(app, { groupsStore = null, attachmentStore = null, requireGoogleSession, config }) {
   if (typeof requireGoogleSession !== 'function') throw new TypeError('Google-session middleware is required.');
   const limiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false,
     handler: (_req, res) => { privateNoStore(res); res.status(429).json({ error: 'Too many group requests. Please wait and try again.' }); }
@@ -506,9 +514,15 @@ function registerGroupsApi(app, { groupsStore = null, requireGoogleSession, conf
       const rows = await groupsStore.listMessages(req.session.stemmaUser.subject, req.params.id, before, PAGE_SIZE + 1);
       const messages = (rows || []).filter(row => row && validId(row.id) && typeof row.text === 'string' && safeDate(row.createdAt));
       const hasMore = messages.length > PAGE_SIZE;
-      return res.json({ messages: messages.slice(0, PAGE_SIZE).map(row => ({
+      const page = messages.slice(0, PAGE_SIZE);
+      const attachmentRows = attachmentStore?.getAttachmentsForMessages
+        ? await attachmentStore.getAttachmentsForMessages(req.session.stemmaUser.subject, `group:${req.params.id}`, page.map(row => row.id))
+        : [];
+      const attachmentsByMessage = new Map((Array.isArray(attachmentRows) ? attachmentRows : []).map(row => [row.messageId, safeAttachment(row)]).filter(([, attachment]) => attachment));
+      return res.json({ messages: page.map(row => ({
         id: row.id, text: row.text, createdAt: safeDate(row.createdAt), mine: row.authorSubject === req.session.stemmaUser.subject,
-        author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' }
+        author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' },
+        ...(attachmentsByMessage.has(row.id) ? { attachment: attachmentsByMessage.get(row.id) } : {})
       })), hasMore });
     } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }
   });

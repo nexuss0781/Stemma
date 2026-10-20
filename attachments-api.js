@@ -101,6 +101,8 @@ export function createAttachmentStore(pool) {
   return {
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '007_chat_attachments.sql'), 'utf8'));
+      const groupsReady = await pool.query("SELECT to_regclass('stemma_groups_messages') IS NOT NULL AS ready");
+      if (groupsReady.rows[0]?.ready) await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '011_group_chat_attachments.sql'), 'utf8'));
     },
     async createConversationAttachment(subject, conversationId, attachment) {
       const client = await pool.connect();
@@ -160,6 +162,34 @@ export function createAttachmentStore(pool) {
       } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
       finally { client.release(); }
     },
+    async createGroupAttachment(subject, groupId, attachment) {
+      const client = await pool.connect();
+      const id = crypto.randomUUID();
+      try {
+        await client.query('BEGIN');
+        const message = await client.query(
+          `WITH inserted AS (
+             INSERT INTO stemma_groups_messages (group_id, author_subject, text)
+             SELECT g.id, $2::varchar(255), $3::text FROM stemma_groups g
+             WHERE g.id = $1::bigint AND EXISTS (
+               SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $2::varchar(255)
+             )
+             RETURNING id, group_id, author_subject, text, created_at
+           ) SELECT i.id::text AS id, i.text, i.created_at AS "createdAt", i.author_subject AS "authorSubject",
+                    COALESCE(p.username, '') AS username, COALESCE(p.nick_name, '') AS "nickName"
+             FROM inserted i LEFT JOIN stemma_student_profiles p ON p.google_subject = i.author_subject`,
+          [groupId, subject, `Attachment: ${attachment.name}`]);
+        const row = message.rows[0];
+        if (!row) { await client.query('ROLLBACK'); return null; }
+        await client.query(
+          `INSERT INTO stemma_pulse_attachments (id, google_subject, group_message_id, name, mime_type, byte_size, data)
+           VALUES ($1::uuid, $2, $3::bigint, $4, $5, $6, $7)`,
+          [id, subject, row.id, attachment.name, attachment.mimeType, attachment.size, attachment.data]);
+        await client.query('COMMIT');
+        return { ...row, attachment: { id, url: `/api/pulse/attachments/${id}`, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size } };
+      } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
+      finally { client.release(); }
+    },
     async getAttachmentForSubject(subject, id) {
       const result = await pool.query(
         `SELECT a.id::text AS id, a.name, a.mime_type AS "mimeType", a.byte_size AS size, a.data
@@ -167,9 +197,13 @@ export function createAttachmentStore(pool) {
          LEFT JOIN stemma_pulse_saved_messages s ON s.id = a.saved_message_id
          LEFT JOIN stemma_direct_chat_messages m ON m.id = a.chat_message_id
          LEFT JOIN stemma_direct_chat_conversations c ON c.id = m.conversation_id
+         LEFT JOIN stemma_groups_messages gm ON gm.id = a.group_message_id
          WHERE a.id = $2::uuid AND (
            (a.saved_message_id IS NOT NULL AND s.google_subject = $1)
            OR (a.chat_message_id IS NOT NULL AND (c.participant_a = $1 OR c.participant_b = $1))
+           OR (a.group_message_id IS NOT NULL AND EXISTS (
+             SELECT 1 FROM stemma_groups_memberships member WHERE member.group_id = gm.group_id AND member.member_subject = $1
+           ))
          ) LIMIT 1`, [subject, id]);
       const row = result.rows[0];
       return row ? { ...row, data: Buffer.from(row.data), size: Number(row.size) } : null;
@@ -189,6 +223,13 @@ export function createAttachmentStore(pool) {
            FROM stemma_pulse_attachments a JOIN stemma_direct_chat_messages m ON m.id = a.chat_message_id
            JOIN stemma_direct_chat_conversations c ON c.id = m.conversation_id
            WHERE (c.participant_a = $1 OR c.participant_b = $1) AND c.id = $2::bigint AND a.chat_message_id = ANY($3::bigint[])`, [subject, scope, ids]);
+      } else if (typeof scope === 'string' && /^group:[1-9][0-9]{0,18}$/.test(scope)) {
+        const groupId = scope.slice('group:'.length);
+        result = await pool.query(
+          `SELECT a.id::text AS id, a.group_message_id::text AS "messageId", a.name, a.mime_type AS "mimeType", a.byte_size AS size
+           FROM stemma_pulse_attachments a JOIN stemma_groups_messages m ON m.id = a.group_message_id
+           WHERE m.group_id = $2::bigint AND a.group_message_id = ANY($3::bigint[])
+             AND EXISTS (SELECT 1 FROM stemma_groups_memberships member WHERE member.group_id = m.group_id AND member.member_subject = $1)`, [subject, groupId, ids]);
       } else return [];
       return result.rows.map(row => ({ ...attachmentDto(row), messageId: row.messageId }));
     }
@@ -233,6 +274,19 @@ export function registerAttachmentsApi(app, { attachmentStore = null, requireGoo
       const row = await attachmentStore.createConversationAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
       if (!row) return res.status(404).json({ error: 'Conversation not found.' });
       return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), mine: row.authorSubject === req.session.stemmaUser.subject, attachment: row.attachment, ...(row.replyTo ? { replyTo: row.replyTo } : {}) } });
+    } catch { return unavailable(res); }
+  });
+  app.post('/api/pulse/groups/:id/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {
+    noStore(res);
+    if (!attachmentStore) return unavailable(res);
+    if (!validConversationId(req.params.id)) return res.status(400).json({ error: 'Group id is invalid.' });
+    const attachment = validateAttachmentBody(req.body);
+    if (!attachment) return res.status(400).json({ error: 'Attachment file data or type is invalid.' });
+    try {
+      const row = await attachmentStore.createGroupAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
+      if (!row) return res.status(404).json({ error: 'Group not found.' });
+      return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), mine: row.authorSubject === req.session.stemmaUser.subject,
+        author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' }, attachment: row.attachment } });
     } catch { return unavailable(res); }
   });
   app.post('/api/pulse/saved/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {

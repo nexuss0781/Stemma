@@ -646,7 +646,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   registerNotificationsApi(app, { notificationStore, requireGoogleSession, config });
   registerPulseApi(app, { pulseStore, attachmentStore, requireGoogleSession, config });
   registerDirectChatApi(app, { directChatStore, attachmentStore, requireGoogleSession, config });
-  registerGroupsApi(app, { groupsStore: groupStore, requireGoogleSession, config });
+  registerGroupsApi(app, { groupsStore: groupStore, attachmentStore, requireGoogleSession, config });
   registerAttachmentsApi(app, { attachmentStore, requireGoogleSession, config });
 
   function requireProfileStore(_req, res, next) {
@@ -1132,10 +1132,10 @@ async function startServer() {
     await pulseStore.migrate();
     directChatStore = createDirectChatStore(postgresPool);
     await directChatStore.migrate();
-    attachmentStore = createAttachmentStore(postgresPool);
-    await attachmentStore.migrate();
     groupStore = createGroupStore(postgresPool);
     await groupStore.migrate();
+    attachmentStore = createAttachmentStore(postgresPool);
+    await attachmentStore.migrate();
     const PgStore = connectPgSimple(session);
     sessionStore = new PgStore({
       pool: postgresPool,

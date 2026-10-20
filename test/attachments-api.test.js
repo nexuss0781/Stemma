@@ -14,10 +14,10 @@ const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ATTACHMENT_ID = 'e34bac58-083f-4b68-9f33-ea86dc33e052';
 const google = subject => ({ provider: 'google', subject });
 
-async function createHarness({ attachmentStore, pulseStore = null, directChatStore = null }) {
+async function createHarness({ attachmentStore, pulseStore = null, directChatStore = null, groupStore = null }) {
   const config = buildConfig({ NODE_ENV: 'test', SESSION_SECRET });
   const sessionStore = new session.MemoryStore();
-  const app = createApp({ config, sessionStore, attachmentStore, pulseStore, directChatStore });
+  const app = createApp({ config, sessionStore, attachmentStore, pulseStore, directChatStore, groupStore });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -120,6 +120,44 @@ test('attachment endpoints enforce authentication, same-origin uploads, scoped m
   assert.deepEqual(calls.find(call => call[0] === 'metadata'), ['metadata', 'participant', 'saved', ['23']]);
 });
 
+test('group attachments upload into the shared store and remain scoped to current members', async t => {
+  const created = [];
+  const groupMessage = { id: '91', text: 'Attachment: sample.png', createdAt: new Date('2026-02-03T00:00:00Z'), authorSubject: 'group-member', username: 'member', nickName: 'Member', attachment: { id: ATTACHMENT_ID, url: `/api/pulse/attachments/${ATTACHMENT_ID}`, name: 'sample.png', mimeType: 'image/png', size: PNG.length } };
+  const store = {
+    async createGroupAttachment(subject, id, attachment) {
+      created.push([subject, id, attachment.name]);
+      return subject === 'group-member' && id === '17' ? groupMessage : null;
+    },
+    async getAttachmentForSubject(subject, id) {
+      return subject === 'group-member' && id === ATTACHMENT_ID ? { id, name: 'sample.png', mimeType: 'image/png', size: PNG.length, data: PNG } : null;
+    },
+    async getAttachmentsForMessages(subject, scope, ids) {
+      if (subject !== 'group-member' || scope !== 'group:17' || !ids.includes('91')) return [];
+      return [{ id: ATTACHMENT_ID, messageId: '91', name: 'sample.png', mimeType: 'image/png', size: PNG.length }];
+    }
+  };
+  const groups = { async listMessages(subject, id) { return subject === 'group-member' && id === '17' ? [groupMessage] : []; } };
+  const h = await createHarness({ attachmentStore: store, groupStore: groups });
+  t.after(() => h.close());
+  const member = await h.cookieFor('group-member-session', google('group-member'));
+  const outsider = await h.cookieFor('group-outsider-session', google('group-outsider'));
+
+  let response = await jsonPost(`${h.origin}/api/pulse/groups/17/attachments`, member, h.origin, fileBody());
+  assert.equal(response.status, 201);
+  assert.deepEqual((await response.json()).message, { id: '91', text: 'Attachment: sample.png', createdAt: '2026-02-03T00:00:00.000Z', mine: true,
+    author: { username: 'member', nickName: 'Member' }, attachment: groupMessage.attachment });
+  assert.equal((await jsonPost(`${h.origin}/api/pulse/groups/17/attachments`, outsider, h.origin, fileBody())).status, 404);
+  assert.deepEqual(created, [['group-member', '17', 'sample.png'], ['group-outsider', '17', 'sample.png']]);
+
+  response = await fetch(`${h.origin}/api/pulse/groups/17/messages`, { headers: { cookie: member } });
+  assert.deepEqual((await response.json()).messages[0].attachment, groupMessage.attachment);
+  response = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`, { headers: { cookie: member } });
+  assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), PNG);
+  response = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`, { headers: { cookie: outsider } });
+  assert.equal(response.status, 404);
+});
+
 test('PostgreSQL attachments persist across store recreation and authorize saved owners and chat participants', {
   skip: process.env.STEMMA_ATTACHMENTS_POSTGRES_TEST !== '1', timeout: 120000
 }, async t => {
@@ -137,6 +175,9 @@ test('PostgreSQL attachments persist across store recreation and authorize saved
     await pool.query(`CREATE TABLE stemma_direct_chat_conversations (id BIGSERIAL PRIMARY KEY, participant_a VARCHAR(255) NOT NULL, participant_b VARCHAR(255) NOT NULL)`);
     await pool.query(`CREATE TABLE stemma_direct_chat_messages (id BIGSERIAL PRIMARY KEY, conversation_id BIGINT NOT NULL REFERENCES stemma_direct_chat_conversations ON DELETE CASCADE, author_subject VARCHAR(255) NOT NULL REFERENCES stemma_google_identities ON DELETE CASCADE, text TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
     await pool.query(await readFile(new URL('../migrations/008_direct_chat_replies.sql', import.meta.url), 'utf8'));
+    await pool.query(`CREATE TABLE stemma_groups (id BIGSERIAL PRIMARY KEY)`);
+    await pool.query(`CREATE TABLE stemma_groups_memberships (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES stemma_groups ON DELETE CASCADE, member_subject VARCHAR(255) NOT NULL REFERENCES stemma_google_identities ON DELETE CASCADE)`);
+    await pool.query(`CREATE TABLE stemma_groups_messages (id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES stemma_groups ON DELETE CASCADE, author_subject VARCHAR(255) NOT NULL REFERENCES stemma_google_identities ON DELETE CASCADE, text TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
     await pool.query(`INSERT INTO stemma_google_identities (google_subject) VALUES ('attach-owner'), ('attach-peer'), ('attach-outsider')`);
     await pool.query(`INSERT INTO stemma_direct_chat_conversations (participant_a, participant_b) VALUES ('attach-owner', 'attach-peer')`);
     let store = createAttachmentStore(pool);
