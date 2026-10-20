@@ -1,5 +1,5 @@
 {
-  "serverSha256": "934db2625f091b61767b680181faf202e90e7b6efd2745404e74358ea050bfa5",
+  "serverSha256": "5814bb75ce7c9f93587c1ae382b7ea1627aa92550f4d7e8d11590fd81a10f3ff",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -45,6 +45,10 @@
     {
       "name": "011_group_chat_attachments.sql",
       "sha256": "6c8012894493dd2527235d39a9eba0e3a90a074a0f2eca34917ef001dc7a3ccc"
+    },
+    {
+      "name": "013_pulse_stories.sql",
+      "sha256": "7f36c29f359470e711fa454af14bedf8f3590681751eeffd925073ab9b0c3e0e"
     }
   ]
 }

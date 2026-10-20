@@ -18,9 +18,11 @@
     return `<div class="pulse-conversations">${saved}<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div>${groups}</div>`;
   }
   function stages(kind) {
-    // Keep gesture/stage state intact without showing unfinished stories or grids.
-    const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : 'Empty conversations';
-    return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${label}">${rows(kind)}</section>`).join('');
+    const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : kind === 'group' ? 'Group conversations' : 'Empty conversations';
+    return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => {
+      const content = i === 0 ? rows(kind) : (root.StemmaStories ? root.StemmaStories.stageView(kind, i) : '');
+      return `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${i === 0 ? label : (['', 'Circular story rail', 'Story preview rail', 'Two-column story grid'][i])}">${content}</section>`;
+    }).join('');
   }
   function searchView() {
     return `<section class="pulse-search" id="pulse-search" role="region" aria-label="Pulse Search" hidden>
@@ -46,6 +48,7 @@
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
         <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'app'][i])}</section>`).join('')}</div></div>
         <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
+          <button type="button" class="pulse-create-story" data-story-create><span aria-hidden="true">＋</span> Story</button>
           <button type="button" class="pulse-create-group" data-group-create><span aria-hidden="true">＋</span> New group</button>
         </div>
         <button type="button" class="pulse-create-affordance" aria-label="Toggle create previews" aria-expanded="false" aria-controls="pulse-create-previews">
@@ -346,6 +349,7 @@
     listen(window, 'resize', () => { states.forEach(state => { stop(state); resetVisual(state); state.progress = Number(state.panel.dataset.stage); state.panel.dataset.progress = String(state.progress); }); drag = null; });
     const groups = root.StemmaGroups?.mount(shell, { listen, signal: abort.signal });
     root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true), groups });
+    root.StemmaStories?.mount(shell, { listen, signal: abort.signal });
     cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories, unmount: () => { cleanup(); cleanup = () => {}; } });

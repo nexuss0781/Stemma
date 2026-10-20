@@ -5,17 +5,15 @@ import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { createApp, buildConfig } from '../server.js';
 const root = new URL('../', import.meta.url);
-const [source, dataSource, css, html, app, groupsSource] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js', 'groups-ui.js'].map(name => readFile(new URL(name, root), 'utf8')));
+const [source, dataSource, css, html, app, groupsSource, storiesSource, storiesCss] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js', 'groups-ui.js', 'stories-ui.js', 'stories.css'].map(name => readFile(new URL(name, root), 'utf8')));
 function load(fetchImpl) {
   const effects = [];
   const context = vm.createContext({ fetch: fetchImpl || (() => effects.push('fetch')), XMLHttpRequest: () => effects.push('xhr') });
   vm.runInContext(groupsSource, context);
   vm.runInContext(dataSource, context);
+  vm.runInContext(storiesSource, context);
   vm.runInContext(source, context);
-  return { pulse: context.StemmaPulse, data: context.StemmaPulseData, effects };
-}
-function withoutSavedRowText(markup) {
-  return markup.replace(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi, '');
+  return { pulse: context.StemmaPulse, data: context.StemmaPulseData, stories: context.StemmaStories, effects };
 }
 function panelsFrom(markup) {
   const starts = [...markup.matchAll(/<section class="pulse-panel"/g)].map(match => match.index);
@@ -33,15 +31,16 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
   assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 19);
   const panels = panelsFrom(markup);
-  assert.doesNotMatch(panels.join(''), /aria-label="Story"|id="pulse-panel-5"|pulse-story-grid|pulse-stories|pulse-story-ring|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/,
-    'the feed contains no story, discovery, app-grid, or skeleton placeholders');
+  assert.doesNotMatch(panels.join(''), /skeleton-shimmer|pulse-bone/,
+    'the initial feed contains no skeleton or fabricated loading cards');
   assert.equal(panels.length, 5);
   assert.equal((panels[0].match(/class="pulse-stage /g) || []).length, 4,
     'All retains the four gesture-stage containers');
-  assert.equal((panels[0].match(/\bpulse-saved-row\b/g) || []).length, 4,
-    'the same actual Saved Messages row appears in each All stage');
-  assert.equal(withoutSavedRowText(panels[0]).replace(/<[^>]*>/g, '').trim(), '',
-    'All contains no visible non-row feed copy');
+  assert.equal((panels[0].match(/\bpulse-saved-row\b/g) || []).length, 1,
+    'Saved Messages appears once, in All’s minimal conversation stage');
+  assert.match(stagesFrom(panels[0])[0], /pulse-saved-row/);
+  assert.doesNotMatch(stagesFrom(panels[0]).slice(1).join(''), /pulse-saved-row|data-pulse-conversations/,
+    'story and discovery stages do not duplicate Saved Messages or regular conversation lists');
   assert.match(panels[2], /Loading groups…/,
     'the Groups view can show its async loading status');
   assert.match(markup, /class="pulse-create-group"[^>]*data-group-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> New group<\/button>/,
@@ -49,14 +48,14 @@ test('Pulse has five accessible icon-only categories, with All selected by defau
   assert.deepEqual(effects, [], 'rendering has no network effects');
   assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|WebSocket|\/api\//);
 });
-test('All stages render only the Saved Messages row with an inline bookmark-stack icon and initially empty preview', () => {
+test('All minimal stage renders Saved Messages once with an inline bookmark-stack icon and empty preview', () => {
   const markup = load().pulse.render();
   const panels = panelsFrom(markup);
   const allStages = stagesFrom(panels[0]);
   assert.equal(allStages.length, 4);
-  for (const stage of allStages) {
-    const rows = [...stage.matchAll(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi)];
-    assert.equal(rows.length, 1, 'each retained All stage contains one Saved Messages row');
+  const rows = [...allStages[0].matchAll(/<button\b(?=[^>]*\bclass="[^"]*\bpulse-saved-row\b)[^>]*>[\s\S]*?<\/button>/gi)];
+  assert.equal(rows.length, 1, 'the All minimal stage contains one Saved Messages row');
+  {
     const row = rows[0][0];
     assert.match(row, /\bdata-pulse-saved(?:\s|=|>)/);
     assert.match(row, /<strong>Saved Messages<\/strong>/);
@@ -74,6 +73,8 @@ test('All stages render only the Saved Messages row with an inline bookmark-stac
     assert.match(preview[0], /\bhidden(?:\s|>)/);
     assert.equal(preview[1], '', 'the preview starts empty until the private note fetch resolves');
   }
+  assert.equal((markup.match(/\bpulse-saved-row\b/g) || []).length, 1,
+    'Saved Messages is not duplicated across stages or categories');
   const saved = markup.match(/<section class="pulse-saved"[\s\S]*?<\/section>/);
   assert.ok(saved, 'the private Saved Messages view is rendered');
   assert.match(saved[0], /aria-label="Saved Messages"[^>]*\bhidden/);
@@ -85,36 +86,42 @@ test('All stages render only the Saved Messages row with an inline bookmark-stac
   assert.match(dataSource, /request\('\/api\/pulse\/saved', \{ method: 'POST'/,
     'the compose action saves notes only to that private collection');
 });
-test('User retains direct conversations; Group exposes group rows while Channel and App stay empty', () => {
+test('minimal stages retain category conversations while later stages have no regular chat list', () => {
   const markup = load().pulse.render();
   const panels = panelsFrom(markup);
   assert.equal(panels.length, 5);
   for (const [index, panel] of panels.entries()) {
     const stages = stagesFrom(panel);
     assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
-    if (index === 0) continue;
-    for (const [stageIndex, stage] of stages.entries()) {
-      if (index === 1) {
-        assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `User stage ${stageIndex} stays empty until direct conversations load`);
-        assert.match(stage, /aria-label="Direct conversations"/);
-        assert.match(stage, /<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"><\/div>/,
-          'each User stage mounts the empty direct-conversation list for async population');
-        assert.doesNotMatch(stage, /pulse-saved-row|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/);
-      } else if (index === 2) {
-        assert.match(stage, /data-group-lists role="list" aria-label="Group conversations"/,
-          `Group stage ${stageIndex} exposes an async group-list target`);
-        assert.doesNotMatch(stage, /pulse-saved-row|pulse-direct-list|pulse-stories|pulse-preview|skeleton|pulse-app-grid/);
-      } else {
-        assert.equal(stage.replace(/<[^>]*>/g, '').trim(), '', `category ${index} has no visible feed content`);
-        assert.doesNotMatch(stage, /pulse-saved-row|pulse-conversation\b|pulse-direct-list|pulse-stories|pulse-preview|pulse-discovery|skeleton|pulse-app-grid/,
-          `category ${index} stage ${stageIndex} has no saved row, chat, story, discovery, app-grid, or skeleton placeholder`);
-      }
+    assert.match(stages[0], /pulse-conversations/);
+    if (index === 0) {
+      assert.match(stages[0], /pulse-saved-row/);
+      assert.match(stages[0], /data-pulse-conversations/);
+      assert.match(stages[0], /data-group-lists/);
+    } else if (index === 1) {
+      assert.match(stages[0], /aria-label="Direct conversations"/);
+      assert.match(stages[0], /data-pulse-conversations/);
+      assert.doesNotMatch(stages[0], /pulse-saved-row/);
+    } else if (index === 2) {
+      assert.match(stages[0], /data-group-lists role="list" aria-label="Group conversations"/);
+      assert.doesNotMatch(stages[0], /pulse-saved-row|data-pulse-conversations/);
+    } else {
+      assert.doesNotMatch(stages[0], /pulse-saved-row|data-pulse-conversations|data-group-lists/);
+    }
+    for (const [stageIndex, stage] of stages.slice(1).entries()) {
+      assert.doesNotMatch(stage, /data-pulse-conversations|pulse-direct-list|pulse-direct-row|data-group-lists|pulse-saved-row/,
+        `category ${index} story/discovery stage ${stageIndex + 1} contains no regular chat list`);
     }
   }
+  assert.match(stagesFrom(panels[0])[1], /data-story-stage="1"[^>]*role="region"[^>]*aria-label="Active stories"/);
+  assert.match(stagesFrom(panels[0])[2], /data-story-stage="2"[^>]*role="region"[^>]*aria-label="Story previews"/);
+  assert.match(stagesFrom(panels[0])[3], /data-story-stage="3"[^>]*role="region"[^>]*aria-label="Active story grid"/);
+  assert.doesNotMatch(panels.join(''), /data-story-open=/,
+    'initial stages contain no fabricated story cards, identities, or story content');
 });
-test('saved-message preview paints the newest private note into each All stage and stays blank when none exist', async () => {
+test('saved-message preview paints the newest private note into the single All row and stays blank when none exist', async () => {
   async function runPreview(messages) {
-    const previews = Array.from({ length: 4 }, () => ({ textContent: '', hidden: true }));
+    const previews = Array.from({ length: 1 }, () => ({ textContent: '', hidden: true }));
     const listeners = [];
     const target = () => ({ addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; }, replaceChildren() {}, append() {} });
     const feed = target(), search = target(), saved = target(), field = target(), results = target(), searchStatus = target();
@@ -135,11 +142,11 @@ test('saved-message preview paints the newest private note into each All stage a
     { id: '2', text: '  latest\n saved   note  ' },
     { id: '1', text: 'older note' }
   ]);
-  assert.deepEqual(latest.previews.map(preview => preview.textContent), Array(4).fill('latest saved note'));
-  assert.deepEqual(latest.previews.map(preview => preview.hidden), Array(4).fill(false));
+  assert.deepEqual(latest.previews.map(preview => preview.textContent), ['latest saved note']);
+  assert.deepEqual(latest.previews.map(preview => preview.hidden), [false]);
   const empty = await runPreview([]);
-  assert.deepEqual(empty.previews.map(preview => preview.textContent), Array(4).fill(''));
-  assert.deepEqual(empty.previews.map(preview => preview.hidden), Array(4).fill(true));
+  assert.deepEqual(empty.previews.map(preview => preview.textContent), ['']);
+  assert.deepEqual(empty.previews.map(preview => preview.hidden), [true]);
 });
 test('the create-preview toggle is accessible and retains its inline layered-plus SVG', () => {
   const markup = load().pulse.render();
@@ -153,17 +160,20 @@ test('the create-preview toggle is accessible and retains its inline layered-plu
   assert.doesNotMatch(toggle[1], /<use\b/i,
     'the create artwork is inline rather than an external symbol reference');
 });
-test('create menu offers only the functional New group action and remains hidden until opened', () => {
+test('create menu retains New group, adds the Story composer action, and remains hidden until opened', () => {
   const markup = load().pulse.render();
   const previews = markup.match(/<(div|section)\b(?=[^>]*\bclass="[^"]*\bpulse-create-previews\b)(?=[^>]*\bid="pulse-create-previews")[^>]*>([\s\S]*?)<\/\1>/);
   assert.ok(previews, 'the preview container is present with the controlled id');
   assert.match(previews[0], /aria-hidden="true"/);
   assert.match(previews[0], /\binert(?:\s|>)/);
   assert.match(previews[2], /<button[^>]*class="pulse-create-group"[^>]*data-group-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> New group<\/button>/,
-    'the single menu entry is actionable and creates only groups');
+    'the existing New group action remains available');
+  assert.match(previews[2], /<button[^>]*class="pulse-create-story"[^>]*data-story-create[^>]*>[^<]*<span aria-hidden="true">＋<\/span> Story<\/button>/,
+    'Story opens the story composer');
   assert.doesNotMatch(previews[2], /Channel|App|skeleton|pulse-create-preview/,
     'unfinished Channel and App actions are not presented as enabled');
   assert.equal((previews[2].match(/data-group-create/g) || []).length, 1);
+  assert.equal((previews[2].match(/data-story-create/g) || []).length, 1);
 });
 test('create previews toggle from the shell and support Escape and outside dismissal', () => {
   assert.match(source, /classList\.toggle\(['"]is-create-open['"]/,
@@ -180,7 +190,7 @@ test('the New group menu has a restrained transition and honors reduced motion',
   assert.match(groupsCss, /\.pulse-create-group[^{}]*\{[^}]*transition:/);
   assert.match(groupsCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)[^{]*\{[^}]*\.pulse-create-group[^{}]*\{[^}]*transition:\s*none/);
 });
-test('each of the five categories can be selected without changing the Saved Messages-only feed', () => {
+test('each category selection preserves the saved-row scope and four-stage layouts', () => {
   const { pulse } = load();
   for (let index = 0; index < 5; index++) {
     const markup = pulse.render(index);
@@ -190,8 +200,8 @@ test('each of the five categories can be selected without changing the Saved Mes
     const panels = panelsFrom(markup);
     assert.equal(panels.length, 5);
     assert.equal(stagesFrom(panels[index]).length, 4);
-    if (index === 0) assert.equal((panels[index].match(/\bpulse-saved-row\b/g) || []).length, 4);
-    else assert.doesNotMatch(panels[index], /pulse-saved-row|pulse-stories|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/);
+    assert.equal((panels[index].match(/\bpulse-saved-row\b/g) || []).length, index === 0 ? 1 : 0);
+    assert.doesNotMatch(stagesFrom(panels[index]).slice(1).join(''), /data-pulse-conversations|pulse-direct-list|pulse-direct-row|data-group-lists|pulse-saved-row/);
   }
 });
 test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduced motion', () => {
@@ -202,8 +212,8 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="\/direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-ui.js\?v=\d+" defer/,
-    'the data client loads before Pulse rendering');
+  assert.match(html, /src="\/direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="\/story-video-capture.js\?v=\d+" defer><\/script>\s*<script src="\/stories-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-ui.js\?v=\d+" defer/,
+    'the data, capture, and stories clients load before Pulse rendering');
   assert.match(html, /<script src="\/groups-ui.js\?v=\d+" defer><\/script>/,
     'the Groups client uses a root-relative asset URL');
   assert.doesNotMatch(css, /#[\da-f]{3,8}\b|rgba?\(/i, 'Pulse uses existing palette tokens only');
@@ -237,11 +247,17 @@ test('Pulse source and styles are publicly served as static assets only', async 
   }
 });
 
-test('Pulse retains four ordered in-place pull stages while hiding all story and grid placeholders', () => {
+test('Pulse retains four ordered in-place stages with circular, square-preview, and two-column story containers', () => {
   const markup = load().pulse.render();
   assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
   assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
-  assert.doesNotMatch(panelsFrom(markup).join(''), /pulse-stories|pulse-story-ring|pulse-preview-tile|pulse-discovery-grid|pulse-app-grid|skeleton-shimmer/);
+  const allStages = stagesFrom(panelsFrom(markup)[0]);
+  assert.match(allStages[1], /pulse-story-circles|pulse-story-ring/);
+  assert.match(allStages[2], /pulse-story-previews|story-preview-card/);
+  assert.match(allStages[3], /pulse-story-grid|story-grid-card/);
+  assert.doesNotMatch(panelsFrom(markup).join(''), /skeleton-shimmer|pulse-bone/);
+  assert.match(storiesCss, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    'the active-story grid uses two equal columns');
   assert.match(css, /pulse-stage \{ position: absolute; inset: 0/);
   assert.match(source, /gesture.dy > 0 \? 1 : -1/);
   assert.match(source, /stage.inert = i !== next/);
