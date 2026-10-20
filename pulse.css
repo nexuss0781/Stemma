@@ -388,61 +388,51 @@ body.stemma-chat-focus .pulse-direct-compose { padding-left: max(10px, calc((100
 @media (prefers-reduced-motion: reduce) { body.stemma-chat-focus .pulse-direct-chat { animation: none; } }
 
 /* Shared attachment sheet: chosen local items only; native dialog isolates focus. */
-.pulse-attachment-dialog { box-sizing: border-box; width: min(680px, 100%); max-width: 100%; max-height: min(86dvh, 900px); margin: auto auto 0; padding: 0; border: 1px solid var(--line); border-radius: 28px 28px 0 0; background: color-mix(in srgb, var(--paper-soft) 94%, transparent); color: var(--brand-burgundy); box-shadow: 0 0 32px var(--line), inset 0 1px 0 var(--brand-gold-light); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); overflow: hidden; }
+/* Shared attachment and avatar sheet; all colors reuse the existing palette. */
+.pulse-attachment-dialog { box-sizing: border-box; width: min(680px, 100%); max-width: 100%; max-height: min(88dvh, 900px); margin: auto auto 0; padding: 0; border: 1px solid var(--line); border-radius: 28px 28px 0 0; background: color-mix(in srgb, var(--paper-soft) 94%, transparent); color: var(--brand-burgundy); box-shadow: 0 0 32px var(--line), inset 0 1px 0 var(--brand-gold-light); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); overflow: hidden; }
 .pulse-attachment-dialog::backdrop { background: color-mix(in srgb, var(--brand-burgundy-deep) 32%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
-.attachment-sheet { display: flex; flex-direction: column; max-height: min(86dvh, 900px); padding-bottom: env(safe-area-inset-bottom); }
+.attachment-sheet { display: flex; flex-direction: column; max-height: min(88dvh, 900px); padding-bottom: env(safe-area-inset-bottom); }
 .attachment-handle { flex: 0 0 4px; width: 36px; margin: 10px auto 4px; border-radius: 3px; background: var(--line); }
-.attachment-header { display: flex; align-items: center; gap: 10px; padding: 4px 14px; }
-.attachment-header > div { flex: 1; min-width: 0; }
-.attachment-header h2 { margin: 0; font-size: 18px; line-height: 1.35; }
-.attachment-header p { margin: 3px 0 0; font-size: 11px; opacity: .75; }
-.pulse-attachment-dialog button, .pulse-attachment-dialog select { font: inherit; color: inherit; }
-.pulse-attachment-dialog button { min-height: 44px; border: 1px solid var(--line); border-radius: 14px; background: var(--brand-gold-light); cursor: pointer; padding: 8px 12px; }
-.pulse-attachment-dialog button:disabled { cursor: default; }
-.pulse-attachment-dialog :focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: 2px; }
-.attachment-header [data-attachment-back] { width: 44px; flex: 0 0 44px; padding: 0; font-size: 24px; border-radius: 50%; }
-.attachment-header [data-attachment-cancel] { border-color: transparent; background: transparent; font-size: 13px; }
-.attachment-help { margin: 5px 18px 12px; font-size: 12px; line-height: 1.5; }
-.attachment-source { display: flex; align-items: center; gap: 8px; padding: 0 16px 12px; flex-wrap: wrap; }
-.attachment-source label { font-size: 11px; }
-.attachment-source select { min-width: 0; min-height: 44px; flex: 1; border: 1px solid var(--line); border-radius: 12px; padding: 8px; background: var(--paper-soft); font-size: 12px; }
-.attachment-source button { font-size: 12px; flex: 1 0 100%; border-style: dashed; background: transparent; }
-.attachment-content { flex: 1 1 auto; min-height: 100px; overflow-y: auto; overscroll-behavior: contain; padding: 0 14px; }
-.attachment-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 230px; padding: 22px 25px; box-sizing: border-box; border: 1px dashed var(--line); border-radius: 20px; background: color-mix(in srgb, var(--brand-gold) 13%, transparent); }
-.attachment-empty > span { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 20px; background: var(--brand-gold); }
-.attachment-empty svg { width: 30px; height: 30px; }
-.attachment-empty h3 { font-size: 16px; margin: 15px 0 7px; }
-.attachment-empty p { max-width: 290px; margin: 0; font-size: 12px; line-height: 1.6; }
-.attachment-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.attachment-tile { position: relative; min-width: 0; padding-bottom: 6px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--paper-soft); }
-.pulse-attachment-dialog .attachment-thumbnail { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; background: var(--brand-gold-light); }
-.attachment-thumbnail img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.attachment-header { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px; }
+.attachment-header h2 { flex: 1; margin: 0; text-align: center; font-size: 14px; font-weight: 600; }
+.pulse-attachment-dialog button { font: inherit; color: inherit; min-height: 44px; border: 0; border-radius: 14px; background: transparent; cursor: pointer; padding: 8px 12px; }
+.pulse-attachment-dialog button:disabled { cursor: default; opacity: .5; }
+.pulse-attachment-dialog :focus-visible { outline: 2px solid var(--brand-burgundy); outline-offset: -3px; }
+.attachment-header button { width: 44px; flex: 0 0 44px; padding: 0; font-size: 26px; border-radius: 50%; }
+.attachment-content { flex: 1 1 auto; min-height: 160px; overflow-y: auto; overscroll-behavior: contain; padding: 0 4px; }
+.attachment-empty { display: grid; place-items: center; min-height: 240px; }
+.pulse-attachment-dialog .attachment-empty button { display: flex; align-items: center; flex-direction: column; gap: 12px; padding: 28px; font-size: 12px; }
+.attachment-empty svg { width: 36px; height: 36px; }
+.attachment-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.attachment-tile { position: relative; min-width: 0; border-radius: 5px; overflow: hidden; background: var(--paper-soft); }
+.pulse-attachment-dialog .attachment-thumbnail { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border-radius: 0; background: var(--brand-gold-light); overflow: hidden; }
+.attachment-thumbnail img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: cover; }
 .attachment-type { font-size: 18px; font-weight: 650; }
-.attachment-select { display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 5px; font-size: 11px; cursor: pointer; }
-.attachment-select input { flex-shrink: 0; width: 20px; height: 20px; margin: 0; accent-color: var(--brand-burgundy); }
-.attachment-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attachment-tile > small { display: block; font-size: 10px; padding: 0 6px; opacity: .75; }
-.attachment-preview { text-align: center; }
-.attachment-preview-media { margin-top: 10px; }
-.attachment-preview-media :is(img, video) { max-width: 100%; max-height: 36dvh; object-fit: contain; border-radius: 12px; }
+.attachment-select { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 44px; height: 44px; cursor: pointer; }
+.attachment-select input { appearance: none; -webkit-appearance: none; width: 24px; height: 24px; margin: 0; border: 2px solid var(--brand-gold-light); border-radius: 50%; background: color-mix(in srgb, var(--brand-burgundy) 20%, transparent); box-shadow: 0 1px 4px var(--line); cursor: pointer; }
+.attachment-select input:checked { background: var(--brand-burgundy); border-color: var(--brand-gold-light); }
+.attachment-select input:checked::after { content: ''; display: block; width: 5px; height: 10px; border: solid var(--brand-gold-light); border-width: 0 2px 2px 0; transform: translate(7px, 3px) rotate(45deg); }
+.attachment-preview { position: relative; text-align: center; min-height: 240px; }
+.pulse-attachment-dialog [data-preview-close] { position: sticky; display: block; top: 0; z-index: 1; width: 44px; border-radius: 50%; font-size: 25px; background: color-mix(in srgb, var(--paper-soft) 85%, transparent); }
+.attachment-preview-media { display: grid; place-items: center; min-height: 180px; }
+.attachment-preview-media :is(img, video) { display: block; width: 100%; max-height: 57dvh; object-fit: contain; }
 .attachment-preview-media audio { max-width: 100%; }
-.attachment-preview-media pre { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30dvh; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font-size: 12px; }
-.attachment-preview-media p, .attachment-preview-name { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.attachment-preview-media pre { box-sizing: border-box; width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50dvh; overflow: auto; padding: 16px; font-size: 12px; }
+.attachment-preview-media p { font-size: 12px; line-height: 1.5; padding: 16px; }
 .attachment-feedback { margin: 0; padding: 6px 16px; font-size: 12px; line-height: 1.5; }
-.attachment-feedback:empty { padding-block: 3px; }
-.attachment-confirm { display: flex; align-items: center; gap: 10px; padding: 9px 16px; }
-.attachment-confirm span { flex: 1; font-size: 12px; }
-.pulse-attachment-dialog .attachment-confirm button { background: var(--brand-burgundy); color: var(--brand-gold-light); font-weight: 650; font-size: 13px; padding-inline: 18px; }
-.attachment-confirm button:disabled { opacity: .5; }
-.attachment-tray { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 9px 8px; margin: 0 10px 10px; border: 1px solid var(--line); border-radius: 22px; background: color-mix(in srgb, var(--brand-gold-light) 65%, transparent); box-shadow: inset 0 1px 0 var(--brand-gold-light); }
-.pulse-attachment-dialog .attachment-tray button { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 8px 0; border: 0; background: transparent; }
-.pulse-attachment-dialog .attachment-tray button[aria-pressed="true"] { background: var(--brand-burgundy); color: var(--brand-gold-light); }
-.attachment-tray button > span { font-size: 25px; line-height: 1; height: 26px; }
-.attachment-tray strong { font-size: 10px; font-weight: 650; }
-.attachment-tray small { font-size: 8px; white-space: nowrap; }
-.attachment-tray button:disabled { opacity: .5; }
+.attachment-feedback:empty { padding: 0; }
+.attachment-confirm { display: flex; align-items: center; gap: 10px; padding: 8px 14px; }
+.attachment-confirm span { flex: 1; font-size: 13px; }
+.pulse-attachment-dialog [data-attachment-add] { width: 44px; border: 1px solid var(--line); border-radius: 50%; font-size: 24px; }
+.pulse-attachment-dialog [data-attachment-send] { background: var(--brand-burgundy); color: var(--brand-gold-light); font-weight: 650; font-size: 13px; padding-inline: 22px; border-radius: 24px; }
+.attachment-tray { display: flex; align-items: stretch; gap: 4px; padding: 6px; margin: 0 10px 10px; border: 1px solid var(--line); border-radius: 25px; background: color-mix(in srgb, var(--brand-gold-light) 65%, transparent); box-shadow: inset 0 1px 0 var(--brand-gold-light); }
+.attachment-tray [role="tablist"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 2; gap: 4px; }
+.pulse-attachment-dialog .attachment-tray button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 9px 0; border-radius: 20px; }
+.pulse-attachment-dialog .attachment-tray button[aria-selected="true"] { background: var(--brand-burgundy); color: var(--brand-gold-light); }
+.attachment-tray strong { font-size: 11px; font-weight: 650; }
+.attachment-tray svg { display: block; width: 26px; height: 26px; }
 .pulse-attachment-dialog [hidden] { display: none !important; }
-@media (max-height: 650px) { .pulse-attachment-dialog, .attachment-sheet { max-height: 96dvh; } .attachment-empty { min-height: 130px; padding: 12px; } .attachment-empty > span { display: none; } }
+@media (max-height: 650px) { .pulse-attachment-dialog, .attachment-sheet { max-height: 96dvh; } .attachment-empty { min-height: 130px; } }
 @media (min-width: 720px) { .pulse-attachment-dialog { margin-bottom: 24px; border-radius: 28px; } }
 
-.attachment-tray svg { display: block; width: 26px; height: 26px; }
+.pulse-attachment-dialog[data-preview="true"] .attachment-tray, .pulse-attachment-dialog[data-preview="true"] [data-attachment-add] { display: none; }

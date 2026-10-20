@@ -298,8 +298,8 @@
         target.textContent = data.users?.length ? 'Select people to add.' : 'No users found.'; paintSelection();
       } catch (error) { if (revision === candidateRevision && session === dialogRevision && dialog.open) target.textContent = error.message; }
     }
-    async function uploadPhoto() {
-      const file = form.querySelector('[data-group-photo-input]')?.files?.[0]; if (!file) return;
+    async function uploadPhoto(chosenFile) {
+      const file = chosenFile?.name ? chosenFile : form.querySelector('[data-group-photo-input]')?.files?.[0]; if (!file) return;
       const revision = dialogRevision, uploadRevision = ++photoRevision; photoBusy = true; dialogStatus.textContent = 'Preparing photo…';
       try {
         if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error('Choose a PNG, JPEG or WebP image under 10 MiB.');
@@ -366,7 +366,10 @@
       else if (target.matches('[data-group-older]')) void loadMessages(true);
       else if (target.matches('[data-dialog-close]')) closeDialog();
       else if (target.matches('[data-create-back]')) { if (creationStep === 2) { setCreationStep(1); dialogStatus.textContent = ''; } else closeDialog(); }
-      else if (target.matches('[data-group-photo-upload]')) form.querySelector('[data-group-photo-input]').click();
+      else if (target.matches('[data-group-photo-upload]')) {
+        const revision = dialogRevision;
+        root.StemmaChatAttachments?.pickPhoto({ button: target, signal, accept: '.png,.jpg,.jpeg,.webp', ready: () => dialog.open && dialogRevision === revision && !submitting && !photoBusy, onSelect: uploadPhoto });
+      }
       else if (target.matches('[data-select-member]')) { const username = target.dataset.selectMember; if (selectedMembers.has(username)) selectedMembers.delete(username); else if (selectedMembers.size < 100) selectedMembers.set(username, target._candidate); else dialogStatus.textContent = 'You can add up to 100 members at once.'; paintSelection(); }
       else if (target.matches('[data-remove-member]')) { selectedMembers.delete(target.dataset.removeMember); paintSelection(); }
     });

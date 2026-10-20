@@ -89,6 +89,9 @@ function createPreviewHarness() {
   FakeImage.instances = [];
   const context = vm.createContext({
     renderOverviewIdentity() {},
+    profilePhotoAccountKey: 'test-account',
+    googleAuthenticated: true,
+    personalizationSaving: false,
     personalizationForm: form,
     document: { getElementById: id => elements[id] ?? null },
     window: new FakeElement('window'),
@@ -99,6 +102,7 @@ function createPreviewHarness() {
     },
     console
   });
+  context.window.StemmaChatAttachments = { pickPhoto(options) { context.window.photoPickerOptions = options; } };
   vm.runInContext(photoPreviewBlock(), context, { filename: 'app.js onboarding photo preview' });
   return { elements, form, window: context.window, revoked, get images() { return FakeImage.instances; } };
 }
@@ -185,8 +189,10 @@ test('photo preview validates selection, loads before swapping, replaces and rev
 
   e['student-photo-input'].value = 'C:\\fakepath\\portrait.png';
   e['student-photo-button'].click();
-  assert.equal(e['student-photo-input'].clickCount, 1, 'the button opens the native file picker');
-  assert.equal(e['student-photo-input'].value, '', 'picker activation clears the old selection before opening the native picker');
+  assert.equal(e['student-photo-input'].clickCount, 0, 'opening the shared sheet does not open a native picker');
+  assert.equal(h.window.photoPickerOptions.button, e['student-photo-button']);
+  assert.equal(h.window.photoPickerOptions.ready(), true);
+  assert.equal(typeof h.window.photoPickerOptions.onSelect, 'function');
 
   select(h, file('portrait.png', 'image/png', 2048));
   assert.equal(e['student-photo-input'].value, 'C:\\fakepath\\portrait.png', 'change retains the native file selection for browser verification');

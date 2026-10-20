@@ -698,7 +698,10 @@ document.addEventListener('click', event => {
   if (event.target.closest('[data-setup-profile]')) { openProfileSetup(); return; }
   if (event.target.closest('[data-retry-profile]')) { void restoreAuthenticationState(); return; }
   if (event.target.closest('[data-profile-photo]')) {
-    if (googleAuthenticated && savedStudentProfile) { profilePhotoInput.value = ''; profilePhotoInput.click(); }
+    if (googleAuthenticated && savedStudentProfile) {
+      const account = profilePhotoAccountKey;
+      window.StemmaChatAttachments?.pickPhoto({ button: event.target.closest('[data-profile-photo]'), ready: () => googleAuthenticated && Boolean(savedStudentProfile) && profilePhotoAccountKey === account, onSelect: file => previewStudentPhoto(file) });
+    }
     return;
   }
   const historyEntry = event.target.closest('[data-history-entry]');
@@ -1271,8 +1274,8 @@ function previewStudentPhoto(file) {
   candidateImage.src = candidateURL;
 }
 studentPhotoButton.addEventListener('click', () => {
-  studentPhotoInput.value = '';
-  studentPhotoInput.click();
+  const account = profilePhotoAccountKey;
+  window.StemmaChatAttachments?.pickPhoto({ button: studentPhotoButton, ready: () => googleAuthenticated && !personalizationSaving && profilePhotoAccountKey === account, onSelect: file => previewStudentPhoto(file) });
 });
 studentPhotoInput.addEventListener('change', () => {
   const file = studentPhotoInput.files?.[0];

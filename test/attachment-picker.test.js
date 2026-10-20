@@ -14,12 +14,13 @@ test('shared picker exposes native Gallery/File and review-before-send controls'
   assert.match(picker, /dialog\.className = 'pulse-attachment-dialog'/);
   assert.match(picker, /data-modal-input/);
   assert.match(picker, /data-attachment-category="\$\{name\}"/);
-  assert.match(picker, /\['Gallery'/);
-  assert.match(picker, /\['File'/);
-  assert.match(picker, /index\s*>\s*1\s*\?\s*'disabled aria-disabled="true"/);
+  assert.match(picker, /role="tablist"[\s\S]*?\['Gallery'[\s\S]*?\['File'/);
+  assert.match(picker, /data-attachment-camera/);
+  assert.doesNotMatch(picker, /<label[^>]*>Source<\/label>|<select[^>]*aria-label="Album or source"/);
+  assert.doesNotMatch(picker, /\['Location'|\['Article'|\['Poll'|\['Contact'/);
   assert.match(picker, /data-attachment-send/);
   assert.match(picker, /data-attachment-count/);
-  assert.match(picker, /file\.size\s*>\s*MAX_BYTES/);
+  assert.match(picker, /file\.size\s*>\s*maxBytes/);
   assert.match(picker, /unsupported file type/);
   assert.match(picker, /localInput\.click\(\)/);
   assert.match(picker, /data-preview-close/);
