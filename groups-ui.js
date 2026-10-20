@@ -71,16 +71,23 @@
       target.replaceChildren();
       const filtered = publicOnly ? items.filter(group => group.visibility === 'public') : items;
       for (const group of filtered) {
-        const row = node('button', 'group-list-row'); row.type = 'button'; row.dataset.groupOpen = group.id; row.dataset.groupSlug = group.slug || '';
-        const avatar = node('span', 'group-list-avatar'); photo(avatar, group, initial(group)); avatar.setAttribute('aria-hidden', 'true');
-        const copy = node('span', 'group-list-copy'); copy.append(node('strong', '', group.name || 'Group'), node('span', '', `${Number(group.memberCount) || 0} members${group.visibility === 'private' ? ' · Private' : ''}`));
-        row.append(avatar, copy, node('span', 'group-list-arrow', '›')); target.append(row);
+        const inPulse = Boolean(target.hasAttribute?.('data-group-lists'));
+        const row = node('button', inPulse ? 'group-list-row pulse-conversation pulse-direct-row' : 'group-list-row'); row.type = 'button'; row.dataset.groupOpen = group.id; row.dataset.groupSlug = group.slug || '';
+        row.dataset.pulseActivity = group.lastMessage?.createdAt || group.updatedAt || group.createdAt || '';
+        const avatar = node('span', inPulse ? 'group-list-avatar pulse-person-mark' : 'group-list-avatar'); photo(avatar, group, initial(group)); avatar.setAttribute('aria-hidden', 'true');
+        const copy = node('span', inPulse ? 'group-list-copy pulse-copy' : 'group-list-copy'); copy.append(node('strong', '', group.name || 'Group'), node('span', '', `${Number(group.memberCount) || 0} members${group.visibility === 'private' ? ' · Private' : ''}`));
+        if (inPulse) {
+          const meta = node('span', 'pulse-direct-meta');
+          if (row.dataset.pulseActivity) { const time = node('time', '', new Date(row.dataset.pulseActivity).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })); time.dateTime = row.dataset.pulseActivity; meta.append(time); }
+          row.append(avatar, copy, meta);
+        } else row.append(avatar, copy, node('span', 'group-list-arrow', '›'));
+        target.append(row);
       }
       if (!filtered.length && emptyText) { const empty = node('p', 'groups-empty', emptyText); target.append(empty); }
     }
     async function loadGroups() {
       status.textContent = 'Loading groups…';
-      try { const data = await request(api); if (!signal.aborted) { groups = Array.isArray(data.groups) ? data.groups : []; renderRows(list, groups, 'You have not joined any groups yet. Search public groups or start one.'); for (const target of shell.querySelectorAll('[data-group-lists]')) renderRows(target, groups, 'No groups yet — search or start one.'); status.textContent = ''; } }
+      try { const data = await request(api); if (!signal.aborted) { groups = Array.isArray(data.groups) ? data.groups : []; renderRows(list, groups, 'You have not joined any groups yet. Search public groups or start one.'); for (const target of shell.querySelectorAll('[data-group-lists]')) renderRows(target, groups, 'No groups yet — search or start one.'); shell.dispatchEvent?.(new Event('pulse:groups-updated')); status.textContent = ''; } }
       catch (error) { if (!signal.aborted) status.textContent = error.message; }
     }
     async function searchGroups(query, externalSignal = signal) {

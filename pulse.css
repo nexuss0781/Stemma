@@ -437,3 +437,31 @@ body.stemma-chat-focus .pulse-direct-compose { padding-left: max(10px, calc((100
 @media (min-width: 720px) { .pulse-attachment-dialog { margin-bottom: 24px; border-radius: 28px; } }
 
 .pulse-attachment-dialog[data-preview="true"] .attachment-tray, .pulse-attachment-dialog[data-preview="true"] [data-attachment-add] { display: none; }
+
+/* One continuous conversation list, with the same compact row for every type. */
+.pulse-feed .pulse-panel .pulse-unified-list {
+  display: flex; flex-direction: column; justify-content: flex-start; gap: 0;
+  flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto;
+  padding: 6px 16px 76px; margin: 0; border: 0;
+  background: var(--paper-soft); overscroll-behavior: contain;
+}
+.pulse-feed .pulse-unified-list > .pulse-conversation {
+  display: flex; align-items: center; flex: 0 0 auto; box-sizing: border-box;
+  width: 100%; min-height: 64px; gap: 12px; padding: 9px 0; margin: 0;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: transparent; box-shadow: none; color: var(--brand-burgundy);
+  text-align: left; font: inherit;
+}
+.pulse-feed .pulse-unified-list > .pulse-conversation:hover { background: var(--brand-gold-light); }
+.pulse-feed .pulse-unified-list .pulse-person-mark {
+  display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px;
+  box-sizing: border-box; border: 1px solid var(--brand-gold-light); border-radius: 50%;
+  background: linear-gradient(145deg, var(--brand-gold-light), var(--brand-gold));
+  color: var(--brand-burgundy); box-shadow: inset 0 1px 0 var(--brand-gold-light), 0 2px 6px var(--line);
+  font-size: 18px;
+}
+.pulse-feed .pulse-unified-list .pulse-person-mark img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.pulse-feed .pulse-unified-list .pulse-copy { display: grid; flex: 1; min-width: 0; gap: 4px; }
+.pulse-feed .pulse-unified-list .pulse-copy strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--brand-burgundy-deep); font-size: 13px; font-weight: 600; }
+.pulse-feed .pulse-unified-list .pulse-copy > span:not(.pulse-direct-row-heading) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; color: var(--brand-burgundy); opacity: .75; }
+.pulse-feed .pulse-unified-list .pulse-direct-meta { font-size: 11px; }

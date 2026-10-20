@@ -28,6 +28,17 @@
     const more = shell.querySelector('.pulse-users-more');
     const announcement = shell.querySelector('.pulse-announcement');
     const conversationLists = [...shell.querySelectorAll('[data-pulse-conversations]')];
+    const allList = shell.querySelector('[data-pulse-all]');
+    const savedRow = allList?.querySelector('[data-pulse-saved]');
+    const activity = row => Date.parse(row.dataset.pulseActivity || '') || 0;
+    // All is one scroll owner with peer rows, never stacked category containers.
+    function composeAll() {
+      if (!allList || !savedRow) return;
+      const rows = [savedRow, ...shell.querySelectorAll('[data-pulse-conversations] > [data-pulse-conversation], [data-group-lists] > [data-group-open]')];
+      const ordered = rows.map((row, index) => ({ row, index })).sort((a, b) => activity(b.row) - activity(a.row) || a.index - b.index);
+      allList.replaceChildren(...ordered.map(({ row }) => row === savedRow ? row : row.cloneNode(true)));
+    }
+    listen(shell, 'pulse:groups-updated', composeAll);
     let directParentSearch = false;
     const directView = root.StemmaDirectChat?.mount(shell, { listen, signal, onClose: () => {
       if (!root.StemmaParentNavigation?.back('pulse-chat')) returnToFeed();
@@ -36,12 +47,18 @@
     let previewRevision = 0, conversations = [], conversationsLoading = false, conversationsState = 'loading';
     let pollTimer = null, pollBusy = false, isDirectOpen = false;
     const previews = [...shell.querySelectorAll('.pulse-saved-preview')];
-    function paintPreview(value = '') {
+    function paintPreview(value = '', createdAt = '') {
       previewRevision++;
+      if (savedRow) {
+        savedRow.dataset.pulseActivity = createdAt || '';
+        const time = savedRow.querySelector('time');
+        if (time) { time.textContent = shortTime(createdAt); time.dateTime = createdAt || ''; time.hidden = !createdAt; }
+      }
       for (const preview of previews) {
         preview.textContent = value.replace(/\s+/g, ' ').trim();
         preview.hidden = !preview.textContent;
       }
+      composeAll();
     }
     function node(tag, className, value) { const el = document.createElement(tag); el.className = className; if (value !== undefined) el.textContent = value; return el; }
     async function request(url, options = {}) {
@@ -109,6 +126,7 @@
         for (const conversation of conversations) {
           const row = node('button', 'pulse-conversation pulse-direct-row'); row.type = 'button';
           row.dataset.pulseConversation = conversation.id;
+          row.dataset.pulseActivity = conversation.lastMessage?.createdAt || conversation.updatedAt || conversation.createdAt || '';
           const avatar = node('span', 'pulse-person-mark pulse-direct-avatar', initials(conversation)); avatar.setAttribute('aria-hidden', 'true');
           root.StemmaDirectChat?.setAvatarPhoto(avatar, /^[1-9]\d{0,18}$/.test(String(conversation.id || '')) ? `/api/pulse/conversations/${conversation.id}/peer-photo` : '');
           const copy = node('span', 'pulse-copy');
@@ -130,6 +148,7 @@
         const empty = node('p', 'pulse-list-empty', message); empty.setAttribute('role', 'status');
         empty.hidden = !message; list.append(empty);
       }
+      composeAll();
     }
     function shortTime(value) {
       const date = new Date(value);
@@ -197,7 +216,7 @@
     // Fetch afresh on every mount; never cache private note or chat content in browser storage.
     const initialPreviewRevision = previewRevision;
     request('/api/pulse/saved').then(data => {
-      if (!signal.aborted && previewRevision === initialPreviewRevision) paintPreview(data.messages[0]?.text);
+      if (!signal.aborted && previewRevision === initialPreviewRevision) paintPreview(data.messages[0]?.text, data.messages[0]?.createdAt);
     }).catch(() => { /* Signed-out/offline lists stay blank, never show a fake preview. */ });
     void loadConversations();
     listen(field, 'input', () => { resetSearch(); searchTimer = setTimeout(() => lookup(), 220); });
@@ -227,7 +246,7 @@
         const data = await request('/api/pulse/saved' + before);
         if (signal.aborted) return;
         notes = append ? [...notes, ...data.messages] : data.messages;
-        paintNotes(); paintPreview(notes[0]?.text); older.hidden = !data.hasMore;
+        paintNotes(); paintPreview(notes[0]?.text, notes[0]?.createdAt); older.hidden = !data.hasMore;
         text.disabled = false; send.disabled = !text.value.trim();
         status.textContent = notes.length ? '' : 'Notes, links, reminders—keep them here for yourself.';
         history.scrollTop = append ? top + history.scrollHeight - height : history.scrollHeight;
@@ -251,7 +270,7 @@
     listen(text, 'input', () => { send.disabled = busy || !text.value.trim(); });
     root.StemmaChatAttachments?.mount(form, { listen, signal, endpoint: () => '/api/pulse/saved/attachments', status,
       ready: () => !text.disabled && !saved.hidden,
-      onMessage: message => { notes.unshift(message); paintNotes(); paintPreview(message.text); history.scrollTop = history.scrollHeight; }
+      onMessage: message => { notes.unshift(message); paintNotes(); paintPreview(message.text, message.createdAt); history.scrollTop = history.scrollHeight; }
     });
     listen(form, 'submit', async event => {
       event.preventDefault(); const value = text.value.trim(); if (!value || busy || text.disabled) return;
@@ -259,7 +278,7 @@
       try {
         const data = await request('/api/pulse/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: value }) });
         if (signal.aborted) return;
-        notes.unshift(data.message); paintNotes(); paintPreview(data.message.text); if (text.value.trim() === value) text.value = '';
+        notes.unshift(data.message); paintNotes(); paintPreview(data.message.text, data.message.createdAt); if (text.value.trim() === value) text.value = '';
         status.textContent = 'Saved'; history.scrollTop = history.scrollHeight;
       } catch (error) { if (!signal.aborted) status.textContent = error.message; }
       finally { busy = false; send.disabled = !text.value.trim(); }

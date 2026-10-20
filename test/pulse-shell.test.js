@@ -96,8 +96,8 @@ test('minimal stages retain category conversations while later stages have no re
     assert.match(stages[0], /pulse-conversations/);
     if (index === 0) {
       assert.match(stages[0], /pulse-saved-row/);
-      assert.match(stages[0], /data-pulse-conversations/);
-      assert.match(stages[0], /data-group-lists/);
+      assert.match(stages[0], /data-pulse-all role="list" aria-label="All conversations"/);
+      assert.doesNotMatch(stages[0], /data-pulse-conversations|data-group-lists/);
     } else if (index === 1) {
       assert.match(stages[0], /aria-label="Direct conversations"/);
       assert.match(stages[0], /data-pulse-conversations/);

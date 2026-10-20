@@ -11,11 +11,12 @@
   // Match the supplied stacked-bookmark silhouette using the existing avatar palette.
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
-    if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
-    if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
-    const saved = kind === 'all' ? `<button type="button" class="pulse-conversation pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span></button>` : '';
-    const groups = kind === 'all' ? `<div class="pulse-group-conversations" data-group-lists role="list" aria-label="Your groups"></div>` : '';
-    return `<div class="pulse-conversations">${saved}<div class="pulse-direct-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div>${groups}</div>`;
+    if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations pulse-unified-list" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
+    if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations pulse-unified-list" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
+    const saved = kind === 'all' ? `<button type="button" class="pulse-conversation pulse-direct-row pulse-saved-row" data-pulse-saved><span class="pulse-person-mark" aria-hidden="true">${bookmarkStack}</span><span class="pulse-copy"><strong>Saved Messages</strong><span class="pulse-saved-preview" hidden></span></span><span class="pulse-direct-meta"><time hidden></time></span></button>` : '';
+    return kind === 'all'
+      ? `<div class="pulse-conversations pulse-unified-list" data-pulse-all role="list" aria-label="All conversations">${saved}</div>`
+      : `<div class="pulse-conversations pulse-direct-list pulse-unified-list" data-pulse-conversations role="list" aria-label="Direct conversations"></div>`;
   }
   function stages(kind) {
     const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : kind === 'group' ? 'Group conversations' : 'Empty conversations';
