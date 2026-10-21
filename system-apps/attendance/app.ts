@@ -202,7 +202,7 @@ function render(): void {
       state.presentIds = [...next]; markDirty(); render();
     });
     const name = document.createElement("span"); name.className = "student-name"; name.textContent = student.name;
-    const hint = document.createElement("span"); hint.className = "present-label"; hint.textContent = "Present";
+    const hint = document.createElement("span"); hint.className = "present-label"; hint.textContent = input.checked ? "Present" : "";
     row.append(input, name, hint); roster.append(row);
   });
 

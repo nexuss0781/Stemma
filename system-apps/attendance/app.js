@@ -199,7 +199,7 @@ function render() {
         name.textContent = student.name;
         const hint = document.createElement("span");
         hint.className = "present-label";
-        hint.textContent = "Present";
+        hint.textContent = input.checked ? "Present" : "";
         row.append(input, name, hint);
         roster.append(row);
     });

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import vm from 'node:vm';
 const read = file => fs.readFile(new URL('../system-apps/attendance/' + file, import.meta.url), 'utf8');
 
 function sourceFunction(source, name, nextName) {
@@ -10,6 +11,56 @@ function sourceFunction(source, name, nextName) {
   assert.notEqual(end, -1, `expected ${nextName} to follow ${name}`);
   return source.slice(start, end);
 }
+
+test('Student present labels appear only for checked students and update on rerender', async () => {
+  const source = await read('app.js');
+  const render = sourceFunction(source, 'render', 'displayRequestError');
+
+  class FakeElement {
+    constructor(tagName) {
+      this.tagName = tagName;
+      this.children = [];
+      this.dataset = {};
+      this.hidden = false;
+      this.style = { setProperty() {} };
+      this.classList = { contains: name => this.className?.split(/\s+/).includes(name) ?? false };
+    }
+    append(...children) { this.children.push(...children); }
+    replaceChildren(...children) { this.children = children; }
+    addEventListener() {}
+    setAttribute() {}
+  }
+  class FakeInput extends FakeElement {}
+
+  const roster = new FakeElement('div');
+  const context = vm.createContext({
+    document: {
+      activeElement: null,
+      createElement: tagName => tagName === 'input' ? new FakeInput(tagName) : new FakeElement(tagName),
+    },
+    HTMLInputElement: FakeInput,
+    state: {
+      students: [{ id: 'present', name: 'Present Student' }, { id: 'absent', name: 'Absent Student' }],
+      presentIds: ['present'],
+    },
+    roster,
+    presentCount: new FakeElement('span'),
+    studentCount: new FakeElement('span'),
+    progressRing: new FakeElement('div'),
+    emptyState: new FakeElement('div'),
+    busy: false,
+    loaded: true,
+  });
+  vm.runInContext(render, context);
+
+  const studentLabels = () => roster.children.slice(1).map(row => row.children[2].textContent);
+  vm.runInContext('render()', context);
+  assert.deepEqual(studentLabels(), ['Present', '']);
+
+  context.state.presentIds = ['absent'];
+  vm.runInContext('render()', context);
+  assert.deepEqual(studentLabels(), ['', 'Present']);
+});
 
 test('Monthly grid is part of the report view, with one right-aligned month chooser and no step buttons', async () => {
   const html = await read('index.html');
