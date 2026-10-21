@@ -83,6 +83,36 @@ export function createAttendanceStore(pool) {
     async getAttendance(subject, date) {
       return stateDate(await getState(pool, subject, date));
     },
+    async getMonth(subject, month) {
+      const [students, snapshotRows] = await Promise.all([
+        pool.query(
+          `SELECT id::text AS id, name
+           FROM stemma_teacher_attendance_students
+           WHERE google_subject = $1
+           ORDER BY roster_position ASC`, [subject]),
+        pool.query(
+          `SELECT s.attendance_date::text AS date, d.student_id::text AS "presentId"
+           FROM stemma_teacher_attendance_snapshots s
+           LEFT JOIN stemma_teacher_attendance_days d
+             ON d.google_subject = s.google_subject AND d.attendance_date = s.attendance_date
+           WHERE s.google_subject = $1 AND to_char(s.attendance_date, 'YYYY-MM') = $2
+           ORDER BY s.attendance_date ASC, d.student_id ASC`, [subject, month])
+      ]);
+      const days = [];
+      for (const row of snapshotRows.rows) {
+        let day = days.at(-1);
+        if (!day || day.date !== row.date) {
+          day = { date: row.date, presentIds: [] };
+          days.push(day);
+        }
+        if (row.presentId != null) day.presentIds.push(String(row.presentId));
+      }
+      return {
+        month,
+        students: students.rows.map(row => ({ id: String(row.id), name: row.name })),
+        days
+      };
+    },
     async importStudents(subject, names, date) {
       if (!Array.isArray(names) || names.length > MAX_STUDENTS) throw new TypeError('Invalid student list.');
       const client = await pool.connect();
@@ -187,6 +217,12 @@ function queryDate(req, { defaultToday = false } = {}) {
   return req.query.date;
 }
 
+function queryMonth(req) {
+  const month = req.query.month;
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month.startsWith('0000-')) return null;
+  return month;
+}
+
 export function registerAttendanceApi(app, { attendanceStore = null, requireGoogleSession, config }) {
   if (typeof requireGoogleSession !== 'function') throw new TypeError('Google-session middleware is required.');
   const unavailable = (_req, res, next) => {
@@ -204,6 +240,17 @@ export function registerAttendanceApi(app, { attendanceStore = null, requireGoog
     if (!date) return res.status(400).json({ error: 'Attendance date is invalid.' });
     try {
       return res.json(await attendanceStore.getAttendance(req.session.stemmaUser.subject, date));
+    } catch {
+      return res.status(503).json({ error: 'Teacher attendance service is unavailable.' });
+    }
+  });
+
+  app.get(base + '/month', requireGoogleSession, unavailable, async (req, res) => {
+    setNoStore(res);
+    const month = queryMonth(req);
+    if (!month) return res.status(400).json({ error: 'Attendance month is invalid.' });
+    try {
+      return res.json(await attendanceStore.getMonth(req.session.stemmaUser.subject, month));
     } catch {
       return res.status(503).json({ error: 'Teacher attendance service is unavailable.' });
     }

@@ -231,3 +231,118 @@ button:disabled { cursor: wait; opacity: .6; }
   .report-table th, .report-table td { padding: 12px 14px; }
   .report-footer { flex-direction: row; break-inside: avoid; }
 }
+
+/* Monthly report: sticky student names, touch-friendly dates, honest record states. */
+:root { --cyan: #079fb7; }
+.back-arrow { width: 24px; height: 24px; stroke: #36384c; stroke-width: 1.9; }
+.back-link { min-height: 44px; }
+.main-content { width: min(1240px, 100%); padding-top: 36px; }
+.page-heading { margin-bottom: 30px; }
+.month-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin-bottom: 24px; }
+.month-heading .eyebrow { font-size: 9px; margin-bottom: 8px; }
+.month-heading h2 { margin: 0; font-size: 21px; font-weight: 630; letter-spacing: -.04em; }
+.month-summary { color: #74788c; font-size: 12px; line-height: 1.5; text-align: right; }
+.month-navigation { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.month-navigation .icon-button { width: 44px; height: 44px; border: 1px solid #e5e5ee; background: #fff; color: #5a5186; }
+.month-control { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.month-control svg { width: 20px; height: 20px; fill: none; stroke: #6556ad; stroke-width: 1.5; }
+.month-control select { border: 0; min-height: 44px; min-width: 0; max-width: 210px; font: inherit; font-size: 14px; font-weight: 650; color: #353048; background: transparent; cursor: pointer; }
+.monthly-grid-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid #e5e7ef; border-radius: 14px; background: #fff; scrollbar-color: #bdb8d7 #f2f1f8; }
+.monthly-grid { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; table-layout: fixed; font-size: 12px; }
+.monthly-grid th, .monthly-grid td { border-bottom: 1px solid #eff0f5; text-align: center; height: 56px; padding: 0; min-width: 44px; width: 44px; }
+.monthly-grid thead th { background: #fafafe; font-weight: 650; color: #74788d; }
+.monthly-grid th:first-child { position: sticky; left: 0; z-index: 2; min-width: 160px; width: 160px; max-width: 160px; text-align: left; padding: 12px 15px; background: #fff; border-right: 1px solid #e5e7ef; overflow-wrap: anywhere; box-shadow: 3px 0 7px #29203b04; }
+.monthly-grid thead th:first-child { background: #fafafe; font-size: 11px; color: #85849a; }
+.monthly-grid tbody th { font-weight: 550; color: #343449; line-height: 1.5; }
+.monthly-grid tr:last-child > * { border-bottom: 0; }
+.monthly-grid th button { width: 44px; min-height: 56px; border: 0; padding: 7px 0; background: transparent; color: inherit; cursor: pointer; font-size: 12px; font-weight: 650; }
+.monthly-grid th button small { display: block; font-size: 9px; font-weight: 450; color: #a0a2b1; margin-top: 5px; }
+.monthly-grid th button[aria-pressed="true"] { background: #eeeafb; color: #5544a8; box-shadow: inset 0 -2px #7561cf; }
+.monthly-grid .selected-day { background: #f4f1fd; }
+.day-marker { display: inline-grid; place-items: center; width: 23px; height: 23px; font-size: 12px; border-radius: 6px; }
+.is-present .day-marker { background: var(--cyan); color: #fff; }
+.is-unmarked .day-marker { background: #e2e5ed; color: #6e7389; }
+.is-unknown .day-marker { border: 1px dashed #d3d6e1; background: #f8f9fc; }
+.monthly-grid .student-check { display: inline-grid; width: 25px; height: 25px; vertical-align: middle; }
+.monthly-grid .student-check:checked, .student-check:checked { background: var(--cyan); border-color: var(--cyan); }
+.monthly-grid .is-unknown .student-check:not(:checked) { border-style: dashed; background: #f8f9fc; }
+.monthly-grid .is-unmarked .student-check:not(:checked) { background: #e2e5ed; border-color: #d5d9e4; }
+.month-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin: 15px 0 8px; color: #727589; font-size: 11px; }
+.month-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.month-legend i { width: 9px; height: 9px; border-radius: 3px; }
+.legend-present { background: var(--cyan); }
+.legend-unmarked { background: #d6dae4; }
+.legend-unknown { border: 1px dashed #bbc0d0; background: #f8f9fc; }
+.data-note { color: #878b9c; font-size: 10px; line-height: 1.6; margin: 7px 0 20px; }
+.daily-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.daily-heading .date-control { gap: 8px; font-size: 11px; }
+.roster { margin-top: 0; }
+.select-all-row { min-height: 44px; padding: 0 4px; font-size: 10px; }
+.status-line { line-height: 1.5; }
+.report-month-summary { padding: 16px 0; margin: 0; font-size: 12px; color: #73758a; }
+.report-date-band { margin-bottom: 24px; }
+.report-date-band h2 { font-size: 13px; font-weight: 620; margin: 0 0 10px; color: #55516d; }
+.report-table-wrap { overflow-x: auto; }
+.month-print-table { min-width: 560px; font-size: 10px; }
+.month-print-table th, .month-print-table td { padding: 10px 3px; text-align: center; }
+.month-print-table th:first-child { width: 30%; text-align: left; padding-left: 10px; overflow-wrap: anywhere; }
+.month-print-table th:last-child { width: auto; }
+.month-print-table tbody th { font-size: 10px; letter-spacing: 0; text-transform: none; font-weight: 550; }
+.month-print-table td.print-present { color: #00798d; font-weight: 700; background: #e6f8fa; }
+.month-print-table td.print-unknown { color: #9ca2b5; }
+.report-view { width: min(1180px, 100%); }
+@media (max-width: 600px) {
+  .topbar { padding: 0 12px; }
+  .brand-mark { display: none; }
+  .back-link { gap: 7px; }
+  .toolbar-icon, .import-trigger { min-height: 44px; }
+  .toolbar-icon { width: 40px; }
+  .import-trigger span { display: none; }
+  .import-trigger { width: 44px; justify-content: center; }
+  .import-trigger svg { width: 20px; height: 20px; }
+  .main-content { padding: 27px 14px 32px; }
+  .page-heading { margin-bottom: 26px; }
+  h1 { font-size: 29px; }
+  .month-heading { align-items: flex-start; margin-bottom: 15px; }
+  .month-heading h2 { font-size: 18px; }
+  .month-heading .eyebrow { font-size: 8px; }
+  .month-summary { font-size: 10px; max-width: 100px; }
+  .month-control select { font-size: 13px; max-width: 170px; }
+  .monthly-grid th:first-child { min-width: 120px; width: 120px; max-width: 120px; padding-left: 11px; font-size: 11px; }
+  .month-legend { gap: 13px; font-size: 10px; }
+  .data-note { font-size: 9px; }
+  .daily-heading .date-control input { min-width: 122px; }
+  .daily-heading .roster-summary { font-size: 10px; }
+  .report-seal { display: none; }
+  .report-paper { padding: 22px 13px; }
+  .report-heading h1 { font-size: 25px; }
+}
+@page { size: A4 landscape; margin: 12mm; }
+@media print {
+  .report-view[hidden] { display: none !important; }
+  .report-heading { padding-bottom: 15px; }
+  .report-heading h1 { font-size: 25px; }
+  .report-date-band { margin: 18px 0 24px; }
+  .report-date-band h2 { break-after: avoid; }
+  .month-print-table { min-width: 0; font-size: 10px; width: 100%; }
+  .month-print-table th, .month-print-table td { padding: 8px 4px; }
+  .month-print-table th:first-child { width: 30%; }
+  .month-print-table th:last-child { width: auto; }
+  .month-print-table thead { display: table-header-group; }
+  .month-print-table tr { break-inside: avoid; }
+  .month-print-table tbody th { background: #fafafe; }
+  .report-table-wrap { overflow: visible; }
+  .report-footer { margin-top: 15px; padding-top: 15px; }
+}
+
+.grid-help { font-size: 10px; color: #8a8b9f; margin: 10px 0 0; line-height: 1.5; }
+.day-toggle { display: grid; place-items: center; min-height: 55px; min-width: 44px; cursor: pointer; }
+
+/* Red is derived only from a date with at least one SAVED present mark. */
+.is-unmarked .day-marker, .monthly-grid .is-unmarked .student-check:not(:checked) { background: #d85369; border-color: #d85369; color: #fff; }
+.legend-unmarked { background: #d85369; }
+.legend-unknown { background: #e1e4ec; border: 0; }
+.is-neutral .day-marker, .monthly-grid .is-neutral .student-check:not(:checked) { background: #e6e8ee; border: 1px solid #d5d9e3; }
+.is-unknown .day-marker, .monthly-grid .is-unknown .student-check:not(:checked) { background: #e6e8ee; border-color: #c6cbd7; }
+.month-print-table td.print-unmarked { background: #fce6e9; color: #b33148; font-weight: 650; }
+.month-print-table td.print-neutral { background: #eceef3; color: #8d92a3; }

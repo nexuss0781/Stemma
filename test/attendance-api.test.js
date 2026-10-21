@@ -175,6 +175,14 @@ test('PostgreSQL attendance roster and dated snapshots persist and remain owner-
     const snapshots = await pool.query('SELECT attendance_date::text AS date FROM stemma_teacher_attendance_snapshots WHERE google_subject = $1 ORDER BY attendance_date', ['attendance-owner']);
     assert.deepEqual(snapshots.rows.map(row => row.date), ['2026-06-01', '2026-06-03'], 'past date snapshots remain stored after updates');
     assert.equal((await store.getAttendance('attendance-other', '2026-06-01')).students.length, 0);
+    const month = await store.getMonth('attendance-owner', '2026-06');
+    assert.equal(month.students.length, 3);
+    assert.deepEqual(month.days, [
+      { date: '2026-06-01', presentIds: [avaGray] },
+      { date: '2026-06-03', presentIds: [] }
+    ], 'monthly history includes saved empty snapshots but never invents missing dates');
+    assert.deepEqual((await store.getMonth('attendance-owner', '2026-05')).days, []);
+    assert.deepEqual(await store.getMonth('attendance-other', '2026-06'), { month: '2026-06', students: [], days: [] });
 
     await pool.end();
     pool = new Pool({ ...connection, options: `-c search_path=${schema}` });

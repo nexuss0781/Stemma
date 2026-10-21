@@ -2,6 +2,15 @@ type Student = { id: string; name: string };
 type AttendanceState = { students: Student[]; presentIds: string[]; date: string };
 type Operation = "load" | "save" | null;
 
+type MonthState = { month: string; students: Student[]; days: { date: string; presentIds: string[] }[] };
+const monthInput = document.querySelector<HTMLSelectElement>("#attendance-month")!;
+const monthlyGrid = document.querySelector<HTMLTableElement>("#monthly-grid")!;
+const gridWrap = document.querySelector<HTMLElement>("#monthly-grid-wrap")!;
+const previousMonth = document.querySelector<HTMLButtonElement>("#previous-month")!;
+const nextMonth = document.querySelector<HTMLButtonElement>("#next-month")!;
+let monthState: MonthState = { month: "", students: [], days: [] };
+let monthLoaded = false;
+
 const API = "/api/system-apps/attendance";
 const dateInput = document.querySelector<HTMLInputElement>("#attendance-date")!;
 const roster = document.querySelector<HTMLDivElement>("#roster")!;
@@ -53,10 +62,14 @@ function setBusy(value: boolean): void {
   saveButton.disabled = value || !loaded || !dirty;
   viewReportButton.disabled = value || !loaded;
   dateInput.disabled = value;
+  monthInput.disabled = value;
+  previousMonth.disabled = value;
+  nextMonth.disabled = value;
+  monthlyGrid.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.disabled = value || !loaded; });
   openImportButton.disabled = value;
   emptyImportButton.disabled = value;
-  roster.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((input) => {
-    input.disabled = value;
+  document.querySelectorAll<HTMLInputElement>("#roster input[type=checkbox], #monthly-grid input[type=checkbox]").forEach((input) => {
+    input.disabled = value || !loaded;
   });
   closeImportButton.disabled = value;
   cancelImportButton.disabled = value;
@@ -149,6 +162,7 @@ function render(): void {
   const activeStudentId = activeInput?.dataset.studentId;
   const activeSelectAll = activeInput?.classList.contains("select-all-check") ?? false;
   roster.replaceChildren();
+  renderMonthGrid();
   const students = state.students;
   const present = new Set(state.presentIds);
   const count = students.filter((student) => present.has(student.id)).length;
@@ -174,8 +188,8 @@ function render(): void {
   selectAll.addEventListener("change", () => {
     if (busy) return;
     state.presentIds = selectAll.checked ? students.map((student) => student.id) : [];
-    render();
     markDirty();
+    render();
   });
   const selectAllLabel = document.createElement("label");
   selectAllLabel.htmlFor = selectAll.id;
@@ -183,37 +197,8 @@ function render(): void {
   selectAllRow.append(selectAll, selectAllLabel);
   roster.append(selectAllRow);
 
-  for (const student of students) {
-    const row = document.createElement("label");
-    row.className = "student-row";
-    const checkbox = document.createElement("input");
-    checkbox.className = "student-check";
-    checkbox.type = "checkbox";
-    checkbox.checked = present.has(student.id);
-    checkbox.dataset.studentId = student.id;
-    checkbox.disabled = busy;
-    checkbox.setAttribute("aria-label", `Present: ${student.name}`);
-    checkbox.addEventListener("change", () => {
-      if (busy) return;
-      const next = new Set(state.presentIds);
-      if (checkbox.checked) next.add(student.id);
-      else next.delete(student.id);
-      state.presentIds = [...next];
-      render();
-      markDirty();
-    });
-    const name = document.createElement("span");
-    name.className = "student-name";
-    name.textContent = student.name;
-    const presentText = document.createElement("span");
-    presentText.className = "present-label";
-    presentText.textContent = present.has(student.id) ? "Present" : "";
-    row.append(checkbox, name, presentText);
-    roster.append(row);
-  }
-
   if (activeStudentId !== undefined) {
-    Array.from(roster.querySelectorAll<HTMLInputElement>(".student-check"))
+    Array.from(document.querySelectorAll<HTMLInputElement>("#monthly-grid .student-check"))
       .find((input) => input.dataset.studentId === activeStudentId)?.focus();
   } else if (activeSelectAll) {
     roster.querySelector<HTMLInputElement>(".select-all-check")?.focus();
@@ -248,11 +233,13 @@ async function loadDate(date: string): Promise<void> {
   if (busy) return;
   if (dirty) {
     dateInput.value = state.date;
+    selectMonth(state.date.slice(0, 7));
     setStatus("error", "Save your attendance changes before changing the date.");
     saveButton.focus();
     return;
   }
   loaded = false;
+  monthLoaded = false;
   saveToast.hidden = true;
   const restoreDateFocus = document.activeElement === dateInput;
   setBusy(true);
@@ -263,10 +250,23 @@ async function loadDate(date: string): Promise<void> {
   setStatus("loading", "Loading attendance…");
   try {
     const next = await requestState(`${API}?date=${encodeURIComponent(date)}`, { method: "GET" }, date);
+    const month = date.slice(0, 7);
+    const response = await fetch(`${API}/month?month=${encodeURIComponent(month)}`, { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Could not load the monthly report. Please try again.");
+    const payload = await response.json() as MonthState;
+    if (payload.month !== month || !Array.isArray(payload.days) || !Array.isArray(payload.students)) throw new Error("Invalid monthly report.");
+    const changedMonth = monthState.month !== month;
+    monthState = payload;
+    monthLoaded = true;
     state = next;
     savedPresentIds = [...next.presentIds];
     loaded = true;
+    selectMonth(month);
+    if (changedMonth) { gridWrap.scrollLeft = 0; gridWrap.animate([{ opacity: 0, transform: "translateX(18px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 230 }); }
     render();
+    const nameWidth = monthlyGrid.querySelector("th")?.getBoundingClientRect().width ?? 120;
+    const dayIndex = Number(date.slice(-2)) - 1;
+    gridWrap.scrollLeft = Math.max(0, dayIndex * 44 - Math.max(0, (gridWrap.clientWidth - nameWidth) / 2 - 22));
     setStatus("saved", "Attendance loaded");
   } catch (error) {
     displayRequestError(error, "load");
@@ -294,8 +294,10 @@ async function saveAttendance(): Promise<void> {
     }, date);
     state = next;
     savedPresentIds = [...next.presentIds];
-    render();
+    monthState.days = monthState.days.filter(day => day.date !== date);
+    monthState.days.push({ date, presentIds: [...next.presentIds] });
     dirty = false;
+    render();
     setStatus("saved", "Saved");
     showSavedToast();
   } catch (error) {
@@ -305,7 +307,7 @@ async function saveAttendance(): Promise<void> {
     retryButton.disabled = false;
     render();
     if (focusedStudentId !== undefined) {
-      Array.from(roster.querySelectorAll<HTMLInputElement>(".student-check"))
+      Array.from(document.querySelectorAll<HTMLInputElement>("#monthly-grid .student-check"))
         .find((input) => input.dataset.studentId === focusedStudentId)?.focus();
     } else if (focusSelectAll) {
       roster.querySelector<HTMLInputElement>(".select-all-check")?.focus();
@@ -344,6 +346,7 @@ async function importStudents(text: string): Promise<void> {
       body: JSON.stringify({ text }),
     }, date);
     state = next;
+    monthState.students = next.students;
     savedPresentIds = [...next.presentIds];
     render();
     loaded = true;
@@ -405,6 +408,75 @@ dateInput.addEventListener("change", () => {
   else dateInput.value = state.date || localISODate();
 });
 
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T12:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+function monthDates(month: string): string[] {
+  if (!month) return [];
+  const [year, number] = month.split("-").map(Number);
+  const count = new Date(year, number, 0).getDate();
+  return Array.from({ length: count }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`);
+}
+function selectMonth(month: string): void {
+  const choices = new Set<string>([month, localISODate().slice(0, 7)]);
+  const base = new Date(`${month}-01T12:00:00`);
+  for (let i = -12; i <= 12; i++) { const date = new Date(base); date.setMonth(base.getMonth() + i); choices.add(localISODate(date).slice(0, 7)); }
+  monthInput.replaceChildren();
+  [...choices].sort().reverse().forEach(value => { const option = document.createElement("option"); option.value = value; option.textContent = monthLabel(value); monthInput.append(option); });
+  monthInput.value = month;
+}
+function cellStatus(id: string, date: string, draft = true): "present" | "unmarked" | "neutral" | "unknown" {
+  const saved = monthState.days.find(day => day.date === date);
+  const ids = draft && date === state.date ? state.presentIds : saved?.presentIds;
+  if (ids?.includes(id)) return "present";
+  // A missing snapshot is unknown, not an invented absence or a no-class day.
+  return saved?.presentIds.length ? "unmarked" : saved ? "neutral" : "unknown";
+}
+function renderMonthGrid(): void {
+  monthlyGrid.replaceChildren();
+  document.getElementById("month-summary")!.textContent = monthLoaded ? `${state.students.length} students · ${monthState.days.length} saved ${monthState.days.length === 1 ? "date" : "dates"}` : "Month unavailable";
+  if (!monthLoaded || !state.students.length) return;
+  const dates = monthDates(monthState.month);
+  const thead = document.createElement("thead"); const header = document.createElement("tr");
+  const names = document.createElement("th"); names.scope = "col"; names.textContent = "Student"; header.append(names);
+  dates.forEach(date => {
+    const th = document.createElement("th"); th.scope = "col";
+    const button = document.createElement("button"); button.type = "button"; button.textContent = String(Number(date.slice(-2)));
+    button.setAttribute("aria-label", `Edit attendance for ${date}`); button.setAttribute("aria-pressed", String(date === state.date)); button.disabled = busy;
+    button.addEventListener("click", () => { dateInput.value = date; void loadDate(date); });
+    const weekday = document.createElement("small"); weekday.textContent = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" }).slice(0, 1); button.append(weekday); th.append(button); header.append(th);
+  });
+  thead.append(header); monthlyGrid.append(thead);
+  const body = document.createElement("tbody");
+  state.students.forEach(student => {
+    const row = document.createElement("tr"); const name = document.createElement("th"); name.scope = "row"; name.textContent = student.name; row.append(name);
+    dates.forEach(date => {
+      const cell = document.createElement("td"); const status = cellStatus(student.id, date); cell.className = `day-cell is-${status}`;
+      if (date === state.date) {
+        cell.classList.add("selected-day");
+        const input = document.createElement("input"); input.type = "checkbox"; input.className = "student-check"; input.dataset.studentId = student.id;
+        input.setAttribute("aria-label", `Present: ${student.name}`); input.title = `${date} · ${student.name} · ${status === "unknown" ? "No record" : status === "neutral" ? "No saved present marks" : status === "present" ? "Present" : "Not marked on a date with saved presence"}`;
+        input.checked = state.presentIds.includes(student.id); input.disabled = busy || !loaded;
+        input.addEventListener("change", () => { const next = new Set(state.presentIds); input.checked ? next.add(student.id) : next.delete(student.id); state.presentIds = [...next]; markDirty(); render(); });
+        const label = document.createElement("label"); label.className = "day-toggle"; label.append(input); cell.append(label);
+      } else {
+        const marker = document.createElement("span"); marker.className = "day-marker"; marker.textContent = status === "present" ? "✓" : status === "unmarked" ? "–" : "";
+        marker.setAttribute("role", "img"); marker.setAttribute("aria-label", `${student.name}, ${date}: ${status === "unknown" ? "No record" : status === "neutral" ? "No saved present marks" : status === "present" ? "Present" : "Not marked on a date with saved presence"}`); marker.title = marker.getAttribute("aria-label")!; cell.append(marker);
+      }
+      row.append(cell);
+    }); body.append(row);
+  }); monthlyGrid.append(body);
+}
+function changeMonth(month: string): void {
+  if (dirty) { selectMonth(state.date.slice(0, 7)); setStatus("error", "Save your attendance changes before changing the month."); saveButton.focus(); return; }
+  dateInput.value = `${month}-01`; void loadDate(dateInput.value);
+}
+monthInput.addEventListener("change", () => changeMonth(monthInput.value));
+function stepMonth(offset: number): void { const date = new Date(`${monthInput.value}-01T12:00:00`); date.setMonth(date.getMonth() + offset); changeMonth(localISODate(date).slice(0, 7)); }
+previousMonth.addEventListener("click", () => stepMonth(-1));
+nextMonth.addEventListener("click", () => stepMonth(1));
+selectMonth(localISODate().slice(0, 7));
+
 dateInput.value = localISODate();
 render();
 void loadDate(dateInput.value);
@@ -414,35 +486,35 @@ function reportText(id: string, text: string): void {
 }
 
 function renderReport(): void {
-  const total = state.students.length;
-  const present = new Set(state.presentIds);
-  const count = state.students.filter((student) => present.has(student.id)).length;
-  const date = new Date(`${state.date}T12:00:00`);
-  reportText("report-date", date.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }));
-  reportText("report-total", String(total));
-  reportText("report-present", String(count));
-  reportText("report-unmarked", String(total - count));
-  reportText("report-rate", total ? `${Math.round(count / total * 100)}%` : "—");
-  reportText("report-record-label", dirty ? "Unsaved draft" : "Saved attendance");
+  reportText("report-date", monthLabel(monthState.month));
+  reportText("report-month-summary", `${state.students.length} students · ${monthState.days.length} saved ${monthState.days.length === 1 ? "date" : "dates"} · Saved records only`);
   document.getElementById("report-draft")!.hidden = !dirty;
   exportPDFButton.disabled = dirty || !loaded;
-  const rows = document.getElementById("report-rows")!;
-  rows.replaceChildren();
-  state.students.forEach((student, index) => {
-    const row = document.createElement("tr");
-    const number = document.createElement("td");
-    number.textContent = String(index + 1).padStart(2, "0");
-    const name = document.createElement("td");
-    name.textContent = student.name;
-    const status = document.createElement("td");
-    const badge = document.createElement("span");
-    badge.className = present.has(student.id) ? "attendance-badge is-present" : "attendance-badge";
-    badge.textContent = present.has(student.id) ? "Present" : "Not marked";
-    status.append(badge);
-    row.append(number, name, status);
-    rows.append(row);
-  });
-  document.getElementById("report-empty")!.hidden = total > 0;
+  const sections = document.getElementById("report-grid-sections")!;
+  sections.replaceChildren();
+  const dates = monthDates(monthState.month);
+  // Split the wide grid into readable date bands; repeat every student in every band.
+  for (let start = 0; start < dates.length; start += 11) {
+    const band = dates.slice(start, start + 11);
+    const section = document.createElement("section");
+    section.className = "report-date-band";
+    const heading = document.createElement("h2");
+    heading.textContent = `${monthLabel(monthState.month)} · ${Number(band[0].slice(-2))}–${Number(band[band.length - 1].slice(-2))}`;
+    const wrap = document.createElement("div"); wrap.className = "report-table-wrap";
+    const table = document.createElement("table"); table.className = "report-table month-print-table";
+    const head = document.createElement("thead"); const header = document.createElement("tr");
+    const studentHeading = document.createElement("th"); studentHeading.scope = "col"; studentHeading.textContent = "Student name"; header.append(studentHeading);
+    band.forEach(date => { const th = document.createElement("th"); th.scope = "col"; th.textContent = String(Number(date.slice(-2))); header.append(th); });
+    head.append(header); table.append(head);
+    const body = document.createElement("tbody");
+    state.students.forEach(student => {
+      const row = document.createElement("tr"); const name = document.createElement("th"); name.scope = "row"; name.textContent = student.name; row.append(name);
+      band.forEach(date => { const cell = document.createElement("td"); const status = cellStatus(student.id, date, false); cell.textContent = status === "present" ? "P" : status === "unmarked" ? "–" : status === "neutral" ? "·" : "?"; cell.className = `print-${status}`; row.append(cell); });
+      body.append(row);
+    });
+    table.append(body); wrap.append(table); section.append(heading, wrap); sections.append(section);
+  }
+  document.getElementById("report-empty")!.hidden = state.students.length > 0;
 }
 
 saveButton.addEventListener("click", () => { void saveAttendance(); });
@@ -451,7 +523,7 @@ viewReportButton.addEventListener("click", () => {
   renderReport();
   reportView.hidden = false;
   appShell.hidden = true;
-  document.title = `Roll — Attendance report — ${state.date}`;
+  document.title = `Roll — Monthly attendance — ${monthState.month}`;
   window.scrollTo(0, 0);
   closeReportButton.focus();
 });
