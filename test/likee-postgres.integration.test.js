@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import crypto from 'node:crypto';
 import test from 'node:test';
@@ -99,7 +100,7 @@ test('PostgreSQL Likee authenticated video, feed, actions, comments, follow and 
 
     // A minimal structurally plausible ISO-BMFF ftyp box is enough to test byte-for-byte storage;
     // it is test payload, not a real student video or a live feed item.
-    const media = Buffer.from('000000106674797069736f6d0000000069736f6d', 'hex');
+    const media = readFileSync(new URL('./fixtures/stories-browser-trim.mp4', import.meta.url));
     const upload = await postJson(`${origin}/api/likee/videos`, creator, origin, {
       caption: 'TEST fixture: isolated Likee roundtrip', mimeType: 'video/mp4', data: media.toString('base64')
     });
@@ -114,6 +115,7 @@ test('PostgreSQL Likee authenticated video, feed, actions, comments, follow and 
     assert.equal(videos.length, 1);
     assert.equal(videos[0].id, created.id);
     assert.equal(videos[0].caption, 'TEST fixture: isolated Likee roundtrip');
+    assert.equal(videos[0].mimeType, 'video/mp4');
     assert.equal(videos[0].mine, true);
     assert.equal(videos[0].likes, 0);
     assert.equal(videos[0].comments, 0);
@@ -200,6 +202,23 @@ test('PostgreSQL Likee authenticated video, feed, actions, comments, follow and 
     const persistedVideo = await pool.query('SELECT data, byte_size FROM stemma_likee_videos WHERE id = $1::uuid', [created.id]);
     assert.deepEqual(Buffer.from(persistedVideo.rows[0].data), media);
     assert.equal(persistedVideo.rows[0].byte_size, media.length);
+
+    const photoBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    response = await postJson(`${origin}/api/likee/videos`, creator, origin, {
+      caption: 'TEST fixture: Likee photo persistence', mimeType: 'image/png', data: photoBytes.toString('base64')
+    });
+    assert.equal(response.status, 201, 'the expanded database mime constraint permits a stored photo');
+    const photo = (await response.json()).video;
+    const photoDto = await (await get(`/api/likee/videos/${photo.id}`, creator)).json();
+    assert.equal(photoDto.video.mimeType, 'image/png');
+    response = await get(photo.mediaUrl, creator);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), photoBytes);
+    const persistedPhoto = await pool.query('SELECT data, byte_size, mime_type FROM stemma_likee_videos WHERE id = $1::uuid', [photo.id]);
+    assert.deepEqual(Buffer.from(persistedPhoto.rows[0].data), photoBytes);
+    assert.equal(persistedPhoto.rows[0].byte_size, photoBytes.length);
+    assert.equal(persistedPhoto.rows[0].mime_type, 'image/png');
   } finally {
     if (harness) await harness.close();
     if (pool) await pool.end();

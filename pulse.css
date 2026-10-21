@@ -464,3 +464,10 @@ body.stemma-chat-focus .pulse-direct-compose { padding-left: max(10px, calc((100
 .pulse-feed .pulse-unified-list .pulse-copy strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--brand-burgundy-deep); font-size: 13px; font-weight: 600; }
 .pulse-feed .pulse-unified-list .pulse-copy > span:not(.pulse-direct-row-heading) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; color: var(--brand-burgundy); opacity: .75; }
 .pulse-feed .pulse-unified-list .pulse-direct-meta { font-size: 11px; }
+
+/* Actual network transfer progress, shared by picker upload destinations. */
+.attachment-upload-progress { display: block; width: calc(100% - 32px); margin: 4px 16px 12px; height: 8px; flex-shrink: 0; border: 0; border-radius: 8px; overflow: hidden; accent-color: var(--brand-burgundy); background: var(--brand-gold-light); }
+.attachment-upload-progress[hidden] { display: none; }
+.attachment-upload-progress::-webkit-progress-bar { background: var(--brand-gold-light); border-radius: 8px; }
+.attachment-upload-progress::-webkit-progress-value { background: var(--brand-burgundy); border-radius: 8px; }
+.attachment-upload-progress::-moz-progress-bar { background: var(--brand-burgundy); border-radius: 8px; }

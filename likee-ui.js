@@ -30,7 +30,7 @@
   function pauseAll() { screen?.querySelectorAll('video').forEach(v => v.pause()); }
   function closeSheet() {
     if (!sheet) return;
-    const old = sheet; sheet = null; old.classList.remove('is-open');
+    const old = sheet; sheet = null; old.classList.remove('is-open'); old.cleanup?.();
     if (feed) feed.inert = false;
     const focus = old.returnFocus;
     root.setTimeout(() => old.remove(), root.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220);
@@ -102,10 +102,11 @@
     };
   }
   function card(video) {
-    const article = node('article', 'likee-video'); article.dataset.videoId = video.id; article.setAttribute('aria-label', `Video by ${video.nickName || 'student'}`);
-    const media = node('video', 'likee-media'); media.dataset.src = `/api/likee/videos/${video.id}/media`; media.loop = true; media.muted = muted; media.playsInline = true; media.preload = 'none'; media.setAttribute('playsinline', '');
-    media.onclick = () => { if (media.paused) media.play().catch(() => announce('Tap the video to play.')); else media.pause(); };
-    media.onerror = () => { const err = node('p', 'likee-media-error', 'This video is unavailable. Swipe to keep exploring.'); if (!article.querySelector('.likee-media-error')) article.append(err); };
+    const article = node('article', 'likee-video'); article.dataset.videoId = video.id; article.setAttribute('aria-label', `${/^image\//.test(video.mimeType || '') ? 'Photo' : 'Video'} by ${video.nickName || 'student'}`);
+    const isPhoto = /^image\//.test(video.mimeType || '');
+    const media = node(isPhoto ? 'img' : 'video', 'likee-media'); if (isPhoto) media.alt = video.caption || 'Photo shared on Likee'; media.dataset.src = `/api/likee/videos/${video.id}/media`; media.loop = true; media.muted = muted; media.playsInline = true; media.preload = 'none'; media.setAttribute('playsinline', '');
+    media.onclick = () => { if (isPhoto) return; if (media.paused) media.play().catch(() => announce('Tap the video to play.')); else media.pause(); };
+    media.onerror = () => { const err = node('p', 'likee-media-error', 'This post is unavailable. Swipe to keep exploring.'); if (!article.querySelector('.likee-media-error')) article.append(err); };
     article.append(media, node('div', 'likee-shade'));
     const rail = node('aside', 'likee-actions'); rail.setAttribute('aria-label', 'Video actions');
     const profile = node('div', 'likee-profile'); profile.append(avatar(video.nickName, video.avatarUrl, 'likee-creator'));
@@ -136,19 +137,77 @@
     article.append(rail, details); return article;
   }
   async function upload() {
-    const { content, modal, overlay } = sheetView('Post a video');
-    const form = node('form', 'likee-upload'); const file = node('input'); file.type = 'file'; file.accept = 'video/mp4,video/webm,video/quicktime'; file.required = true; file.setAttribute('aria-label', 'Choose a video, up to 5 MiB');
-    const caption = node('textarea'); caption.placeholder = 'A short caption…'; caption.maxLength = 1000; caption.setAttribute('aria-label', 'Video caption'); const hint = node('p', 'likee-sheet-hint', 'MP4, WebM or MOV · up to 5 MiB');
-    const send = node('button', 'likee-send', 'Post video'); send.type = 'submit'; const message = node('p', 'likee-sheet-message'); message.setAttribute('role', 'status'); form.append(file, hint, caption, message, send); content.append(form);
+    const { content, modal, overlay } = sheetView('Create a post');
+    modal.classList.add('likee-compose-sheet');
+    const controller = new AbortController();
+    const form = node('form', 'likee-upload');
+    const choose = node('button', 'likee-choose-media', 'Choose photo or video'); choose.type = 'button';
+    const preview = node('div', 'likee-compose-preview'); preview.hidden = true;
+    const caption = node('textarea'); caption.placeholder = 'A short caption…'; caption.maxLength = 1000; caption.setAttribute('aria-label', 'Post caption');
+    const hint = node('p', 'likee-sheet-hint', 'Preview your photo or video, then Post. Videos up to 4 minutes (240 seconds) · up to 5 MiB.');
+    const send = node('button', 'likee-send', 'Post'); send.type = 'submit'; send.disabled = true;
+    const message = node('p', 'likee-sheet-message'); message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+    const progress = node('progress', 'likee-upload-progress'); progress.max = 100; progress.value = 0; progress.hidden = true; progress.setAttribute('aria-label', 'Media upload progress');
+    form.append(choose, hint, preview, caption, message, progress, send); content.append(form);
+    let selected = null, mimeType = '', previewUrl = null, revision = 0, posting = false, timer = 0;
+    const mimes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' };
+    const mb = bytes => `${(bytes / 1000000).toFixed(2)} MB`;
+    function clearPreview() {
+      root.clearTimeout(timer); timer = 0; selected = null; mimeType = ''; send.disabled = true;
+      const player = preview.querySelector('video'); if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
+      preview.replaceChildren(); preview.hidden = true;
+      if (previewUrl) root.URL.revokeObjectURL(previewUrl); previewUrl = null;
+    }
+    overlay.cleanup = () => { revision++; controller.abort(); clearPreview(); };
+    choose.onclick = () => {
+      if (posting || sheet !== overlay) return;
+      if (!root.StemmaChatAttachments?.pickMedia) { message.textContent = 'The media picker is unavailable. Reload and try again.'; return; }
+      root.StemmaChatAttachments.pickMedia({ button: choose, signal: controller.signal, ready: () => sheet === overlay && !posting,
+        onSelect: blob => {
+          const current = ++revision; clearPreview(); message.textContent = '';
+          const type = mimes[blob.name.toLowerCase().split('.').at(-1)];
+          if (!type || !blob.size || blob.size > 5 * 1024 * 1024) { message.textContent = 'Choose a supported photo or video up to 5 MiB.'; return; }
+          previewUrl = root.URL.createObjectURL(blob);
+          const isVideo = type.startsWith('video/'); const media = node(isVideo ? 'video' : 'img');
+          const valid = () => sheet === overlay && revision === current;
+          const fail = text => { if (!valid()) return; clearPreview(); choose.textContent = 'Choose photo or video'; message.textContent = text; };
+          function ready() {
+            if (!valid()) return;
+            if (isVideo && (!Number.isFinite(media.duration) || media.duration <= 0)) { fail('This video has no readable duration. Choose another video.'); return; }
+            if (isVideo && media.duration > 240) { fail('Videos can be at most 4 minutes (240 seconds). Choose a shorter video.'); return; }
+            root.clearTimeout(timer); selected = blob; mimeType = type; send.disabled = false;
+            choose.textContent = 'Change photo or video'; message.textContent = `Preview ready · ${mb(blob.size)}. Tap Post when you’re ready.`;
+          }
+          if (isVideo) { media.controls = true; media.playsInline = true; media.preload = 'metadata'; media.setAttribute('aria-label', 'Video preview'); media.addEventListener('loadedmetadata', ready, { once: true }); }
+          else { media.alt = 'Photo preview'; media.addEventListener('load', ready, { once: true }); }
+          media.addEventListener('error', () => fail('This media could not be previewed. Choose another file.'), { once: true });
+          preview.append(media); preview.hidden = false; message.textContent = 'Checking preview…';
+          timer = root.setTimeout(() => fail('This media could not be previewed. Choose another file.'), 15000);
+          media.src = previewUrl;
+        }
+      });
+    };
     form.onsubmit = async e => {
-      e.preventDefault(); const blob = file.files[0]; if (!blob || send.disabled) return;
-      if (blob.size > 5 * 1024 * 1024) { message.textContent = 'Choose a video smaller than 5 MiB.'; return; }
-      send.disabled = true; message.textContent = 'Posting…';
+      e.preventDefault(); const blob = selected; if (!blob || send.disabled || posting || sheet !== overlay) return;
+      const player = preview.querySelector('video');
+      if (player && (!Number.isFinite(player.duration) || player.duration <= 0 || player.duration > 240)) { send.disabled = true; message.textContent = 'Choose a readable video up to 4 minutes (240 seconds).'; return; }
+      posting = true; send.disabled = true; choose.disabled = true; caption.disabled = true; message.textContent = `Preparing ${mb(blob.size)}…`; player?.pause();
+      progress.value = 0; progress.hidden = false;
       try {
         const dataUrl = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-        const data = await api('/videos', { caption: caption.value.trim(), mimeType: blob.type, data: dataUrl.split(',')[1] });
-        if (sheet !== overlay) return; closeSheet(); await load(data.video?.id); announce('Your video is live.');
-      } catch (error) { message.textContent = error.message || 'Could not upload this video.'; send.disabled = false; }
+        if (sheet !== overlay || controller.signal.aborted) return;
+        const data = await root.StemmaChatAttachments.upload({ endpoint: '/api/likee/videos', size: blob.size, signal: controller.signal,
+          body: { caption: caption.value.trim(), mimeType, data: dataUrl.split(',')[1] },
+          onProgress: state => {
+            if (sheet !== overlay) return;
+            progress.value = state.percent;
+            const detail = `${state.percent}% · ${mb(state.loaded)} / ${mb(state.total)}`;
+            progress.setAttribute('aria-valuetext', detail);
+            message.textContent = `${state.complete ? 'Uploaded' : 'Uploading'} ${detail}${state.complete ? '. Publishing…' : ''}`;
+          }
+        });
+        if (sheet !== overlay) return; closeSheet(); await load(data.video?.id); announce(`Your post is live · ${mb(blob.size)} uploaded.`);
+      } catch (error) { if (sheet === overlay) { message.textContent = error.message || 'Could not upload this media.'; progress.hidden = true; send.disabled = false; choose.disabled = false; caption.disabled = false; posting = false; } }
     };
   }
   async function load(id) {
@@ -160,10 +219,10 @@
       observer?.disconnect(); feed.replaceChildren();
       if (!videos.length) {
         const empty = node('div', 'likee-empty'); const mark = node('img', 'likee-empty-mark'); mark.src = '/assets/likee-icon.svg'; mark.alt = '';
-        const post = node('button', 'likee-empty-post', 'Post the first video'); post.type = 'button'; post.onclick = upload;
-        empty.append(mark, node('h2', '', 'A little spark.\nA new perspective.'), node('p', '', 'Your student videos belong here.\nBe the first to share a moment.'), post); feed.append(empty); announce(''); return;
+        const post = node('button', 'likee-empty-post', 'Post the first moment'); post.type = 'button'; post.onclick = upload;
+        empty.append(mark, node('h2', '', 'A little spark.\nA new perspective.'), node('p', '', 'Your student photos and videos belong here.\nBe the first to share a moment.'), post); feed.append(empty); announce(''); return;
       }
-      observer = new IntersectionObserver(entries => { for (const entry of entries) { const media = entry.target.querySelector('video'); if (entry.isIntersecting && !media.getAttribute('src')) { media.src = media.dataset.src; media.preload = 'metadata'; } if (entry.isIntersecting && entry.intersectionRatio > .6 && !sheet && !D.hidden) { activeId = entry.target.dataset.videoId; media.play().catch(() => {}); } else media.pause(); } }, { root: feed, threshold: [.2, .65] });
+      observer = new IntersectionObserver(entries => { for (const entry of entries) { const media = entry.target.querySelector('.likee-media'); if (entry.isIntersecting && !media.getAttribute('src')) { media.src = media.dataset.src; media.preload = 'metadata'; } if (entry.isIntersecting && entry.intersectionRatio > .6 && !sheet && !D.hidden) { activeId = entry.target.dataset.videoId; media.play?.()?.catch(() => {}); } else media.pause?.(); } }, { root: feed, threshold: [.2, .65] });
       for (const video of videos) { const article = card(video); feed.append(article); observer.observe(article); }
       announce(''); const target = id && [...feed.children].find(el => el.dataset.videoId === id); target?.scrollIntoView({ block: 'start' });
     } catch (error) { if (!screen || revision !== generation) return; announce(error.message); const retry = node('button', 'likee-retry', 'Try again'); retry.type = 'button'; retry.onclick = () => { retry.remove(); void load(id); }; feed.replaceChildren(retry); }
@@ -176,7 +235,7 @@
     const top = node('header', 'likee-header'); const back = button('Back from Likee', 'back'); back.onclick = () => close();
     const brand = node('div', 'likee-brand'); const mark = node('img'); mark.src = '/assets/likee-icon.svg'; mark.alt = ''; const brandCopy = node('div', 'likee-brand-copy'); brandCopy.append(node('h1', '', 'Likee'), node('span', 'likee-brand-caption', 'by Stemma')); brand.append(mark, brandCopy);
     const actions = node('div', 'likee-header-actions'); const sound = button('Unmute videos', 'mute'); sound.onclick = () => { muted = !muted; sound.innerHTML = svg(muted ? 'mute' : 'sound'); sound.setAttribute('aria-label', muted ? 'Unmute videos' : 'Mute videos'); screen.querySelectorAll('video').forEach(v => { v.muted = muted; }); };
-    const post = button('Post a video', 'plus'); post.onclick = upload; actions.append(sound, post); top.append(back, brand, actions);
+    const post = button('Create a post', 'plus'); post.onclick = upload; actions.append(sound, post); top.append(back, brand, actions);
     feed = node('div', 'likee-feed'); feed.tabIndex = 0; feed.setAttribute('aria-label', 'Vertical video feed');
     status = node('p', 'likee-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     screen.append(feed, top, status); container.append(screen);
@@ -194,7 +253,7 @@
     const thumb = node('span', 'likee-chat-thumb'); thumb.innerHTML = svg('play'); const copy = node('span', 'likee-chat-copy'); copy.append(node('strong', '', 'Likee'), node('span', '', 'Watch video')); link.append(thumb, copy);
     link.onclick = e => { e.preventDefault(); open(id); };
     if (!cache.has(id)) cache.set(id, api(`/videos/${id}`).catch(() => null));
-    cache.get(id).then(data => { if (!data?.video) { copy.lastChild.textContent = 'Video unavailable'; return; } const v = node('video'); v.src = `/api/likee/videos/${id}/media#t=0.1`; v.muted = true; v.playsInline = true; v.preload = 'metadata'; v.setAttribute('aria-hidden', 'true'); thumb.prepend(v); copy.lastChild.textContent = data.video.nickName || 'Watch video'; });
+    cache.get(id).then(data => { if (!data?.video) { copy.lastChild.textContent = 'Video unavailable'; return; } const isPhoto = /^image\//.test(data.video.mimeType || ''); if (isPhoto) { thumb.replaceChildren(); link.setAttribute('aria-label', 'Open shared Likee photo'); } const v = node(isPhoto ? 'img' : 'video'); if (isPhoto) v.alt = ''; v.src = `/api/likee/videos/${id}/media${isPhoto ? '' : '#t=0.1'}`; v.muted = true; v.playsInline = true; v.preload = 'metadata'; v.setAttribute('aria-hidden', 'true'); thumb.prepend(v); copy.lastChild.textContent = data.video.nickName || 'Watch video'; });
     return link;
   }
   D?.addEventListener('visibilitychange', () => { if (D.hidden) pauseAll(); else if (screen && !sheet) { const active = [...feed.children].find(el => el.dataset.videoId === activeId); active?.querySelector('video')?.play().catch(() => {}); } });

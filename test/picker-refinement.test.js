@@ -289,3 +289,72 @@ test('camera action opens the dedicated camera input and the File tab keeps the 
   dialog.querySelector('[data-attachment-category="File"]').click();
   assert.equal(dialog.querySelector('[data-modal-input]').accept, '.webp');
 });
+
+test('Likee media mode reuses Gallery/File/Camera and returns one photo or video without publishing', async () => {
+  const h = createPicker();
+  const selected = [];
+  const controller = new AbortController();
+  h.root.StemmaChatAttachments.pickMedia({ button: h.button, signal: controller.signal, onSelect: file => selected.push(file) });
+  const dialog = h.dialogs[0];
+  const input = dialog.querySelector('[data-modal-input]');
+  assert.match(input.accept, /video\/quicktime/);
+  assert.match(input.accept, /image\/png/);
+  dialog.querySelector('[data-attachment-category="Gallery"]').click();
+  assert.equal(input.clicks, 1);
+  const photo = new File(['png'], 'photo.png', { type: 'image/png' });
+  const video = new File(['mov'], 'clip.mov', { type: 'video/quicktime' });
+  input.files = [photo, video, new File(['pdf'], 'not-media.pdf', { type: 'application/pdf' })];
+  input.dispatch('change');
+  assert.match(dialog.querySelector('.attachment-feedback').textContent, /unsupported file type/);
+  assert.equal(dialog.querySelector('[data-attachment-count]').textContent, '1');
+  assert.equal(dialog.querySelector('[data-attachment-send]').textContent, 'Use media');
+  assert.equal(selected.length, 0, 'choosing media does not upload or publish');
+  dialog.querySelector('[data-attachment-category="File"]').click();
+  assert.match(input.accept, /\.mov/);
+  dialog.querySelector('[data-attachment-send]').click();
+  await flush();
+  assert.deepEqual(selected, [video]);
+  assert.equal(dialog.closed, true);
+  assert.equal(h.revoked.length, 2, 'all picker URLs are released');
+});
+
+test('shared uploader reports actual transport progress mapped to media bytes and waits for server success', async () => {
+  const h = createPicker(); const changes = []; let request;
+  h.root.XMLHttpRequest = class {
+    constructor() { request = this; this.upload = {}; this.headers = {}; }
+    open(method, endpoint) { this.method = method; this.endpoint = endpoint; }
+    setRequestHeader(name, value) { this.headers[name] = value; }
+    send(body) { this.body = JSON.parse(body); }
+    abort() { this.onabort?.(); this.onloadend?.(); }
+  };
+  let settled = false;
+  const pending = h.root.StemmaChatAttachments.upload({ endpoint: '/attachments', size: 2000000, body: { data: 'bytes' }, onProgress: state => changes.push(state) }).then(value => { settled = true; return value; });
+  assert.equal(request.method, 'POST'); assert.equal(request.endpoint, '/attachments');
+  assert.equal(request.headers['Content-Type'], 'application/json'); assert.equal(request.withCredentials, true);
+  assert.equal(changes[0].percent, 0);
+  request.upload.onprogress({ lengthComputable: false, loaded: 1, total: 0 });
+  assert.equal(changes.length, 1, 'unknown totals do not fabricate percentages');
+  request.upload.onprogress({ lengthComputable: true, loaded: 750000, total: 3000000 });
+  assert.equal(changes.at(-1).percent, 25); assert.equal(changes.at(-1).loaded, 500000); assert.equal(changes.at(-1).total, 2000000);
+  request.upload.onload(); await flush();
+  assert.equal(changes.at(-1).percent, 100); assert.equal(changes.at(-1).complete, true);
+  assert.equal(settled, false, '100% transferred is not yet a successful published post');
+  request.status = 201; request.responseText = '{"ok":true}'; request.onload(); request.onloadend();
+  assert.equal((await pending).ok, true);
+});
+
+test('shared uploader rejects cancelled and failed requests without automatic retries', async () => {
+  const h = createPicker(); let request; let sends = 0;
+  h.root.XMLHttpRequest = class {
+    constructor() { request = this; this.upload = {}; }
+    open() {} setRequestHeader() {} send() { sends++; }
+    abort() { this.onabort?.(); this.onloadend?.(); }
+  };
+  const controller = new AbortController();
+  const cancelled = h.root.StemmaChatAttachments.upload({ endpoint: '/attachments', size: 10, body: {}, signal: controller.signal });
+  controller.abort(); await assert.rejects(cancelled, /cancelled/);
+  const failed = h.root.StemmaChatAttachments.upload({ endpoint: '/attachments', size: 10, body: {} });
+  request.status = 400; request.responseText = '{"error":"Video is longer than 4 minutes."}'; request.onload(); request.onloadend();
+  await assert.rejects(failed, /longer than 4 minutes/);
+  assert.equal(sends, 2, 'each explicit call sends once only');
+});

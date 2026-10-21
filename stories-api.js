@@ -277,7 +277,7 @@ function parseTrun(data, trun, defaults, baseDecodeTime, timescale, mediaData) {
   return { durationTicks, count, endDecodeTime: baseDecodeTime + durationTicks };
 }
 
-function fragmentedDuration(data, top, moovChildren, mediaData) {
+function fragmentedDuration(data, top, moovChildren, mediaData, maxSeconds) {
   const moov = top.find(box => box.type === 'moov');
   const mvhd = readHeaderTiming(data, oneBox(moovChildren, 'mvhd'), 'movie', true);
   const movieExt = oneBox(moovChildren, 'mvex');
@@ -347,8 +347,8 @@ function fragmentedDuration(data, top, moovChildren, mediaData) {
   const longRecorderHeaderConvention = mvhd.seconds === null && trackList.length === 2 &&
     trackList.some(track => track.handler === 'vide') && trackList.some(track => track.handler === 'soun') &&
     trackList.every((track, index) => track.tkhdDuration !== null && track.timing.duration === track.tkhdDuration &&
-      track.timing.seconds !== null && track.timing.seconds <= MAX_VIDEO_SECONDS &&
-      recorderHeaderDurations[index] <= MAX_VIDEO_SECONDS) &&
+      track.timing.seconds !== null && track.timing.seconds <= maxSeconds &&
+      recorderHeaderDurations[index] <= maxSeconds) &&
     Math.abs(recorderHeaderDurations[0] - recorderHeaderDurations[1]) <= 0.1;
   for (const track of trackList) {
     if (!track.fragments.length) invalidBmff('Track has no media samples.');
@@ -368,12 +368,13 @@ function fragmentedDuration(data, top, moovChildren, mediaData) {
   if (!hasVideo || !allSamples) invalidBmff('A video track is required.');
   const maximum = Math.max(...durations);
   if (mvhd.seconds !== null && Math.abs(mvhd.seconds - maximum) > 1) invalidBmff('Movie and fragment duration metadata is inconsistent.');
-  if (maximum > MAX_VIDEO_SECONDS) throw new RangeError('Videos must be 50 seconds or shorter.');
+  if (maximum > maxSeconds) throw new RangeError(`Videos must be ${maxSeconds} seconds or shorter.`);
   return maximum;
 }
 
-/** Parse conventional, non-fragmented ISO-BMFF MP4/MOV timing. WebM and fragmented MP4 are intentionally unsupported. */
-export function readVideoDuration(data) {
+/** Parse ISO-BMFF MP4/MOV timing, optionally enforcing a caller-specific cap. */
+export function readVideoDuration(data, { maxSeconds = MAX_VIDEO_SECONDS } = {}) {
+  if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw new TypeError('A positive maximum video duration is required.');
   if (!Buffer.isBuffer(data) || data.length < 32 || data.toString('ascii', 4, 8) !== 'ftyp') invalidBmff();
   const top = readBoxes(data, 0, data.length);
   const ftyp = oneBox(top, 'ftyp');
@@ -384,7 +385,7 @@ export function readVideoDuration(data) {
   const moovChildren = childBoxes(data, moov);
   const hasMoof = top.some(box => box.type === 'moof');
   const hasMovieExtends = moovChildren.some(box => box.type === 'mvex');
-  if (hasMoof || hasMovieExtends) return fragmentedDuration(data, top, moovChildren, mediaData);
+  if (hasMoof || hasMovieExtends) return fragmentedDuration(data, top, moovChildren, mediaData, maxSeconds);
   const movieHeader = oneBox(moovChildren, 'mvhd');
   const movieDuration = uintDuration(data, movieHeader, 'movie').seconds;
   const tracks = moovChildren.filter(box => box.type === 'trak');
@@ -417,7 +418,7 @@ export function readVideoDuration(data) {
   const maximum = Math.max(movieDuration, ...trackDurations);
   const maximumTrack = Math.max(...trackDurations);
   if (Math.abs(movieDuration - maximumTrack) > 1) invalidBmff('Movie and track duration metadata is inconsistent.');
-  if (maximum > MAX_VIDEO_SECONDS) throw new RangeError('Videos must be 50 seconds or shorter.');
+  if (maximum > maxSeconds) throw new RangeError(`Videos must be ${maxSeconds} seconds or shorter.`);
   return maximum;
 }
 
