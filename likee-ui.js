@@ -144,7 +144,7 @@
     const choose = node('button', 'likee-choose-media', 'Choose photo or video'); choose.type = 'button';
     const preview = node('div', 'likee-compose-preview'); preview.hidden = true;
     const caption = node('textarea'); caption.placeholder = 'A short caption…'; caption.maxLength = 1000; caption.setAttribute('aria-label', 'Post caption');
-    const hint = node('p', 'likee-sheet-hint', 'Preview your photo or video, then Post. Videos up to 4 minutes (240 seconds) · up to 5 MiB.');
+    const hint = node('p', 'likee-sheet-hint', 'Preview your photo or video, then Post. Videos up to 4 minutes (240 seconds) · up to 256 MiB.');
     const send = node('button', 'likee-send', 'Post'); send.type = 'submit'; send.disabled = true;
     const message = node('p', 'likee-sheet-message'); message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
     const progress = node('progress', 'likee-upload-progress'); progress.max = 100; progress.value = 0; progress.hidden = true; progress.setAttribute('aria-label', 'Media upload progress');
@@ -162,11 +162,11 @@
     choose.onclick = () => {
       if (posting || sheet !== overlay) return;
       if (!root.StemmaChatAttachments?.pickMedia) { message.textContent = 'The media picker is unavailable. Reload and try again.'; return; }
-      root.StemmaChatAttachments.pickMedia({ button: choose, signal: controller.signal, ready: () => sheet === overlay && !posting,
+      root.StemmaChatAttachments.pickMedia({ button: choose, signal: controller.signal, ready: () => sheet === overlay && !posting, galleryOnly: true, maxBytes: 256 * 1024 * 1024,
         onSelect: blob => {
           const current = ++revision; clearPreview(); message.textContent = '';
           const type = mimes[blob.name.toLowerCase().split('.').at(-1)];
-          if (!type || !blob.size || blob.size > 5 * 1024 * 1024) { message.textContent = 'Choose a supported photo or video up to 5 MiB.'; return; }
+          if (!type || !blob.size || blob.size > 256 * 1024 * 1024) { message.textContent = 'Choose a supported photo or video up to 256 MiB.'; return; }
           previewUrl = root.URL.createObjectURL(blob);
           const isVideo = type.startsWith('video/'); const media = node(isVideo ? 'video' : 'img');
           const valid = () => sheet === overlay && revision === current;
@@ -194,10 +194,8 @@
       posting = true; send.disabled = true; choose.disabled = true; caption.disabled = true; message.textContent = `Preparing ${mb(blob.size)}…`; player?.pause();
       progress.value = 0; progress.hidden = false;
       try {
-        const dataUrl = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-        if (sheet !== overlay || controller.signal.aborted) return;
         const data = await root.StemmaChatAttachments.upload({ endpoint: '/api/likee/videos', size: blob.size, signal: controller.signal,
-          body: { caption: caption.value.trim(), mimeType, data: dataUrl.split(',')[1] },
+          body: blob, contentType: mimeType, headers: { 'X-Likee-Caption': encodeURIComponent(caption.value.trim()) }, timeout: 0,
           onProgress: state => {
             if (sheet !== overlay) return;
             progress.value = state.percent;

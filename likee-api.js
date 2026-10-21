@@ -7,7 +7,9 @@ import rateLimit from 'express-rate-limit';
 import { readVideoDuration } from './stories-api.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-export const MAX_VIDEO_BYTES = 5 * 1024 * 1024;
+// Four minutes at 8 Mbps video + 256 kbps audio fits in 256 MiB.
+// Binary transport avoids base64 and JSON copies for these larger uploads.
+export const MAX_VIDEO_BYTES = 256 * 1024 * 1024;
 export const MAX_VIDEO_SECONDS = 240;
 const VIDEO_MIMES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 const PHOTO_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -26,6 +28,7 @@ export function createLikeeStore(pool) {
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '018_likee.sql'), 'utf8'));
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '019_likee_photos.sql'), 'utf8'));
+      await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '020_likee_media_size.sql'), 'utf8'));
     },
     async listVideos(subject, limit = 50) {
       const result = await pool.query(
@@ -282,16 +285,21 @@ function validateUpload(body) {
   const encoded=body.data;
   if (encoded.length > Math.ceil(MAX_VIDEO_BYTES/3)*4 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return null;
   const data=Buffer.from(encoded,'base64');
-  if (!data.length || data.length > MAX_VIDEO_BYTES || data.toString('base64') !== encoded) return null;
+  if (data.toString('base64') !== encoded) return null;
+  return validateMedia(caption, body.mimeType, data);
+}
+function validateMedia(caption, mimeType, data) {
+  if (typeof caption !== 'string' || [...caption].length > 1000 || caption.includes('\0') || !Buffer.isBuffer(data) || !data.length || data.length > MAX_VIDEO_BYTES) return null;
+  const body = { mimeType };
   if (PHOTO_MIMES.has(body.mimeType)) {
     if (!isPhotoSignature(body.mimeType, data)) return null;
-  } else {
+  } else if (VIDEO_MIMES.has(body.mimeType)) {
     try {
       if (body.mimeType === 'video/webm') readWebmDuration(data, MAX_VIDEO_SECONDS);
       else readVideoDuration(data, { maxSeconds: MAX_VIDEO_SECONDS });
     } catch { return null; }
-  }
-  return { caption, mimeType: body.mimeType, data };
+  } else return null;
+  return { caption: caption.trim(), mimeType: body.mimeType, data };
 }
 function countValue(value) { const n=Number(value); return Number.isSafeInteger(n) && n >= 0 ? n : 0; }
 function sendMedia(req,res,media) {
@@ -315,7 +323,34 @@ export function registerLikeeApi(app,{likeeStore=null,requireGoogleSession,confi
   const ready=(req,res)=>{noStore(res);if(!likeeStore){res.status(503).json({error:'Likee service is unavailable.'});return false;}return true;};
   const idRoute=(req,res)=>validId(req.params.id) || (res.status(400).json({error:'Video id is invalid.'}),false);
   app.get('/api/likee/videos',requireGoogleSession,limiter,async(req,res)=>{if(!ready(req,res))return;try{const rows=await likeeStore.listVideos(req.session.stemmaUser.subject,50);return res.json({videos:rows.map(row=>videoDto(row,req.session.stemmaUser.subject)).filter(Boolean)});}catch{return res.status(503).json({error:'Likee service is unavailable.'});}});
-  app.post('/api/likee/videos',requireGoogleSession,limiter,sameOriginJson(config),express.json({limit:'7.2mb',strict:true}),async(req,res)=>{if(!ready(req,res))return;const input=validateUpload(req.body);if(!input)return res.status(400).json({error:'A valid photo or video upload is required.'});try{const row=await likeeStore.createVideo(req.session.stemmaUser.subject,input);return res.status(201).json({video:{id:row.id,mediaUrl:`/api/likee/videos/${row.id}/media`}});}catch{return res.status(503).json({error:'Likee service is unavailable.'});}});
+  // Authenticate and verify origin/type before reading potentially large media bodies.
+  // Legacy small JSON requests remain supported; the composer sends original binary bytes.
+  const uploadOrigin = (req,res,next) => {
+    noStore(res);
+    const expected = config.appOrigin || `${req.protocol}://${req.get('host')}`;
+    if (!req.get('origin') || req.get('origin') !== expected) return res.status(403).json({error:'This request could not be verified.'});
+    if (!req.is('application/json') && !VIDEO_MIMES.has(req.get('content-type')) && !PHOTO_MIMES.has(req.get('content-type'))) return res.status(415).json({error:'A supported photo or video is required.'});
+    if (!ready(req,res)) return;
+    const length = Number(req.get('content-length'));
+    if (!req.is('application/json') && length > MAX_VIDEO_BYTES) return res.status(413).json({error:'Likee media must be 256 MiB or smaller.'});
+    next();
+  };
+  app.post('/api/likee/videos', requireGoogleSession, limiter, uploadOrigin,
+    express.json({limit:'7.2mb',strict:true}),
+    express.raw({type: req => !req.is('application/json'), limit: MAX_VIDEO_BYTES}),
+    async (req,res) => {
+      let input;
+      if (req.is('application/json')) input = validateUpload(req.body);
+      else {
+        try { input = validateMedia(decodeURIComponent(req.get('x-likee-caption') || ''), req.get('content-type'), req.body); }
+        catch { input = null; }
+      }
+      if (!input) return res.status(400).json({error:'Choose a valid photo or video up to 4 minutes (240 seconds) and 256 MiB.'});
+      try {
+        const row = await likeeStore.createVideo(req.session.stemmaUser.subject,input);
+        return res.status(201).json({video:{id:row.id,mediaUrl:`/api/likee/videos/${row.id}/media`}});
+      } catch { return res.status(503).json({error:'Likee service is unavailable.'}); }
+    });
   app.get('/api/likee/videos/:id',requireGoogleSession,limiter,async(req,res)=>{if(!ready(req,res)||!idRoute(req,res))return;try{const row=await likeeStore.getVideo(req.session.stemmaUser.subject,req.params.id);if(!row)return res.status(404).json({error:'Likee video was not found.'});return res.json({video:videoDto(row,req.session.stemmaUser.subject)});}catch{return res.status(503).json({error:'Likee service is unavailable.'});}});
   app.get('/api/likee/videos/:id/media',requireGoogleSession,assetLimiter,async(req,res)=>{if(!ready(req,res)||!idRoute(req,res))return;try{const media=await likeeStore.getVideoMedia(req.params.id);if(!media)return res.status(404).json({error:'Likee video was not found.'});noStore(res);return sendMedia(req,res,media);}catch{return res.status(503).json({error:'Likee service is unavailable.'});}});
   app.get('/api/likee/videos/:id/avatar',requireGoogleSession,assetLimiter,async(req,res)=>{if(!ready(req,res)||!idRoute(req,res))return;try{const avatar=await likeeStore.getVideoAvatar(req.params.id);if(!avatar||!['image/png','image/jpeg','image/webp'].includes(avatar.mimeType))return res.status(404).json({error:'Profile photo not found.'});noStore(res);res.set({'Content-Type':avatar.mimeType,'X-Content-Type-Options':'nosniff'});return res.send(avatar.data);}catch{return res.status(503).json({error:'Likee service is unavailable.'});}});

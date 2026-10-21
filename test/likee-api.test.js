@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { once } from 'node:events';
 import express from 'express';
+import http from 'node:http';
 import test from 'node:test';
 import { registerLikeeApi, MAX_VIDEO_BYTES } from '../likee-api.js';
 
@@ -77,7 +78,7 @@ test('Likee API requires an authenticated session for feed and private video byt
   assert.deepEqual(Buffer.from(await media.arrayBuffer()),makeMp4().subarray(2,8));
 });
 
-test('Likee upload enforces same-origin JSON, real container signatures, Base64 and the 5 MiB bound',async t=>{
+test('Likee upload enforces same-origin JSON, real container signatures, Base64 and legacy JSON compatibility',async t=>{
   const h=await harness();t.after(()=>h.close());
   const payload={caption:'  new clip ',mimeType:'video/mp4',data:makeMp4().toString('base64')};
   assert.equal((await post(h.origin,'/api/likee/videos',null,payload)).status,403);
@@ -102,8 +103,7 @@ test('Likee upload enforces same-origin JSON, real container signatures, Base64 
   assert.equal((await post(h.origin,'/api/likee/videos',h.origin,{caption:'webm',mimeType:'video/webm',data:makeWebm(240).toString('base64')})).status,201,'well-formed WebM with readable exact-boundary duration remains supported');
   assert.equal((await post(h.origin,'/api/likee/videos',h.origin,{caption:'long webm',mimeType:'video/webm',data:makeWebm(241).toString('base64')})).status,400);
   assert.equal((await post(h.origin,'/api/likee/videos',h.origin,{caption:'bad webm',mimeType:'video/webm',data:Buffer.from([0x1a,0x45,0xdf,0xa3,0,0]).toString('base64')})).status,400,'unreadable WebM duration metadata is rejected');
-  const tooBig=Buffer.alloc(MAX_VIDEO_BYTES+1).toString('base64');
-  assert.equal((await post(h.origin,'/api/likee/videos',h.origin,{...payload,data:tooBig})).status,400);
+  assert.equal(MAX_VIDEO_BYTES, 256 * 1024 * 1024);
   const webm=Buffer.from([0x1a,0x45,0xdf,0xa3,0,0]);
   assert.equal((await post(h.origin,'/api/likee/videos',h.origin,{caption:'webm',mimeType:'video/webm',data:webm.toString('base64')})).status,400,'magic bytes alone do not establish readable duration');
 });
@@ -123,4 +123,31 @@ test('Likee migration and API implementation encode persistent uniqueness, datab
   assert.match(api,/BEGIN[\s\S]*?stemma_direct_chat_messages[\s\S]*?COMMIT/);
   assert.match(api,/Likee video\\n#likee\/video\/\$\{videoId\}/);
   assert.doesNotMatch(api,/v\.data, v\.byte_size/,'feed metadata must not fetch the stored media blob');
+});
+
+test('Likee binary uploads allow four-minute media above 5 MiB, photos, and preserve auth and validation', async t => {
+  const h = await harness(); t.after(() => h.close());
+  const binary = (data, mimeType = 'video/mp4', extra = {}) => fetch(`${h.origin}/api/likee/videos`, {
+    method:'POST', headers:headers(h.origin, {'content-type':mimeType, 'x-likee-caption':encodeURIComponent('  café photo & video  '), ...extra}), body:data
+  });
+  const large = Buffer.concat([makeMp4(240000), box('free',Buffer.alloc(6 * 1024 * 1024))]);
+  const response = await binary(large);
+  assert.equal(response.status,201); assert.deepEqual(h.captured.upload.data,large);
+  assert.equal(h.captured.upload.caption,'café photo & video');
+  assert.equal((await binary(makeMp4(240001))).status,400);
+  assert.equal((await binary(makeWebm(240),'video/webm')).status,201);
+  for (const [mime,data] of Object.entries(imageFixtures)) assert.equal((await binary(data,mime)).status,201);
+  assert.equal((await binary(large,'image/png')).status,400);
+  assert.equal((await binary(large,'video/mp4',{'x-likee-caption':'%invalid'})).status,400);
+  assert.equal((await binary(large,'video/mp4',{'x-likee-caption':'x'.repeat(1001)})).status,400);
+  assert.equal((await binary(large,'video/mp4',{origin:'https://outsider.invalid'})).status,403);
+  assert.equal((await binary(large,'video/mp4',{cookie:''})).status,401);
+  const status = await new Promise((resolve,reject) => {
+    const request = http.request(`${h.origin}/api/likee/videos`, {method:'POST',headers:headers(h.origin,{'content-type':'video/mp4','content-length':MAX_VIDEO_BYTES+1})}, response => { response.resume(); resolve(response.statusCode); });
+    request.on('error',reject); request.end();
+  });
+  assert.equal(status,413,'oversized uploads rejected before reading the body');
+  const migration=await fs.readFile(new URL('../migrations/020_likee_media_size.sql',import.meta.url),'utf8');
+  assert.match(migration,/DROP CONSTRAINT IF EXISTS stemma_likee_videos_byte_size_check/);
+  assert.match(migration,/byte_size BETWEEN 1 AND 268435456/);
 });

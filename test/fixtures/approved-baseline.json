@@ -73,6 +73,10 @@
     {
       "name": "019_likee_photos.sql",
       "sha256": "9a8a4a147817a138be0770c368fb0a7c85409381cc82287e35f003e59fb3dc2a"
+    },
+    {
+      "name": "020_likee_media_size.sql",
+      "sha256": "b0e77b2a8953b0c7185c36bff0e1ee159b66420e0741836ae1395e0626c3e6b8"
     }
   ]
 }

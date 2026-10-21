@@ -47,16 +47,17 @@
     });
   }
   // Shared network uploader: reports actual transport progress, never a timer.
-  function upload({ endpoint, body, size, signal = new AbortController().signal, onProgress = () => {} }) {
+  function upload({ endpoint, body, size, signal = new AbortController().signal, onProgress = () => {}, contentType = 'application/json', headers = {}, timeout = 180000 }) {
     return new Promise((resolve, reject) => {
       if (signal.aborted) { reject(new Error('Upload cancelled.')); return; }
       const request = new root.XMLHttpRequest();
       const abort = () => request.abort(); signal.addEventListener('abort', abort, { once: true });
-      request.open('POST', endpoint); request.withCredentials = true; request.timeout = 180000;
-      request.setRequestHeader('Content-Type', 'application/json'); request.setRequestHeader('Accept', 'application/json');
+      request.open('POST', endpoint); request.withCredentials = true; request.timeout = timeout;
+      request.setRequestHeader('Content-Type', contentType); request.setRequestHeader('Accept', 'application/json');
+      for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value);
       request.upload.onprogress = event => {
         if (!event.lengthComputable || signal.aborted) return;
-        // Base64/JSON adds transport overhead; report its measured fraction as media bytes.
+        // JSON/base64 adds transport overhead; report its measured fraction as media bytes.
         const ratio = Math.min(1, event.loaded / event.total);
         onProgress({ percent: Math.floor(ratio * 100), loaded: size * ratio, total: size, complete: false });
       };
@@ -70,7 +71,8 @@
       request.onabort = () => reject(new Error('Upload cancelled.'));
       request.onloadend = () => signal.removeEventListener('abort', abort);
       onProgress({ percent: 0, loaded: 0, total: size, complete: false });
-      request.send(JSON.stringify(body));
+      const isBlob = typeof root.Blob === 'function' && body instanceof root.Blob;
+      request.send(typeof body === 'string' || isBlob ? body : JSON.stringify(body));
     });
   }
   const uploadMB = bytes => `${(bytes / 1000000).toFixed(2)} MB`;
@@ -85,27 +87,30 @@
     return openPicker(button, { signal, ready, photo: true, accept, maxBytes, onSelect, title, endpoint: () => 'photo' });
   }
   function pickMedia(options) {
-    return openPicker(options.button, { signal: new AbortController().signal, ...options, photo: true, media: true, endpoint: () => 'media', accept: '.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov', maxBytes: MAX_BYTES });
+    return openPicker(options.button, { signal: new AbortController().signal, ...options, photo: true, media: true, endpoint: () => 'media', accept: '.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov', maxBytes: options.maxBytes ?? MAX_BYTES });
   }
-  function openPicker(button, { signal, endpoint, onMessage, ready = () => true, extraBody = () => ({}), photo = false, media: mediaMode = false, accept = ACCEPT, maxBytes = MAX_BYTES, onSelect, title = 'Attachments' }) {
+  function openPicker(button, { signal, endpoint, onMessage, ready = () => true, extraBody = () => ({}), photo = false, media: mediaMode = false, galleryOnly = false, accept = ACCEPT, maxBytes = MAX_BYTES, onSelect, title = 'Attachments' }) {
       if (activePicker || !ready() || signal.aborted) return;
       const target = endpoint();
       if (!target) return;
       const extra = extraBody();
       const id = `attachment-picker-${++pickerSerial}`;
+      const categories = [['Gallery', '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>']];
+      if (!galleryOnly) categories.push(['File', '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zm0 0v6h6"/>']);
+      const cameraMarkup = galleryOnly ? '' : '<button type="button" data-attachment-camera aria-label="Camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 6l2-3h4l2 3h4a1 1 0 0 1 1 1v13H3V7a1 1 0 0 1 1-1z"/><circle cx="12" cy="12.5" r="4"/></svg><strong>Camera</strong></button>';
       const dialog = root.document.createElement('dialog');
       dialog.className = 'pulse-attachment-dialog';
       dialog.setAttribute('aria-labelledby', `${id}-title`);
       dialog.setAttribute('aria-describedby', `${id}-help`);
       dialog.innerHTML = `<div class="attachment-sheet"><div class="attachment-handle" aria-hidden="true"></div>
         <header class="attachment-header"><button type="button" data-attachment-back aria-label="Back">←</button><h2 id="${id}-title">${mediaMode ? 'Photo or video' : photo ? 'Photo' : 'Attachments'}</h2><button type="button" data-attachment-cancel aria-label="Cancel">×</button></header>
-        <p class="visually-hidden" id="${id}-help">Only chosen files are accessed. ${mediaMode ? 'Review your media before posting. Videos up to 4 minutes; files up to 5 MB.' : photo ? 'Review your photo before saving.' : 'Up to 5 MB per attachment.'}</p>
+        <p class="visually-hidden" id="${id}-help">Only chosen files are accessed. ${mediaMode ? `Review your media before posting. Videos up to 4 minutes; files up to ${Math.round(maxBytes / (1024 * 1024))} MiB.` : photo ? 'Review your photo before saving.' : 'Up to 5 MB per attachment.'}</p>
         <div class="attachment-content"><div class="attachment-empty"><button type="button" data-attachment-browse aria-label="Choose photos">${clip}<span>Choose photos</span></button></div><div class="attachment-grid" role="group" aria-label="Chosen files"></div><section class="attachment-preview" aria-label="File preview" hidden><button type="button" data-preview-close aria-label="Back to selection">←</button><div class="attachment-preview-media"></div><p class="attachment-preview-name visually-hidden"></p></section></div>
         <p class="attachment-feedback" role="status" aria-live="polite"></p><progress class="attachment-upload-progress" max="100" value="0" aria-label="File upload progress" hidden></progress>
         <div class="attachment-confirm"><button type="button" data-attachment-add aria-label="Add photos or files">+</button><span data-attachment-count aria-live="polite"></span><button type="button" data-attachment-send disabled aria-label="${mediaMode ? 'Use media' : photo ? 'Use photo' : 'Send selected'}">${mediaMode ? 'Use media' : photo ? 'Use photo' : 'Send'}</button></div>
-        <div class="attachment-tray"><div role="tablist" aria-label="Attachment type">${[['Gallery', '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>'], ['File', '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zm0 0v6h6"/>']].map(([name, icon]) => `<button type="button" role="tab" aria-selected="${name === 'Gallery'}" data-attachment-category="${name}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">${icon}</svg><strong>${name}</strong></button>`).join('')}</div><button type="button" data-attachment-camera aria-label="Camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 6l2-3h4l2 3h4a1 1 0 0 1 1 1v13H3V7a1 1 0 0 1 1-1z"/><circle cx="12" cy="12.5" r="4"/></svg><strong>Camera</strong></button></div>
+        <div class="attachment-tray"><div role="tablist" aria-label="Attachment type">${categories.map(([name, icon]) => `<button type="button" role="tab" aria-selected="${name === 'Gallery'}" data-attachment-category="${name}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">${icon}</svg><strong>${name}</strong></button>`).join('')}</div>${cameraMarkup}</div>
         <input type="file" data-modal-input aria-label="Choose attachment files" ${photo ? '' : 'multiple'} hidden>
-        <input type="file" data-camera-input accept="image/*" capture="environment" aria-label="Take photo" hidden>
+        ${galleryOnly ? '' : '<input type="file" data-camera-input accept="image/*" capture="environment" aria-label="Take photo" hidden>'}
       </div>`;
       root.document.body.append(dialog);
       activePicker = dialog;
@@ -126,7 +131,8 @@
       localInput.accept = galleryAccept;
       const guidance = root.document.createElement('small');
       guidance.className = 'attachment-device-help';
-      guidance.textContent = mediaMode ? 'Tap Gallery to choose a photo or video. Only chosen media appears here; your library is not scanned.' : 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.';
+      const galleryLimitHint = galleryOnly && mediaMode ? `Videos up to 4 minutes · ${Math.round(maxBytes / (1024 * 1024))} MiB per photo or video. ` : '';
+      guidance.textContent = mediaMode ? `${galleryLimitHint}Tap Gallery to choose a photo or video. Only chosen media appears here; your library is not scanned.` : 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.';
       if (mediaMode) { browse.querySelector('span').textContent = 'Choose photo or video'; browse.setAttribute('aria-label', 'Choose photo or video'); }
       empty.append(guidance);
       function close() {
@@ -157,7 +163,7 @@
         paint();
         browse.querySelector('span').textContent = category === 'Gallery' ? (mediaMode ? 'Choose photo or video' : 'Choose photos') : 'Choose files';
         browse.setAttribute('aria-label', category === 'Gallery' ? (mediaMode ? 'Choose photo or video' : 'Choose photos') : 'Choose files');
-        guidance.textContent = mediaMode && category === 'Gallery' ? 'Tap Gallery to choose a photo or video. Only chosen media appears here; your library is not scanned.' : category === 'Gallery' ? 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.' : 'Tap File to open your device file chooser. Only files you choose appear here.';
+        guidance.textContent = mediaMode && category === 'Gallery' ? `${galleryLimitHint}Tap Gallery to choose a photo or video. Only chosen media appears here; your library is not scanned.` : category === 'Gallery' ? 'Tap Gallery to open your device photo chooser. Only photos you choose appear here; your library is not scanned.' : 'Tap File to open your device file chooser. Only files you choose appear here.';
         feedback.textContent = '';
         // Keep this synchronous in the explicit tap handler to preserve browser user activation.
         try { localInput.click(); } catch { feedback.textContent = 'File access is unavailable. Try again in your browser.'; }
@@ -242,9 +248,9 @@
         feedback.textContent = errors.join(' '); input.value = ''; paint();
       }
       localInput.addEventListener('change', () => receiveFiles(localInput), { signal: controller.signal });
-      localInput.addEventListener('cancel', () => { feedback.textContent = entries.length ? 'No new files chosen. Your previous choices are still here.' : 'No files chosen. Tap Gallery or File and select items in your device chooser.'; }, { signal: controller.signal });
-      cameraInput.addEventListener('change', () => receiveFiles(cameraInput), { signal: controller.signal });
-      dialog.querySelector('[data-attachment-camera]').addEventListener('click', camera, { signal: controller.signal });
+      localInput.addEventListener('cancel', () => { feedback.textContent = entries.length ? 'No new files chosen. Your previous choices are still here.' : `No files chosen. Tap Gallery${galleryOnly ? '' : ' or File'} and select items in your device chooser.`; }, { signal: controller.signal });
+      cameraInput?.addEventListener('change', () => receiveFiles(cameraInput), { signal: controller.signal });
+      dialog.querySelector('[data-attachment-camera]')?.addEventListener('click', camera, { signal: controller.signal });
       dialog.querySelector('[data-attachment-add]').addEventListener('click', () => choose(category), { signal: controller.signal });
       browse.addEventListener('click', () => choose(category), { signal: controller.signal });
       for (const item of dialog.querySelectorAll('[data-attachment-category]:not([disabled])')) item.addEventListener('click', () => choose(item.dataset.attachmentCategory), { signal: controller.signal });
@@ -266,7 +272,7 @@
           return;
         }
         sending = true; paint(); browse.disabled = true;
-        dialog.querySelector('[data-attachment-camera]').disabled = true;
+        const cameraButton = dialog.querySelector('[data-attachment-camera]'); if (cameraButton) cameraButton.disabled = true;
         dialog.querySelector('[data-attachment-add]').disabled = true;
         for (const item of dialog.querySelectorAll('[data-attachment-category]:not([disabled])')) item.disabled = true;
         try {
@@ -293,7 +299,7 @@
           // Do not automatically retry a request whose delivery may be uncertain.
           if (!closed && !signal.aborted) { feedback.textContent = `${error.message} Check the chat before selecting and sending again.`; entries.forEach(item => { item.selected = false; }); }
         } finally {
-          if (!closed) { progress.hidden = true; sending = false; browse.disabled = false; dialog.querySelector('[data-attachment-camera]').disabled = false; dialog.querySelector('[data-attachment-add]').disabled = false; for (const item of dialog.querySelectorAll('[data-attachment-category="Gallery"], [data-attachment-category="File"]')) item.disabled = false; paint(); }
+          if (!closed) { progress.hidden = true; sending = false; browse.disabled = false; const cameraButton = dialog.querySelector('[data-attachment-camera]'); if (cameraButton) cameraButton.disabled = false; dialog.querySelector('[data-attachment-add]').disabled = false; for (const item of dialog.querySelectorAll('[data-attachment-category="Gallery"], [data-attachment-category="File"]')) item.disabled = false; paint(); }
         }
       }, { signal: controller.signal });
       signal.addEventListener('abort', close, { once: true });

@@ -203,10 +203,19 @@ test('PostgreSQL Likee authenticated video, feed, actions, comments, follow and 
     assert.deepEqual(Buffer.from(persistedVideo.rows[0].data), media);
     assert.equal(persistedVideo.rows[0].byte_size, media.length);
 
+    // The live composer uses binary uploads; the new constraint must permit >5 MiB.
+    const padding = Buffer.alloc(6 * 1024 * 1024); padding.writeUInt32BE(padding.length,0); padding.write('free',4,'ascii');
+    const largeMedia = Buffer.concat([media,padding]);
+    response = await fetch(`${origin}/api/likee/videos`, {method:'POST',headers:{cookie:creator,origin,'content-type':'video/mp4','x-likee-caption':encodeURIComponent('TEST binary >5 MiB')},body:largeMedia});
+    assert.equal(response.status,201,'binary upload greater than 5 MiB persists');
+    const largePost=(await response.json()).video;
+    const storedLarge=await pool.query('SELECT data,byte_size FROM stemma_likee_videos WHERE id=$1::uuid',[largePost.id]);
+    assert.deepEqual(Buffer.from(storedLarge.rows[0].data),largeMedia);
+    assert.equal(storedLarge.rows[0].byte_size,largeMedia.length);
+    assert.deepEqual(Buffer.from(await (await get(largePost.mediaUrl,creator)).arrayBuffer()),largeMedia);
+
     const photoBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    response = await postJson(`${origin}/api/likee/videos`, creator, origin, {
-      caption: 'TEST fixture: Likee photo persistence', mimeType: 'image/png', data: photoBytes.toString('base64')
-    });
+    response = await fetch(`${origin}/api/likee/videos`, {method:'POST',headers:{cookie:creator,origin,'content-type':'image/png','x-likee-caption':encodeURIComponent('TEST fixture: Likee photo persistence')},body:photoBytes});
     assert.equal(response.status, 201, 'the expanded database mime constraint permits a stored photo');
     const photo = (await response.json()).video;
     const photoDto = await (await get(`/api/likee/videos/${photo.id}`, creator)).json();

@@ -139,7 +139,8 @@ function createPicker() {
   const button = new Element('button');
   const signal = new AbortController().signal;
   const pickPhoto = options => root.StemmaChatAttachments.pickPhoto({ button, signal, ...options });
-  return { root, button, dialogs, revoked, created, pickPhoto };
+  const pickMedia = options => root.StemmaChatAttachments.pickMedia({ button, signal, ...options });
+  return { root, button, dialogs, revoked, created, pickPhoto, pickMedia };
 }
 
 function createChatPicker() {
@@ -160,11 +161,26 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 test('photo picker markup is limited to Gallery/File tabs and a separate native camera action', () => {
   assert.match(pickerSource, /function pickPhoto\(\{\s*button,\s*signal\s*=\s*new AbortController\(\)\.signal,\s*ready\s*=\s*\(\)\s*=>\s*true,\s*accept\s*=/s);
-  assert.match(pickerSource, /role="tablist"[\s\S]*?\['Gallery'[\s\S]*?\['File'/);
+  assert.match(pickerSource, /const categories = \[\['Gallery'[\s\S]*if \(!galleryOnly\) categories\.push\(\['File'/);
   assert.match(pickerSource, /data-attachment-camera/);
   assert.match(pickerSource, /data-camera-input accept="image\/\*" capture="environment"/);
   assert.doesNotMatch(pickerSource, /<label[^>]*>Source<\/label>|<select[^>]*aria-label="Album or source"/);
   assert.doesNotMatch(pickerSource, /\['Location'|\['Article'|\['Poll'|\['Contact'/);
+});
+
+test('Gallery-only media picker hides File and Camera and enforces its supplied large size cap', () => {
+  const h = createPicker();
+  h.pickMedia({ galleryOnly: true, maxBytes: 256 * 1024 * 1024 });
+  const dialog = h.dialogs[0];
+  assert.doesNotMatch(dialog.innerHTML, /data-attachment-category="File"|data-attachment-camera|data-camera-input/);
+  const input = dialog.querySelector('[data-modal-input]');
+  input.files = [{ name: 'long.mp4', size: 240 * 1024 * 1024, lastModified: 1, type: 'video/mp4' }];
+  input.dispatch('change');
+  assert.equal(h.created.length, 1, 'a 240 MiB video is accepted under a 256 MiB cap');
+  input.files = [{ name: 'oversize.mp4', size: 256 * 1024 * 1024 + 1, lastModified: 2, type: 'video/mp4' }];
+  input.dispatch('change');
+  assert.equal(h.created.length, 1, 'a file above the cap is rejected');
+  assert.match(dialog.querySelector('.attachment-feedback').textContent, /up to 256(?:\.0)? MB/);
 });
 
 test('profile and group-photo upload callers use the shared photo picker and preserve photo callbacks', () => {
