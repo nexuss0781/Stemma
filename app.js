@@ -557,8 +557,10 @@ function navigate(route) {
 }
 
 function syncRouteFromHash() {
-  const route = window.location.hash.replace(/^#/, '');
-  if (!pageTabs[route] || route === activeRoute) return;
+  const appsLink = window.location.hash === '#apps';
+  const route = appsLink ? 'pulse' : window.location.hash.replace(/^#/, '');
+  if (appsLink) activeTabs.pulse = 4;
+  if (!pageTabs[route] || (route === activeRoute && !appsLink)) return;
   window.StemmaParentNavigation?.reset();
   cancelPendingNavigationRestoration();
   closeFriendPicker();
@@ -986,6 +988,8 @@ function restoreNavigationLocation(accountKey) {
   // A shared group or invite link takes precedence over account navigation memory.
   if (window.location.pathname !== '/dashboard' && /^\/(?:[A-Za-z0-9_-]{3,40}|(?:invite|private_urls)\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname)) activeRoute = 'pulse';
   for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
+  // A System App's back link always returns to the Apps launcher.
+  if (window.location.hash === '#apps') { activeRoute = 'pulse'; activeTabs.pulse = 4; }
   paymentSlideIndex = saved?.paymentSlide || 0;
   paymentDemoInterval = saved?.interval || '15-days';
   depositDraftAmount = saved?.depositAmount || '';
@@ -997,7 +1001,7 @@ function restoreNavigationLocation(accountKey) {
   routeDirection = 0;
   render();
   window.StemmaNotifications?.setUnderlyingScrollTop(saved?.scrollTop || 0);
-  if (window.location.hash !== '#notifications' && window.location.hash !== `#${activeRoute}`) {
+  if (window.location.hash !== '#apps' && window.location.hash !== '#notifications' && window.location.hash !== `#${activeRoute}`) {
     window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#${activeRoute}`);
   }
   pendingNavigationRestore = saved;

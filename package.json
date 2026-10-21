@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check app.js && node --check groups-api.js && node --check groups-ui.js && node --check channels-api.js && node --check channels-ui.js"
+    "check": "node --check server.js && node --check app.js && node --check groups-api.js && node --check groups-ui.js && node --check channels-api.js && node --check channels-ui.js && tsc -p tsconfig.system-apps.json --noEmit && node --check system-apps/launcher.js",
+    "build:system-apps": "tsc -p tsconfig.system-apps.json",
+    "build": "npm run build:system-apps"
   },
   "dependencies": {
     "connect-pg-simple": "^10.0.0",
@@ -20,5 +22,8 @@
     "helmet": "^8.0.0",
     "jose": "^5.9.6",
     "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

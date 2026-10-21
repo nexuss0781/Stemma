@@ -1,5 +1,5 @@
 {
-  "serverSha256": "5178662ff790dfa81941b847196b115b7f9f673c11b81e11c6f1813918aea2b7",
+  "serverSha256": "45634b566b281dae949a516ea6edaccd8f3d601e6e4a7211bc2f7e92b7583cd3",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -61,6 +61,10 @@
     {
       "name": "016_channel_attachments.sql",
       "sha256": "7b3c104e106d75b367be1df3b1dd073c8ec42abf99de5fefea746e63a3db380c"
+    },
+    {
+      "name": "017_teacher_attendance.sql",
+      "sha256": "811b2dc80486ce2518fcf43a90b2d635596949ca4afb2bc8cfe8804eab76e32d"
     }
   ]
 }

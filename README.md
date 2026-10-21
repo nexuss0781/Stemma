@@ -96,3 +96,32 @@ The automated authentication tests use mock OIDC providers and generated ephemer
 - Hash-based section navigation, tab selection, drawer navigation, and touch-swipe navigation
 - Google and Fayda sign-in choices with a guest path
 - `Skip` guest access remains available
+
+## Teacher Attendance — first trusted System App
+
+Open **Pulse → App → Teacher Attendance**, or return directly to `/#apps`. The launcher uses exactly three columns of large icons. Attendance opens at `/system-apps/attendance/` as a full-page app with its own **Roll** identity and no Stemma dashboard chrome. Full-page means viewport-filling; the browser Fullscreen API is not required.
+
+`system-apps/apps.json` is the bundled application registry; `system-apps/schema.json` describes its configuration. Entries include name, description, icon, splash image, trust, language, launch link, install/build/start commands, environment requirements, and persistence permissions. Commands are deployment metadata, never browser-executed. Remote extensions are not part of this trusted registry or granted its APIs.
+
+```bash
+npm ci
+npm run build:system-apps
+npm run check
+npm start
+```
+
+The strict TypeScript source is `system-apps/attendance/app.ts`; compiled `app.js` is checked in for the hosted runtime. `npm run build` also compiles System Apps. The app reuses the existing secure Google session and PostgreSQL configuration: `SESSION_SECRET`, `APP_ORIGIN`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD`. Configure the existing Google sign-in client for local development. Never put secret values in the public registry.
+
+Import plain, bulleted, or numbered names, one per line (up to 1,000 names, 120 characters each). Imports append and deduplicate exact Unicode/whitespace-normalized names. Students with identical full names need an identifying suffix. Individual ticks, select-all/clear-all, the local-date picker, and automatic saving form the attendance workflow. Reopen any previous date with the date picker. No synthetic roster is shipped to real accounts.
+
+Migration `017_teacher_attendance.sql` runs idempotently at startup. Roster and dated attendance snapshots, including all-absent days, live in PostgreSQL scoped to the signed-in Google subject. Imports/saves are transactional; APIs and composite foreign keys reject cross-account student IDs. Account deletion cascades the roster and snapshots. Writes require same-origin JSON and data responses are private/no-store. No new volume or separate database is required.
+
+```bash
+STEMMA_ATTENDANCE_POSTGRES_TEST=1 node --test test/attendance-api.test.js
+```
+
+### Wasmer storage capacity
+
+The inspected account is on Wasmer Free with a measured 1 GiB volume quota (`1073741824` bytes) and no app volumes. The requested 100 GB is not included. Volumes are mounted using `volumes: [{ name: data, mount: /data }]` in `app.yaml`; the documented configuration has no size/reservation field. Capacity is an account allowance, not an app-level 100 GB switch. No volume allocation, plan upgrade, billing change, or charge was made. Attendance uses existing managed PostgreSQL.
+
+Wasmer's [published pricing](https://wasmer.io/pricing) lists Pro at $10/month, including 1 GB of volume storage, then $0.05 per additional GB. At that rate, 99 additional GB calculates to $4.95 in addition to the plan; the storage meter period and taxes need checkout confirmation before approval or charging. See the [volume guide](https://docs.wasmer.io/edge/guides/volumes/) and [configuration reference](https://docs.wasmer.io/edge/configuration/).

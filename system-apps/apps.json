@@ -1,0 +1,30 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "apps": [
+    {
+      "id": "teacher-attendance",
+      "name": "Teacher Attendance",
+      "description": "A focused full-screen student register with bullet-list import and daily attendance, saved privately to your account.",
+      "kind": "system",
+      "trusted": true,
+      "version": "1.0.0",
+      "language": "TypeScript",
+      "icon": "/system-apps/attendance/icon.svg",
+      "splashImage": "/system-apps/attendance/splash.svg",
+      "launch": { "url": "/system-apps/attendance/", "mode": "same-window", "fullscreen": true },
+      "runtime": {
+        "type": "hosted-system-app",
+        "workingDirectory": ".",
+        "node": ">=20",
+        "install": "npm ci",
+        "build": "npm run build:system-apps",
+        "start": "npm start",
+        "port": 3000,
+        "requiredEnvironment": ["SESSION_SECRET", "APP_ORIGIN", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USERNAME", "DB_PASSWORD"]
+      },
+      "persistence": { "driver": "postgresql", "scope": "account", "api": "/api/system-apps/attendance", "records": ["roster", "daily-attendance"] },
+      "permissions": ["attendance:own-account:read", "attendance:own-account:write"]
+    }
+  ]
+}

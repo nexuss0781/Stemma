@@ -6,12 +6,14 @@ import http from 'node:http';
 import { createApp, buildConfig } from '../server.js';
 const root = new URL('../', import.meta.url);
 const [source, dataSource, css, html, app, groupsSource, storiesSource, storiesCss] = await Promise.all(['pulse-ui.js', 'pulse-data-ui.js', 'pulse.css', 'index.html', 'app.js', 'groups-ui.js', 'stories-ui.js', 'stories.css'].map(name => readFile(new URL(name, root), 'utf8')));
+const launcherSource = await readFile(new URL('system-apps/launcher.js', root), 'utf8');
 function load(fetchImpl) {
   const effects = [];
   const context = vm.createContext({ fetch: fetchImpl || (() => effects.push('fetch')), XMLHttpRequest: () => effects.push('xhr') });
   vm.runInContext(groupsSource, context);
   vm.runInContext(dataSource, context);
   vm.runInContext(storiesSource, context);
+  vm.runInContext(launcherSource, context);
   vm.runInContext(source, context);
   return { pulse: context.StemmaPulse, data: context.StemmaPulseData, stories: context.StemmaStories, effects };
 }
@@ -93,7 +95,8 @@ test('minimal stages retain category conversations while later stages have no re
   for (const [index, panel] of panels.entries()) {
     const stages = stagesFrom(panel);
     assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
-    assert.match(stages[0], /pulse-conversations/);
+    if (index === 4) assert.match(stages[0], /system-apps-launcher/);
+    else assert.match(stages[0], /pulse-conversations/);
     if (index === 0) {
       assert.match(stages[0], /pulse-saved-row/);
       assert.match(stages[0], /data-pulse-all role="list" aria-label="All conversations"/);
@@ -213,7 +216,7 @@ test('Pulse isolates swipe gestures, supports keyboard tabs, and respects reduce
   assert.match(css, /touch-action: auto/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(html, /symbol id="i-pulse"/);
-  assert.match(html, /src="\/direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="\/story-video-capture.js\?v=\d+" defer><\/script>\s*<script src="\/stories-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-ui.js\?v=\d+" defer/,
+  assert.match(html, /src="\/direct-chat-ui.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-data-ui.js\?v=\d+" defer><\/script>\s*<script src="\/story-video-capture.js\?v=\d+" defer><\/script>\s*<script src="\/stories-ui.js\?v=\d+" defer><\/script>\s*<link rel="stylesheet" href="\/system-apps\/launcher.css\?v=\d+" \/>\s*<script src="\/system-apps\/launcher.js\?v=\d+" defer><\/script>\s*<script src="\/pulse-ui.js\?v=\d+" defer/,
     'the data, capture, and stories clients load before Pulse rendering');
   assert.match(html, /<script src="\/groups-ui.js\?v=\d+" defer><\/script>/,
     'the Groups client uses a root-relative asset URL');

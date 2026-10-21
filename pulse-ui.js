@@ -11,6 +11,7 @@
   // Match the supplied stacked-bookmark silhouette using the existing avatar palette.
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
+    if (kind === 'app') return root.StemmaSystemApps?.view() || '';
     if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations pulse-unified-list" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
     if (kind === 'channel') return `<div class="pulse-conversations pulse-unified-list" data-channel-lists role="list" aria-label="Channels"><p class="pulse-list-empty" role="status">Loading channels…</p></div>`;
     if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations pulse-unified-list" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
@@ -288,7 +289,7 @@
       select(index, true);
     });
     listen(viewport, 'keydown', event => {
-      if (event.target.closest('.pulse-stories') || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
+      if (selected === 4 || event.target.closest('.pulse-stories') || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const panel = panels[selected];
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : Number(panel.dataset.stage) + (['ArrowDown', 'PageDown'].includes(event.key) ? 1 : -1);
@@ -296,7 +297,7 @@
     });
     // A wheel/trackpad burst is one pull, not three skipped layouts.
     listen(viewport, 'wheel', event => {
-      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (selected === 4 || event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       event.preventDefault();
       clearTimeout(wheelTimer);
       wheelTimer = setTimeout(() => { wheelLocked = false; wheelDistance = 0; }, 220);
@@ -321,7 +322,7 @@
           if (drag.rail) { drag = null; return; } // Native story scrolling never selects a category.
           drag.axis = 'x';
           track.classList.add('is-dragging');
-        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) { drag.axis = 'y'; drag.start = states[selected].progress; stop(states[selected]); }
+        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) { if (selected === 4) { drag = null; return; } drag.axis = 'y'; drag.start = states[selected].progress; stop(states[selected]); }
         else return;
         viewport.setPointerCapture(event.pointerId);
       }
@@ -360,6 +361,7 @@
     const groups = root.StemmaGroups?.mount(shell, { listen, signal: abort.signal });
     root.StemmaPulseData?.mount(shell, { listen, signal: abort.signal, closeSearch: () => setSearchOpen(false, true), groups });
     root.StemmaStories?.mount(shell, { listen, signal: abort.signal });
+    void root.StemmaSystemApps?.mount(shell, { signal: abort.signal });
     cleanup = () => { searchTrigger?.setAttribute('aria-expanded', 'false'); abort.abort(); clearTimeout(wheelTimer); states.forEach(stop); };
   }
   root.StemmaPulse = Object.freeze({ render, mount, categories, unmount: () => { cleanup(); cleanup = () => {}; } });
