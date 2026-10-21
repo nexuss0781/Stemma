@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const source = await readFile(new URL('../profile-photo.js', import.meta.url), 'utf8');
 
 function createStore(fetch) {
-  const context = vm.createContext({ Blob, fetch });
+  const context = vm.createContext({ Blob, fetch, setTimeout, clearTimeout, AbortController });
   vm.runInContext(source, context, { filename: 'profile-photo.js' });
   return { Store: context.AuthenticatedProfilePhotoStore, Error: context.ProfilePhotoHttpError };
 }
@@ -26,7 +26,10 @@ test('authenticated photo GET returns validated image blobs and only 404 means a
     return response(200, { type: 'image/png', body: png, headers: { 'content-length': String(png.size) } });
   });
   const store = new h.Store();
-  assert.equal(await store.get(), png);
+  const restored = await store.get();
+  assert.equal(restored.size, png.size);
+  assert.equal(restored.type, png.type);
+  assert.deepEqual([...new Uint8Array(await restored.arrayBuffer())], [...new Uint8Array(await png.arrayBuffer())]);
   assert.equal(calls[0][1].method, 'GET');
   assert.equal(calls[0][1].credentials, 'same-origin');
   assert.equal(calls[0][1].cache, 'no-store');
@@ -42,13 +45,51 @@ test('authenticated photo GET returns validated image blobs and only 404 means a
 test('authenticated photo GET rejects unsupported MIME, invalid lengths, and oversized blobs', async () => {
   for (const result of [
     response(200, { type: 'image/gif', body: new Blob(['gif'], { type: 'image/gif' }) }),
-    response(200, { type: 'image/png', body: new Blob(['tiny'], { type: 'image/png' }), headers: { 'content-length': '999' } }),
+    response(200, { type: 'image/png', body: new Blob(['tiny'], { type: 'image/png' }), headers: { 'content-length': '0' } }),
     response(200, { type: 'image/png', body: new Blob([new Uint8Array(1024 * 1024 + 1)], { type: 'image/png' }) }),
     response(200, { type: 'image/png', body: new Blob(['tiny'], { type: 'image/png' }), headers: { 'content-length': 'not-a-number' } })
   ]) {
     const store = new (createStore(async () => result).Store)();
     await assert.rejects(store.get(), /unsupported|length|size|1 MiB/i);
   }
+});
+
+test('authenticated photo GET caps streamed bytes but accepts compressed wire-length differences', async () => {
+  const streamResponse = body => {
+    const result = response(200, { type: 'image/png', headers: { 'content-length': '999' } });
+    result.body = body;
+    return result;
+  };
+  const validStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3]));
+      controller.close();
+    }
+  });
+  const store = new (createStore(async () => streamResponse(validStream)).Store)();
+  const blob = await store.get();
+  assert.equal(blob.size, 3);
+  assert.equal(blob.type, 'image/png');
+
+  const oversizedStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(1024 * 1024));
+      controller.enqueue(new Uint8Array(1));
+      controller.close();
+    }
+  });
+  const oversized = new (createStore(async () => streamResponse(oversizedStream)).Store)();
+  await assert.rejects(oversized.get(), /exceeds its 1 MiB/);
+});
+
+test('authenticated photo requests abort and reject when the server stalls', async () => {
+  let requestSignal;
+  const store = new (createStore((_url, options) => {
+    requestSignal = options.signal;
+    return new Promise(() => {});
+  }).Store)({ requestTimeoutMs: 5 });
+  await assert.rejects(store.get(), /timed out/i);
+  assert.equal(requestSignal.aborted, true);
 });
 
 test('authenticated photo PUT sends raw Blob with canonical MIME and optional create-only precondition', async () => {
@@ -89,7 +130,7 @@ test('PUT failure statuses and invalid client payloads never report a successful
 });
 
 test('default native-style fetch remains bound to the browser global for reads and uploads', async () => {
-  const context = vm.createContext({ Blob, absent: response(404), saved: response(200, { json: { saved: true } }) });
+  const context = vm.createContext({ Blob, setTimeout, clearTimeout, AbortController, absent: response(404), saved: response(200, { json: { saved: true } }) });
   vm.runInContext(`globalThis.fetch = async function (_url, options) {
     if (this !== globalThis) throw new TypeError('Illegal invocation');
     return options.method === 'GET' ? globalThis.absent : globalThis.saved;

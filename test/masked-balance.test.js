@@ -19,9 +19,10 @@ test('Overview hero no longer contains mock balance or balance-visibility contro
   assert.doesNotMatch(overviewHero, /5,000\.00|Private preview balance|Balance hidden/i);
 });
 
-test('Overview identity updates retain fallback skeletons and dashboard card skeletons', () => {
-  assert.match(html, /class="hero-skeleton-name skeleton-shimmer"/);
-  assert.match(html, /id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"/);
+test('Overview replaces permanent skeletons with real highlights and a photo fallback', () => {
+  assert.doesNotMatch(overviewHero, /overview-student-name|hero-skeleton-name/);
+  assert.match(app, /StemmaOverview\?\.mount/);
+  assert.match(html, /id="overview-photo-placeholder" class="portrait-skeleton"/);
   assert.match(html, /id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden/);
   assert.match(html, /id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden/);
   assert.match(app, /function renderSkeletonCards\(\)[\s\S]*?skeleton-shimmer/);

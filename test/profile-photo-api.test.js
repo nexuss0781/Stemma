@@ -138,3 +138,28 @@ test('photo API reports missing profile row as 409 and storage failures as consi
   assert.equal(put.status, 503);
   assert.deepEqual(await put.json(), { error: 'Student profile service is unavailable.' });
 });
+
+test('photo API does not serve corrupt or metadata-mismatched stored account photos', async t => {
+  const corrupt = {
+    async getStudentPhoto() {
+      return { data: Buffer.from('<svg/>'), mimeType: 'image/png', width: 1, height: 1 };
+    }
+  };
+  const h = await createHarness({ store: corrupt }); t.after(() => h.close());
+  const cookie = await h.cookie('corrupt-photo', 'google-A');
+  const response = await fetch(`${h.origin}/api/student-profile/photo`, { headers: { cookie } });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'Student profile service is unavailable.' });
+  assert.match(response.headers.get('cache-control'), /no-store/);
+
+  const mismatched = {
+    async getStudentPhoto() {
+      return { data: png(), mimeType: 'image/png', width: 2, height: 1 };
+    }
+  };
+  const second = await createHarness({ store: mismatched }); t.after(() => second.close());
+  const secondCookie = await second.cookie('mismatched-photo', 'google-A');
+  const rejected = await fetch(`${second.origin}/api/student-profile/photo`, { headers: { cookie: secondCookie } });
+  assert.equal(rejected.status, 503);
+  assert.deepEqual(await rejected.json(), { error: 'Student profile service is unavailable.' });
+});

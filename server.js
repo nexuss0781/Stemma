@@ -709,12 +709,16 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     try {
       const photo = await studentProfileStore.getStudentPhoto(req.session.stemmaUser.subject);
       if (!photo) return res.status(404).json({ error: 'Profile photo not found.' });
+      const validatedPhoto = validateProfileImage(photo.data, photo.mimeType);
+      if (!validatedPhoto || validatedPhoto.width !== photo.width || validatedPhoto.height !== photo.height) {
+        return res.status(503).json({ error: 'Student profile service is unavailable.' });
+      }
       res.set({
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
-        'Content-Type': photo.mimeType
+        'Content-Type': validatedPhoto.mimeType
       });
-      return res.status(200).send(photo.data);
+      return res.status(200).send(validatedPhoto.data);
     } catch {
       return res.status(503).json({ error: 'Student profile service is unavailable.' });
     }
@@ -1042,9 +1046,9 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'story-video-capture.js', 'stories-ui.js', 'likee-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'groups-ui.js', 'channels-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'story-video-capture.js', 'stories-ui.js', 'likee-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'groups-ui.js', 'channels-ui.js', 'overview-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
-      res.set('Cache-Control', ['parent-navigation.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'channels-ui.js'].includes(asset) ? 'no-store' : 'public, max-age=300');
+      res.set('Cache-Control', ['parent-navigation.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'channels-ui.js', 'overview-ui.js'].includes(asset) ? 'no-store' : 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
     });
   }
@@ -1075,6 +1079,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.get('/channels.css', (_req, res) => {
     res.set({ 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer' });
     res.type('text/css').sendFile(path.join(ROOT, 'channels.css'));
+  });
+  app.get('/overview.css', (_req, res) => {
+    res.set({ 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer' });
+    res.type('text/css').sendFile(path.join(ROOT, 'overview.css'));
   });
   app.use('/assets', express.static(path.join(ROOT, 'assets'), {
     dotfiles: 'deny',

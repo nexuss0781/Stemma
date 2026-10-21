@@ -8,7 +8,7 @@ const sections = [
 
 const pageTabs = {
   pulse: ['All', 'User', 'Group', 'Channel', 'App'],
-  overview: ['Snapshot', 'Cash flow', 'This month'],
+  overview: ['For you', 'Connect', 'Essentials'],
   cards: ['Pay fee', 'Deposit', 'History'],
   likee: [],
   profile: ['Personal', 'Security', 'Preferences']
@@ -106,7 +106,7 @@ function renderTabs() {
   tabNav.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} tabs`);
   tabNav.innerHTML = tabs.map((tab, index) => `
     <button class="page-tab" type="button" role="tab" aria-selected="${index === activeTabs[activeRoute]}" aria-label="${tab}" aria-controls="dashboard-grid" data-tab="${index}">
-      ${paymentView ? `<span class="tab-label">${tab}</span>` : '<span class="tab-skeleton skeleton-shimmer" aria-hidden="true"></span>'}
+      ${paymentView || activeRoute === 'overview' ? `<span class="tab-label">${tab}</span>` : '<span class="tab-skeleton skeleton-shimmer" aria-hidden="true"></span>'}
     </button>`).join('');
 }
 
@@ -423,9 +423,11 @@ function syncPaymentCarousel() {
   updatePaymentProgress();
 }
 function renderCards() {
+  window.StemmaOverview?.unmount();
   if (typeof StemmaPulse !== 'undefined') StemmaPulse.unmount();
   const grid = document.getElementById('dashboard-grid');
   window.StemmaLikee?.unmount();
+  grid.classList.toggle('overview-content-grid', activeRoute === 'overview');
   grid.classList.toggle('likee-content-grid', activeRoute === 'likee');
   if (activeRoute === 'likee') {
     grid.classList.remove('profile-content-grid', 'payment-carousel', 'bill-content-grid', 'deposit-entry-grid', 'payment-history-grid', 'pulse-content-grid');
@@ -496,15 +498,20 @@ function renderCards() {
     grid.setAttribute('aria-label', 'Your profile');
     grid.tabIndex = 0;
     grid.innerHTML = renderStudentProfile(savedStudentProfile, { state: profileReadState, email: signedInEmail, photoURL: studentPhotoURL, photoNotice: profilePhotoNotice });
+    if (profilePhotoNotice && !/Saving|Loading/.test(profilePhotoNotice)) grid.insertAdjacentHTML('beforeend', '<button class="profile-photo-retry" type="button" data-retry-profile-photo>Retry account photo</button>');
     return;
   }
-  grid.setAttribute('aria-label', 'Content placeholders');
-  grid.innerHTML = renderSkeletonCards();
+  grid.setAttribute('aria-label', 'Your Overview highlights');
+  window.StemmaOverview?.mount(grid, { authenticated: googleAuthenticated && dashboardEntered, profile: savedStudentProfile, filter: activeTabs.overview });
 }
 
 function render() {
   const main = document.getElementById('app-main');
   const overview = activeRoute === 'overview';
+  main.querySelector('.overview-intro').hidden = !overview;
+  main.querySelector('.overview-refresh').hidden = !overview;
+  main.querySelector('.section-intro-lines').hidden = overview;
+  main.querySelector('.section-intro-action').hidden = overview;
   const profileView = activeRoute === 'profile';
   const paymentView = activeRoute === 'cards';
   const billView = paymentView && payments.isBillOpen;
@@ -530,12 +537,12 @@ function render() {
   main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView || activeRoute === 'pulse' || activeRoute === 'likee';
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
-  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView || activeRoute === 'likee' ? 'page' : 'placeholders'}`);
+  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView || overview || activeRoute === 'likee' ? 'page' : 'placeholders'}`);
   const currentCrumb = document.getElementById('breadcrumb-current');
   currentCrumb.dataset.route = activeRoute;
-  currentCrumb.textContent = profileView ? 'Profile' : paymentView ? 'Payment' : '';
-  currentCrumb.classList.toggle('is-label', paymentView || profileView);
-  currentCrumb.setAttribute('aria-hidden', String(!paymentView && !profileView));
+  currentCrumb.textContent = overview ? 'Overview' : profileView ? 'Profile' : paymentView ? 'Payment' : '';
+  currentCrumb.classList.toggle('is-label', overview || paymentView || profileView);
+  currentCrumb.setAttribute('aria-hidden', String(!overview && !paymentView && !profileView));
   document.querySelector('.crumb-parent').dataset.route = activeRoute;
   renderTabs();
   renderCards();
@@ -708,6 +715,21 @@ document.addEventListener('error', event => {
 }, true);
 
 document.addEventListener('click', event => {
+  const overviewTarget = event.target.closest('[data-overview-target]');
+  if (overviewTarget) {
+    const route = overviewTarget.dataset.overviewTarget;
+    if (route === 'notifications') { document.getElementById('profile-notifications-button').click(); return; }
+    if (overviewTarget.dataset.overviewTab !== undefined && pageTabs[route]) activeTabs[route] = Number(overviewTarget.dataset.overviewTab);
+    navigate(route);
+    return;
+  }
+  if (event.target.closest('[data-overview-refresh]')) { renderCards(); return; }
+  if (event.target.closest('[data-retry-profile-photo]')) {
+    profilePhotoNotice = 'Loading your account photo…';
+    renderCards();
+    void restoreAccountProfilePhoto().then(() => { if (activeRoute === 'profile') renderCards(); });
+    return;
+  }
   document.querySelectorAll('.fee-demo-picker[open]').forEach(picker => {
     if (!picker.contains(event.target)) picker.open = false;
   });
@@ -807,6 +829,7 @@ document.addEventListener('click', event => {
       render();
     } else {
       renderTabs();
+      if (activeRoute === 'overview') renderCards();
     }
     queueNavigationSave();
   }
@@ -897,22 +920,13 @@ let pendingNavigationRestore = null;
 
 // Overview identity uses only the signed-in student's persisted profile and photo.
 function renderOverviewIdentity() {
-  const name = document.getElementById('overview-student-name');
-  const namePlaceholder = document.getElementById('overview-name-placeholder');
   const photo = document.getElementById('overview-profile-photo');
   const photoPlaceholder = document.getElementById('overview-photo-placeholder');
   const frame = document.getElementById('overview-photo-frame');
   const reflection = document.getElementById('overview-photo-reflection');
   const nickname = document.getElementById('overview-student-nickname');
-  if (!name || !namePlaceholder || !photo || !photoPlaceholder || !frame || !reflection || !nickname) return;
+  if (!photo || !photoPlaceholder || !frame || !reflection || !nickname) return;
   const profile = googleAuthenticated ? savedStudentProfile : null;
-  const displayName = profile ? ['firstName', 'middleName']
-    .map(key => typeof profile[key] === 'string' ? profile[key].trim() : '')
-    .filter(Boolean).join(' ') : '';
-  name.textContent = displayName;
-  name.title = displayName;
-  name.hidden = !displayName;
-  namePlaceholder.hidden = Boolean(displayName);
   const savedNickname = typeof profile?.nickName === 'string' ? profile.nickName.trim() : '';
   nickname.textContent = savedNickname;
   nickname.title = savedNickname;
@@ -1162,6 +1176,7 @@ function enterDashboard() {
   persistNavigationLocation();
   document.getElementById('onboarding-screen').hidden = true;
   document.getElementById('app-shell').hidden = false;
+  if (activeRoute === 'overview') renderCards();
   document.getElementById('app-main').focus({ preventScroll: true });
   window.requestAnimationFrame(() => {
     updateNavIndicator();
@@ -1447,6 +1462,7 @@ async function restoreAccountProfilePhoto() {
     if (key !== profilePhotoAccountKey || revision !== profilePhotoRevision || selectedProfilePhotoChanged) return;
     if (remoteBlob) {
       setCurrentPhoto(remoteBlob, revision);
+      profilePhotoNotice = '';
       studentPhotoStatus.textContent = 'Profile photo loaded from your account.';
       return;
     }

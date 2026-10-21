@@ -226,6 +226,43 @@
 
 
   const MAX_REMOTE_PHOTO_BYTES = 1024 * 1024;
+  const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+  async function readRemotePhoto(response, type) {
+    const reader = response.body && typeof response.body.getReader === 'function'
+      ? response.body.getReader()
+      : null;
+    if (!reader) {
+      const blob = await response.blob();
+      if (!(blob instanceof global.Blob) || blob.size <= 0 || blob.size > MAX_REMOTE_PHOTO_BYTES) {
+        throw new Error('The saved profile photo is empty or exceeds its 1 MiB size limit.');
+      }
+      const blobType = String(blob.type || '').toLowerCase();
+      if (blobType && blobType !== type) throw new Error('The saved profile photo type did not match its response.');
+      return new global.Blob([blob], { type });
+    }
+
+    const chunks = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || typeof value.byteLength !== 'number') throw new Error('The saved profile photo response was invalid.');
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+        size += chunk.byteLength;
+        if (size > MAX_REMOTE_PHOTO_BYTES) {
+          try { await reader.cancel(); } catch { /* The size limit is already enforced. */ }
+          throw new Error('The saved profile photo exceeds its 1 MiB size limit.');
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      try { reader.releaseLock(); } catch { /* Some stream implementations release automatically. */ }
+    }
+    if (size === 0) throw new Error('The saved profile photo is empty.');
+    return new global.Blob(chunks, { type });
+  }
+
   class ProfilePhotoHttpError extends Error {
     constructor(status, message) {
       super(message || `Profile photo request failed (${status}).`);
@@ -237,31 +274,63 @@
     constructor(options = {}) {
       this.fetch = options.fetch || (typeof global.fetch === 'function' ? global.fetch.bind(global) : undefined);
       this.endpoint = options.endpoint || '/api/student-profile/photo';
+      this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+      if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+        throw new RangeError('Profile photo request timeout must be a positive number of milliseconds.');
+      }
       if (typeof this.fetch !== 'function') throw new Error('Fetch is unavailable; profile photos cannot be synced.');
     }
-    async get() {
-      const response = await this.fetch(this.endpoint, {
-        method: 'GET', credentials: 'same-origin', cache: 'no-store',
-        headers: { Accept: 'image/png, image/jpeg, image/webp' }
+    async _withRequestTimeout(operation) {
+      const AbortControllerConstructor = global.AbortController;
+      const controller = typeof AbortControllerConstructor === 'function' ? new AbortControllerConstructor() : null;
+      const setTimer = typeof global.setTimeout === 'function' ? global.setTimeout.bind(global) : setTimeout;
+      const clearTimer = typeof global.clearTimeout === 'function' ? global.clearTimeout.bind(global) : clearTimeout;
+      let timedOut = false;
+      let timeout;
+      const timeoutPromise = new Promise((_resolve, reject) => {
+        timeout = setTimer(() => {
+          timedOut = true;
+          controller?.abort();
+          reject(new Error('Profile photo request timed out.'));
+        }, this.requestTimeoutMs);
       });
-      if (response.status === 404) return null;
-      if (!response.ok) throw new ProfilePhotoHttpError(response.status, response.status === 401
-        ? 'Sign in again to load your profile photo.' : 'Your profile photo could not be loaded from your account.');
-      const type = String(response.headers?.get?.('content-type') || '').split(';', 1)[0].trim().toLowerCase();
-      if (!ALLOWED_TYPES.has(type)) throw new Error('The saved profile photo has an unsupported image format.');
-      const contentLength = response.headers?.get?.('content-length');
-      if (contentLength !== null && contentLength !== undefined && contentLength !== '') {
-        if (!/^\d+$/.test(contentLength) || Number(contentLength) <= 0 || Number(contentLength) > MAX_REMOTE_PHOTO_BYTES) {
+      try {
+        return await Promise.race([
+          Promise.resolve().then(() => operation(controller?.signal)),
+          timeoutPromise
+        ]);
+      } catch (error) {
+        if (timedOut) throw new Error('Your profile photo request timed out. Please try again.');
+        throw error;
+      } finally {
+        clearTimer(timeout);
+      }
+    }
+    async get() {
+      return this._withRequestTimeout(async signal => {
+        let response;
+        try {
+          response = await this.fetch(this.endpoint, {
+            method: 'GET', credentials: 'same-origin', cache: 'no-store', signal,
+            headers: { Accept: 'image/png, image/jpeg, image/webp' }
+          });
+        } catch {
+          throw new Error('Your profile photo could not be reached from your account. Check your connection and try again.');
+        }
+        if (response.status === 404) return null;
+        if (!response.ok) throw new ProfilePhotoHttpError(response.status, response.status === 401
+          ? 'Sign in again to load your profile photo.' : 'Your profile photo could not be loaded from your account.');
+        const type = String(response.headers?.get?.('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+        if (!ALLOWED_TYPES.has(type)) throw new Error('The saved profile photo has an unsupported image format.');
+        const contentLength = response.headers?.get?.('content-length');
+        if (contentLength !== null && contentLength !== undefined && contentLength !== '' &&
+            (!/^\d+$/.test(contentLength) || Number(contentLength) <= 0 || Number(contentLength) > MAX_REMOTE_PHOTO_BYTES)) {
           throw new Error('The saved profile photo has an invalid or oversized content length.');
         }
-      }
-      const blob = await response.blob();
-      if (!(blob instanceof global.Blob) || blob.size <= 0 || blob.size > MAX_REMOTE_PHOTO_BYTES ||
-          (contentLength !== null && contentLength !== undefined && contentLength !== '' && Number(contentLength) !== blob.size)) {
-        throw new Error('The saved profile photo is empty or exceeds its declared 1 MiB size.');
-      }
-      if (String(blob.type || '').toLowerCase() !== type) throw new Error('The saved profile photo type did not match its response.');
-      return blob;
+        // Content-Length can describe compressed wire bytes while Fetch exposes the decoded body.
+        // Enforce the actual delivered-byte cap rather than requiring those lengths to match.
+        return await readRemotePhoto(response, type);
+      });
     }
     async put(blob, { onlyIfAbsent = false } = {}) {
       if (!(blob instanceof global.Blob)) throw new TypeError('A profile photo must be a Blob.');
@@ -270,9 +339,15 @@
       if (blob.size <= 0 || blob.size > MAX_REMOTE_PHOTO_BYTES) throw new RangeError('A profile photo must be between 1 byte and 1 MiB.');
       const headers = { 'Content-Type': type, Accept: 'application/json' };
       if (onlyIfAbsent) headers['If-None-Match'] = '*';
-      const response = await this.fetch(this.endpoint, {
-        method: 'PUT', credentials: 'same-origin', headers, body: blob
-      });
+      let response;
+      try {
+        response = await this._withRequestTimeout(signal => this.fetch(this.endpoint, {
+          method: 'PUT', credentials: 'same-origin', headers, body: blob, signal
+        }));
+      } catch (error) {
+        if (error instanceof ProfilePhotoHttpError || /timed out/i.test(error?.message || '')) throw error;
+        throw new Error('Your profile photo could not be saved to your account. Check your connection and try again.');
+      }
       if (!response.ok) throw new ProfilePhotoHttpError(response.status,
         response.status === 401 ? 'Sign in again to save your profile photo.' :
           response.status === 409 ? 'Complete your student profile before saving its photo.' :

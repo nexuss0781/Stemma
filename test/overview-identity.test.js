@@ -204,7 +204,7 @@ test('hero markup contains nickname and rear reflection before front photo, with
     'overview-student-nickname', 'overview-photo-reflection', 'overview-profile-photo',
     'overview-photo-placeholder', 'overview-photo-frame'
   ]) assert.match(hero, new RegExp(`id="${id}"`), `${id} remains inside the hero card`);
-  assert.match(hero, /id="overview-photo-placeholder"[^>]*class="portrait-skeleton skeleton-shimmer"/);
+  assert.match(hero, /id="overview-photo-placeholder"[^>]*class="portrait-skeleton"/);
   assert.match(hero, /<p id="overview-student-nickname" class="overview-student-nickname" hidden><\/p>/);
   assert.match(hero, /id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden/);
   assert.match(hero, /id="overview-profile-photo"[^>]*hidden/);

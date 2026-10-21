@@ -24,6 +24,7 @@ function makeGrid() {
   const classes = new Set();
   return {
     innerHTML: '', tabIndex: -1,
+    insertAdjacentHTML(position, content) { this.innerHTML += content; },
     classList: {
       toggle(name, force) { if (force) classes.add(name); else classes.delete(name); },
       contains(name) { return classes.has(name); }

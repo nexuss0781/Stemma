@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/stories.css?v=2" />
   <link rel="stylesheet" href="/likee.css?v=3" />
   <script src="/payment-ui.js?v=14" defer></script>
-  <script src="/profile-photo.js?v=3"></script>
+  <script src="/profile-photo.js?v=4"></script>
   <script src="/profile-ui.js?v=2"></script>
   <script src="/navigation-memory.js?v=6"></script>
   <script src="/parent-navigation.js?v=1"></script>
@@ -32,7 +32,9 @@
   <script src="/pulse-ui.js?v=likee-nav-16" defer></script>
   <script src="/groups-ui.js?v=5" defer></script>
   <script src="/channels-ui.js?v=1" defer></script>
-  <script src="/app.js?v=likee-nav-58" defer></script>
+  <link rel="stylesheet" href="/overview.css?v=1" />
+  <script src="/overview-ui.js?v=1" defer></script>
+  <script src="/app.js?v=overview-59" defer></script>
   <script src="/notifications-ui.js?v=4" defer></script>
 </head>
 <body>
@@ -280,10 +282,10 @@
     <main id="app-main" class="app-main overview-view" tabindex="-1" aria-label="Dashboard">
       <section class="hero-card" aria-label="Student profile">
         <span class="hero-orb" aria-hidden="true"></span>
-        <div id="overview-name-placeholder" class="hero-skeleton-name skeleton-shimmer" aria-hidden="true"></div>
-        <p id="overview-student-name" class="overview-student-name" hidden></p>
-        <div id="overview-photo-frame" class="avatar-glass" aria-hidden="true"><img id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden><span id="overview-photo-placeholder" class="portrait-skeleton skeleton-shimmer"></span><img id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden></div>
+        <p class="overview-hero-label">YOUR SPACE · STEMMA</p>
+        <div id="overview-photo-frame" class="avatar-glass" aria-hidden="true"><img id="overview-photo-reflection" class="overview-photo-reflection" alt="" aria-hidden="true" hidden><span id="overview-photo-placeholder" class="portrait-skeleton"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span><img id="overview-profile-photo" class="overview-profile-photo" alt="Your profile photo" hidden></div>
         <p id="overview-student-nickname" class="overview-student-nickname" hidden></p>
+        <button class="overview-photo-edit" type="button" data-overview-target="profile" aria-label="View or change your profile photo"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></button>
       </section>
       <div class="page-heading">
         <h1 class="page-title" id="page-title" hidden>Payment</h1>
@@ -293,6 +295,8 @@
       </div>
       <nav class="page-tabs" id="page-tabs" role="tablist" aria-label="Page tabs"></nav>
       <div class="section-intro" id="section-intro">
+        <div class="overview-intro" hidden><h1 class="overview-intro-title">Your day, at a glance</h1><p class="overview-intro-copy">A few good places to start.</p></div>
+        <button class="overview-refresh" type="button" data-overview-refresh aria-label="Refresh highlights" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg></button>
         <div class="section-intro-lines" aria-hidden="true"><span class="intro-line intro-primary skeleton-shimmer"></span><span class="intro-line intro-secondary skeleton-shimmer"></span></div>
         <div class="section-intro-action" aria-hidden="true"><span class="intro-action-line skeleton-shimmer"></span><svg class="icon"><use href="#i-arrow-up-right"/></svg></div>
         <div class="payment-carousel-meta" id="payment-carousel-meta" hidden>
