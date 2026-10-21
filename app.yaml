@@ -28,6 +28,7 @@ annotations:
     services:
     - engine: postgres
       name: database
+    node_build_command: npm run build
   anybuild.run/provider: node
   anybuild.run/version: 0.33.0
   wasmer.io/version: 7.5.0
