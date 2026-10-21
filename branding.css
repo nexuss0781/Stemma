@@ -1,0 +1,14 @@
+/* The approved Stemma artwork is the single source for app identity. */
+.wordmark-mark,
+.student-hero-mark {
+  overflow: hidden;
+  border: 0;
+  background: #681b1d;
+  box-shadow: none;
+}
+.stemma-brand-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
