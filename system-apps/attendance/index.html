@@ -19,11 +19,8 @@
           <span class="brand-name">Roll</span>
         </a>
         <div class="topbar-actions" aria-label="Attendance actions">
-          <button class="icon-button toolbar-icon" id="save-attendance" type="button" aria-label="Save attendance" title="Save attendance" disabled>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h10l3 3v11H3V3h1Zm2 0v5h7V3M6 17v-6h8v6"/></svg>
-          </button>
-          <button class="icon-button toolbar-icon" id="view-report" type="button" aria-label="Attendance status report" title="Status report" disabled>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M5 13V9m5 4V4m5 9V7"/></svg>
+          <button class="secondary-button" id="view-report" type="button" aria-label="Attendance status report" title="View attendance" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M5 13V9m5 4V4m5 9V7"/></svg><span>View</span>
           </button>
         <button class="import-trigger" id="open-import" type="button" aria-label="Import students">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m0 0L6.5 6.5M10 3l3.5 3.5M4 11.5v3A1.5 1.5 0 0 0 5.5 16h9a1.5 1.5 0 0 0 1.5-1.5v-3" /></svg>
@@ -41,17 +38,7 @@
         </div>
 
         <section class="attendance-panel" aria-label="Class attendance">
-          <div class="month-heading"><div><p class="eyebrow">YOUR CLASS, AT A GLANCE</p><h2>Monthly attendance</h2></div><span id="month-summary" class="month-summary" aria-live="polite">Loading month…</span></div>
-          <div class="month-navigation" aria-label="Choose report month">
-            <button class="icon-button" id="previous-month" type="button" aria-label="Previous month"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4-6 6 6 6"/></svg></button>
-            <label class="month-control" for="attendance-month"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M6 2v4m8-4v4M3 9h14"/></svg><span class="visually-hidden">Report month</span><select id="attendance-month"></select></label>
-            <button class="icon-button" id="next-month" type="button" aria-label="Next month"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 6 6-6 6"/></svg></button>
-          </div>
-          <div class="monthly-grid-wrap" id="monthly-grid-wrap" role="region" aria-label="Monthly attendance grid, scroll horizontally for more dates" tabindex="0"><table class="monthly-grid" id="monthly-grid"></table></div>
-          <p class="grid-help">Tap a date to edit · Scroll sideways to explore the month</p>
-          <div class="month-legend"><span><i class="legend-present"></i>Present</span><span><i class="legend-unmarked"></i>Not marked</span><span><i class="legend-unknown"></i>No present marks</span></div>
-          <p class="data-note">Red: not marked on a date with saved presence. Gray: no saved present marks; no class or absence is inferred.</p>
-          <div class="daily-heading"><label class="date-control" for="attendance-date"><span>Edit date</span><input id="attendance-date" type="date" /></label><span class="roster-summary"><strong id="present-count">0</strong> / <span id="student-count">0</span> present</span><span id="progress-ring" hidden></span></div>
+          <div class="daily-heading"><label class="date-control" for="attendance-date"><span>Date</span><input id="attendance-date" type="date" /></label><span class="roster-summary"><strong id="present-count">0</strong> / <span id="student-count">0</span> present</span><span id="progress-ring" hidden></span></div>
           <div class="status-line" id="status-line" role="status" aria-live="polite" hidden>
             <span class="status-dot" aria-hidden="true"></span>
             <span id="status-message"></span>
@@ -60,6 +47,7 @@
           </div>
 
           <div class="roster" id="roster" aria-label="Students"></div>
+          <div class="save-actions"><button class="primary-button" id="save-attendance" type="button" aria-label="Save attendance" disabled>Save</button></div>
           <section class="empty-state" id="empty-state" aria-labelledby="empty-title" hidden>
             <img src="./splash.svg" alt="" width="192" height="152" />
             <h2 id="empty-title">Your class, ready to roll.</h2>
@@ -86,10 +74,12 @@
           <span class="report-seal">Roll<span>MONTHLY REPORT</span></span>
         </header>
         <p class="report-draft" id="report-draft" hidden>Unsaved changes — save attendance before exporting.</p>
-        <p class="report-month-summary" id="report-month-summary"></p>
+        <div class="month-heading"><h2>Monthly attendance</h2><label class="month-control" for="attendance-month"><span class="visually-hidden">Report month</span><select id="attendance-month"></select></label></div>
+        <p class="report-month-summary" id="report-month-summary" role="status" aria-live="polite"></p>
+        <div class="monthly-grid-wrap" id="monthly-grid-wrap" role="region" aria-label="Monthly attendance, scroll horizontally for more dates" tabindex="0"><table class="monthly-grid" id="monthly-grid"></table></div>
         <div id="report-grid-sections"></div>
         <p id="report-empty" class="report-empty" hidden>No students yet. Import your student list to create a report.</p>
-        <p class="data-note">P = Present · – = Not marked on a date with saved presence (red) · · = Saved with no present marks · ? = No record. Neutral dates do not confirm no class or absence.</p>
+        <p class="data-note">P = Present · – = Not marked on a saved date with presence · · = Saved with no present marks · ? = No record. No class or absence is inferred.</p>
         <footer class="report-footer"><span>Teacher Attendance <b>/</b> Roll</span><span>Monthly attendance · Private to your account</span></footer>
       </article>
       <p class="export-help" id="export-help">Export opens your browser’s print preview. Choose “Save as PDF” for a PDF copy.</p>

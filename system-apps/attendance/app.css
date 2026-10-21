@@ -346,3 +346,26 @@ button:disabled { cursor: wait; opacity: .6; }
 .is-unknown .day-marker, .monthly-grid .is-unknown .student-check:not(:checked) { background: #e6e8ee; border-color: #c6cbd7; }
 .month-print-table td.print-unmarked { background: #fce6e9; color: #b33148; font-weight: 650; }
 .month-print-table td.print-neutral { background: #eceef3; color: #8d92a3; }
+
+/* Minimal daily entry; the monthly register lives only in View. */
+.main-content { width: min(800px, 100%); }
+.daily-heading { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+.save-actions { display: flex; justify-content: flex-end; padding-top: 22px; }
+.save-actions .primary-button { min-width: 100px; }
+#view-report svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.month-heading { align-items: center; margin: 24px 0 0; }
+.month-control { margin-left: auto; }
+.month-control select:focus-visible { outline: 3px solid #a89df2; outline-offset: 3px; }
+.monthly-grid thead th small { display: block; font-size: 9px; font-weight: 450; margin-top: 5px; }
+.monthly-grid thead th.today { background: #eeeafb; color: #5544a8; }
+#report-grid-sections { display: none; }
+@media (max-width: 600px) {
+  .report-toolbar { flex-wrap: wrap; }
+  .month-heading h2 { font-size: 16px; }
+  .month-control select { max-width: 150px; font-size: 12px; }
+  #view-report { padding: 0 12px; min-height: 44px; }
+}
+@media print {
+  #monthly-grid-wrap, .month-heading { display: none !important; }
+  #report-grid-sections { display: block; }
+}

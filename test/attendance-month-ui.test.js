@@ -3,29 +3,55 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 const read = file => fs.readFile(new URL('../system-apps/attendance/' + file, import.meta.url), 'utf8');
 
-test('Monthly grid replaces the daily class register and summary cards with a month dropdown directly above it', async () => {
+function sourceFunction(source, name, nextName) {
+  const start = source.indexOf(`function ${name}(`);
+  const end = source.indexOf(`function ${nextName}(`, start + 1);
+  assert.notEqual(start, -1, `expected ${name} to exist`);
+  assert.notEqual(end, -1, `expected ${nextName} to follow ${name}`);
+  return source.slice(start, end);
+}
+
+test('Monthly grid is part of the report view, with one right-aligned month chooser and no step buttons', async () => {
   const html = await read('index.html');
-  assert.match(html, /<select id="attendance-month"><\/select>[\s\S]*?<\/div>\s*<div class="monthly-grid-wrap"/);
-  assert.match(html, /id="previous-month"[^>]*aria-label="Previous month"/);
-  assert.match(html, /id="next-month"[^>]*aria-label="Next month"/);
-  assert.match(html, /aria-label="Attendance status report"/);
-  assert.match(html, /class="back-arrow"/);
-  assert.doesNotMatch(html, /Class register|report-metrics|30 days/i);
-  assert.match(html, /no class or absence is inferred/);
+  const reportStart = html.indexOf('id="report-view"');
+  const reportEnd = html.indexOf('</section>', reportStart);
+  assert.notEqual(reportStart, -1, 'report view should exist');
+  assert.ok(reportEnd > reportStart, 'report view should have a closing boundary');
+  const reportMarkup = html.slice(reportStart, reportEnd);
+  assert.match(reportMarkup, /id="attendance-month"/);
+  assert.match(reportMarkup, /id="monthly-grid-wrap"/);
+  assert.match(reportMarkup, /id="monthly-grid"/);
+  assert.ok(reportMarkup.indexOf('attendance-month') < reportMarkup.indexOf('monthly-grid-wrap'), 'month chooser should precede the grid');
+  assert.doesNotMatch(html, /id="(?:previous-month|next-month)"/);
+  assert.match(reportMarkup, /id="report-grid-sections"/);
+
+  const css = await read('app.css');
+  assert.match(css, /\.month-control\s*\{[^}]*margin-left\s*:\s*auto/s, 'month chooser should sit at the right edge');
 });
 
-test('Monthly report only labels saved records and provides phone scrolling, sticky names and readable print bands', async () => {
+test('Monthly view uses saved records only, and print bands remain hidden on screen', async () => {
   const source = await read('app.ts');
   const css = await read('app.css');
   assert.match(source, /\/month\?month=/);
-  assert.match(source, /monthState\.days\.find\(day => day\.date === date\)/);
-  assert.match(source, /return saved\?\.presentIds\.length \? "unmarked" : saved \? "neutral" : "unknown"/);
-  assert.doesNotMatch(source, /"absent"|"no-class"|"is-red"/);
-  assert.match(source, /start < dates\.length; start \+= 11/);
-  assert.match(source, /prefers-reduced-motion/);
-  assert.match(css, /position: sticky; left: 0/);
-  assert.match(css, /overflow-x: auto/);
-  assert.match(css, /--cyan: #079fb7/);
-  assert.match(css, /size: A4 landscape/);
-  assert.match(css, /\.day-toggle[^}]*min-height: 55px; min-width: 44px/);
+  const dailyLoad = sourceFunction(source, 'loadDate', 'saveAttendance');
+  assert.doesNotMatch(dailyLoad, /\/month\?month=/, 'daily loading must not fetch a month report');
+  assert.match(source, /(?:async\s+)?function\s+loadMonth\s*\(/, 'month data should be loaded by a separate lazy loader');
+  assert.match(source, /monthState\.days\.find\(day\s*=>\s*day\.date\s*===\s*date\)/);
+  assert.match(source, /saved\?\.presentIds\.length\s*\?\s*["']unmarked["']\s*:\s*saved\s*\?\s*["']neutral["']\s*:\s*["']unknown["']/);
+  assert.doesNotMatch(source, /["']absent["']|["']no-class["']|["']is-red["']/);
+  assert.match(source, /for\s*\([^)]*index\s*=\s*1[^)]*index\s*<=\s*12/);
+  assert.match(source, /function\s+scrollToCurrentWeek\s*\([\s\S]*?getDay\(\)[\s\S]*?scrollLeft/);
+  assert.match(source, /viewReportButton\.addEventListener[\s\S]*?loadMonth\(/);
+  const monthGrid = sourceFunction(source, 'renderMonthGrid', 'scrollToCurrentWeek');
+  assert.doesNotMatch(monthGrid, /createElement\(["'](?:input|button)["']\)/, 'monthly screen grid should be read-only');
+
+  const reportStart = source.indexOf('function renderReport(');
+  const reportEnd = source.indexOf('saveButton.addEventListener', reportStart);
+  assert.ok(reportEnd > reportStart, 'report renderer should precede report controls');
+  const report = source.slice(reportStart, reportEnd);
+  assert.match(report, /start\s*\+=\s*11/, 'report should retain 11-day print bands');
+  assert.doesNotMatch(report, /createElement\(["']input["']\)|type\s*=\s*["']checkbox["']/, 'report grid should be read-only');
+  assert.match(css, /#report-grid-sections\s*\{[^}]*display\s*:\s*none/s, 'print bands should not be shown as multiple tables on screen');
+  assert.match(css, /@media\s+print[\s\S]*?#report-grid-sections\s*\{[^}]*display\s*:\s*block/s, 'print rules should restore the bands');
+  assert.match(css, /position\s*:\s*sticky\s*;\s*left\s*:\s*0/);
 });
