@@ -2,7 +2,7 @@ const sections = [
   { id: 'cards', icon: 'card', label: 'Payment' },
   { id: 'pulse', icon: 'pulse', label: 'Pulse' },
   { id: 'overview', icon: 'grid', label: 'Overview' },
-  { id: 'goals', icon: 'target', label: 'Goals' },
+  { id: 'likee', icon: 'likee', label: 'Likee' },
   { id: 'profile', icon: 'user', label: 'Profile' }
 ];
 
@@ -10,11 +10,12 @@ const pageTabs = {
   pulse: ['All', 'User', 'Group', 'Channel', 'App'],
   overview: ['Snapshot', 'Cash flow', 'This month'],
   cards: ['Pay fee', 'Deposit', 'History'],
-  goals: ['Active goals', 'Completed', 'Create goal'],
+  likee: [],
   profile: ['Personal', 'Security', 'Preferences']
 };
 
 let activeRoute = 'overview';
+let likeeReturnRoute = 'overview';
 const activeTabs = Object.fromEntries(sections.map(({ id }) => [id, 0]));
 let routeDirection = 0;
 let navIndicatorReady = false;
@@ -109,7 +110,7 @@ function renderTabs() {
     </button>`).join('');
 }
 
-const cardTargets = ['overview', 'goals', 'cards', 'profile'];
+const cardTargets = ['overview', 'likee', 'cards', 'profile'];
 function renderSkeletonCards() {
   return cardTargets.map((route, index) => `
     <article class="skeleton-card" aria-label="Placeholder ${index + 1}">
@@ -424,6 +425,19 @@ function syncPaymentCarousel() {
 function renderCards() {
   if (typeof StemmaPulse !== 'undefined') StemmaPulse.unmount();
   const grid = document.getElementById('dashboard-grid');
+  window.StemmaLikee?.unmount();
+  grid.classList.toggle('likee-content-grid', activeRoute === 'likee');
+  if (activeRoute === 'likee') {
+    grid.classList.remove('profile-content-grid', 'payment-carousel', 'bill-content-grid', 'deposit-entry-grid', 'payment-history-grid', 'pulse-content-grid');
+    grid.removeAttribute('role');
+    grid.removeAttribute('aria-roledescription');
+    grid.removeAttribute('tabindex');
+    grid.setAttribute('aria-label', 'Likee videos');
+    grid.replaceChildren();
+    const videoId = window.location.hash.match(/^#likee\/video\/([0-9a-f-]{36})$/i)?.[1];
+    window.StemmaLikee?.mount(grid, videoId);
+    return;
+  }
   const billView = activeRoute === 'cards' && payments.isBillOpen;
   const paymentCarousel = activeRoute === 'cards' && activeTabs.cards === 0 && !billView;
   grid.classList.toggle('profile-content-grid', activeRoute === 'profile');
@@ -497,6 +511,8 @@ function render() {
   const historyView = paymentView && activeTabs.cards === 2 && !billView;
   const depositView = paymentView && activeTabs.cards === 1 && !billView;
   const paymentCarousel = paymentView && activeTabs.cards === 0 && !billView;
+  main.classList.toggle('likee-view', activeRoute === 'likee');
+  main.querySelector('.page-heading').hidden = activeRoute === 'likee';
   main.classList.toggle('pulse-view', activeRoute === 'pulse');
   main.classList.toggle('profile-view', profileView);
   main.classList.toggle('overview-view', overview);
@@ -510,11 +526,11 @@ function render() {
   main.querySelector('.hero-card').hidden = !overview;
   main.querySelector('.page-title').hidden = billView || (!paymentView && !profileView);
   main.querySelector('.page-title').textContent = profileView ? 'Profile' : 'Payment';
-  document.getElementById('page-tabs').hidden = billView || profileView || activeRoute === 'pulse';
-  main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView || activeRoute === 'pulse';
+  document.getElementById('page-tabs').hidden = billView || profileView || activeRoute === 'pulse' || activeRoute === 'likee';
+  main.querySelector('.section-intro').hidden = billView || historyView || depositView || profileView || activeRoute === 'pulse' || activeRoute === 'likee';
   main.querySelector('.section-intro').classList.toggle('has-payment-carousel', paymentCarousel);
   document.getElementById('payment-carousel-meta').hidden = !paymentCarousel;
-  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView ? 'page' : 'placeholders'}`);
+  main.setAttribute('aria-label', `${sections.find(item => item.id === activeRoute).label} ${paymentView || profileView || activeRoute === 'likee' ? 'page' : 'placeholders'}`);
   const currentCrumb = document.getElementById('breadcrumb-current');
   currentCrumb.dataset.route = activeRoute;
   currentCrumb.textContent = profileView ? 'Profile' : paymentView ? 'Payment' : '';
@@ -548,6 +564,7 @@ function navigate(route) {
   const currentIndex = sections.findIndex(item => item.id === activeRoute);
   const nextIndex = sections.findIndex(item => item.id === route);
   routeDirection = Math.sign(nextIndex - currentIndex);
+  if (route === 'likee' && activeRoute !== 'likee') likeeReturnRoute = activeRoute;
   activeRoute = route;
   render();
   routeDirection = 0;
@@ -560,9 +577,9 @@ function navigate(route) {
 function syncRouteFromHash() {
   const appsLink = window.location.hash === '#apps';
   const likeeLink = /^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash);
-  const route = appsLink ? 'pulse' : likeeLink ? 'pulse' : window.location.hash.replace(/^#/, '');
+  const route = appsLink ? 'pulse' : likeeLink ? 'likee' : window.location.hash === '#goals' ? 'likee' : window.location.hash.replace(/^#/, '');
   if (appsLink) activeTabs.pulse = 4;
-  if (likeeLink && activeRoute !== 'pulse') activeTabs.pulse = 5;
+  if (likeeLink && activeRoute !== 'likee') likeeReturnRoute = activeRoute;
   if (!pageTabs[route] || (route === activeRoute && !appsLink)) return;
   window.StemmaParentNavigation?.reset();
   cancelPendingNavigationRestoration();
@@ -580,6 +597,14 @@ function syncRouteFromHash() {
   render();
 }
 
+window.addEventListener('stemma:likee-open', event => {
+  navigate('likee');
+  if (event.detail?.id) {
+    window.history.replaceState({}, '', `#likee/video/${event.detail.id}`);
+    window.StemmaLikee?.showVideo(event.detail.id);
+  }
+});
+window.addEventListener('stemma:likee-back', () => navigate(likeeReturnRoute));
 window.addEventListener('hashchange', syncRouteFromHash);
 window.addEventListener('popstate', syncRouteFromHash);
 
@@ -987,13 +1012,13 @@ function restoreNavigationLocation(accountKey) {
   friends.selectedBillId = saved?.friendBillId || '';
   payments.isFriend = false;
   payments.friendBill = null;
-  activeRoute = saved?.route || 'overview';
+  activeRoute = saved?.route === 'goals' ? 'likee' : saved?.route || 'overview';
   // A shared group or invite link takes precedence over account navigation memory.
   if (window.location.pathname !== '/dashboard' && /^\/(?:[A-Za-z0-9_-]{3,40}|(?:invite|private_urls)\/[A-Za-z0-9_-]{20,128})\/?$/.test(window.location.pathname)) activeRoute = 'pulse';
   for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
   // A System App's back link always returns to the Apps launcher.
   if (window.location.hash === '#apps') { activeRoute = 'pulse'; activeTabs.pulse = 4; }
-  if (/^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash)) { activeRoute = 'pulse'; activeTabs.pulse = 5; }
+  if (/^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash)) { activeRoute = 'likee'; }
   paymentSlideIndex = saved?.paymentSlide || 0;
   paymentDemoInterval = saved?.interval || '15-days';
   depositDraftAmount = saved?.depositAmount || '';

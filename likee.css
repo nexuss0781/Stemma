@@ -1,1 +1,356 @@
 .likee-focused{overflow:hidden!important}.likee-screen,.likee-screen *{box-sizing:border-box}.likee-screen{position:fixed;inset:0;z-index:1500;background:#08090d;color:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;isolation:isolate}.likee-screen button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;-webkit-tap-highlight-color:transparent}.likee-screen button:disabled{opacity:.45;cursor:default}.likee-screen button:focus-visible,.likee-screen a:focus-visible,.likee-screen input:focus-visible,.likee-screen textarea:focus-visible{outline:2px solid #ff547b;outline-offset:4px}.likee-screen svg,.likee-chat-card svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}.likee-header{position:absolute;top:0;left:0;right:0;height:calc(76px + env(safe-area-inset-top));padding:calc(14px + env(safe-area-inset-top)) 18px 14px;display:flex;align-items:center;gap:16px;background:linear-gradient(#08090dbb,transparent);z-index:3;pointer-events:none}.likee-header>*{pointer-events:auto}.likee-header>button,.likee-header-actions button{width:40px;height:40px;display:grid;place-items:center;border-radius:50%}.likee-brand{display:flex;align-items:center;gap:9px}.likee-brand img{width:29px;height:29px}.likee-brand h1{font-size:24px;letter-spacing:-1px;margin:0;font-weight:760}.likee-header-actions{margin-left:auto;display:flex;gap:5px}.likee-feed{height:100%;width:100%;overflow-x:hidden;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none;outline:none}.likee-feed::-webkit-scrollbar{display:none}.likee-video{position:relative;height:100%;min-height:100%;width:100%;scroll-snap-align:start;scroll-snap-stop:always;background:#07080c;overflow:hidden}.likee-media{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#07080c}.likee-shade{position:absolute;inset:45% 0 0;background:linear-gradient(transparent,rgba(0,0,0,.12) 30%,rgba(0,0,0,.68));pointer-events:none}.likee-actions{position:absolute;right:14px;bottom:calc(90px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:20px;z-index:2}.likee-profile{position:relative;margin-bottom:8px}.likee-avatar{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;overflow:hidden;background:#2b2c36;color:#fff;font-size:18px;font-weight:650;flex-shrink:0}.likee-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.likee-avatar.likee-creator{width:48px;height:48px;border-radius:13px;border:1.5px solid rgba(255,255,255,.9)}.likee-screen .likee-follow{position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:7px;background:#ff3e70;display:grid;place-items:center;box-shadow:0 0 0 2px #111}.likee-follow svg{width:15px;height:15px;stroke-width:2.5}.likee-screen .likee-follow[aria-pressed=true]{background:#fff;color:#17171e}.likee-action{display:flex;flex-direction:column;align-items:center;gap:6px;width:48px;text-shadow:0 1px 5px #0008;transition:transform .18s,color .18s}.likee-action:active{transform:scale(.9)}.likee-action svg{width:31px;height:31px;filter:drop-shadow(0 2px 4px #0004)}.likee-action-like svg,.likee-action-bookmark svg{fill:#fff;stroke:#fff}.likee-action-like[aria-pressed=true]{color:#ff3e70}.likee-action-like[aria-pressed=true] svg{fill:#ff3e70;stroke:#ff3e70}.likee-action-repost[aria-pressed=true]{color:#6ee7b7}.likee-action-bookmark[aria-pressed=true]{color:#ffd06f}.likee-action-bookmark[aria-pressed=true] svg{fill:#ffd06f;stroke:#ffd06f}.likee-count{font-size:11px;font-weight:650;letter-spacing:.1px}.likee-details{position:absolute;left:20px;right:88px;bottom:calc(28px + env(safe-area-inset-bottom));z-index:2;text-shadow:0 1px 5px #0009}.likee-nickname{display:block;font-size:16px;line-height:1.5;letter-spacing:-.2px}.likee-caption{font-size:14px;line-height:1.5;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:30dvh;overflow:auto}.likee-screen .likee-more{font-size:13px;font-weight:650;padding:0;color:#e4e4e8}.likee-status{position:absolute;left:22px;right:22px;bottom:12px;pointer-events:none;z-index:8;text-align:center;font-size:12px;color:#e2e2e9;margin:0}.likee-status:empty{display:none}.likee-empty{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:100px 30px 90px;text-align:center;background:radial-gradient(ellipse at 50% 42%,#25213166,transparent 52%)}.likee-empty-mark{width:88px;height:88px;margin-bottom:38px;opacity:.96;filter:drop-shadow(0 8px 35px #ff4b7820)}.likee-empty h2{font-size:32px;font-weight:650;line-height:1.14;letter-spacing:-1.4px;white-space:pre-line;margin:0 0 18px}.likee-empty p{font-size:14px;line-height:1.65;color:#9697a4;white-space:pre-line;margin:0 0 30px}.likee-screen .likee-empty-post{background:#fff;color:#111219;padding:14px 23px;border-radius:30px;font-size:13px;font-weight:700}.likee-media-error{position:absolute;top:45%;left:20%;right:20%;text-align:center;color:#b5b5c0;line-height:1.6;font-size:14px}.likee-retry{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);padding:14px 24px!important;border:1px solid #555!important;border-radius:24px}.likee-sheet-overlay{position:absolute;inset:0;z-index:10;background:#0000;display:flex;align-items:flex-end;transition:background .24s}.likee-sheet-overlay.is-open{background:#0008}.likee-sheet{display:flex;flex-direction:column;position:relative;width:100%;max-height:56dvh;min-height:44dvh;padding:10px 20px calc(20px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:#191a21;box-shadow:0 -12px 70px #0004;transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.8,.2,1);outline:none}.is-open .likee-sheet{transform:translateY(0)}.likee-sheet-grab{display:block;width:34px;height:4px;border-radius:10px;background:#55555e;margin:0 auto 12px;flex-shrink:0}.likee-sheet-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.likee-sheet-header h2{margin:0;font-size:19px;letter-spacing:-.5px}.likee-sheet-header button{width:34px;height:34px;display:grid;place-items:center}.likee-sheet-header svg{width:20px;height:20px}.likee-sheet-content{overflow:auto;min-height:0;flex:1;overscroll-behavior:contain}.likee-sheet-hint{font-size:12px;color:#9697a5;line-height:1.6;margin:2px 0 13px}.likee-sheet-message{font-size:13px;color:#b9bac6;line-height:1.6}.likee-sheet-message:empty{display:none}.likee-recipient{display:flex;align-items:center;width:100%;gap:13px;padding:10px 0!important;text-align:left}.likee-recipient-name{font-size:14px;font-weight:600;flex:1}.likee-selection{display:grid;place-items:center;width:23px;height:23px;border-radius:50%;border:1.5px solid #555661}.likee-selection svg{width:14px;height:14px;opacity:0;stroke-width:2.4}.likee-recipient[aria-pressed=true] .likee-selection{background:#ff3e70;border-color:#ff3e70}.likee-recipient[aria-pressed=true] .likee-selection svg{opacity:1}.likee-screen .likee-send{width:100%;margin-top:12px;border-radius:14px;background:#ff3e70;color:#fff;min-height:46px;padding:12px;font-size:14px;font-weight:650;flex-shrink:0}.likee-screen .likee-send:disabled{background:#30313b;color:#9999a5;opacity:1}.likee-comment{padding:12px 0;border-bottom:1px solid #ffffff0a}.likee-comment strong{font-size:12px;color:#b8b9c4}.likee-comment p{margin:5px 0 0;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.likee-comment-form{display:flex;gap:12px;align-items:center;border-top:1px solid #ffffff12;padding-top:12px;margin-top:12px}.likee-comment-form input{flex:1;min-width:0;background:#262730;border:0;border-radius:30px;padding:13px 16px;color:#fff;font:inherit;font-size:13px}.likee-comment-form button{color:#ff668b;font-size:13px;font-weight:650}.likee-upload{display:flex;flex-direction:column;gap:8px}.likee-upload input{font:inherit;color:#ccc;font-size:13px;max-width:100%}.likee-upload textarea{min-height:80px;resize:vertical;background:#262730;border:0;border-radius:12px;padding:12px;color:#fff;font:inherit;font-size:14px}.likee-chat-card{display:flex;gap:12px;align-items:center;min-width:160px;max-width:230px;text-decoration:none;color:inherit;padding:4px}.likee-chat-thumb{position:relative;display:grid;place-items:center;background:#171821;border-radius:9px;width:54px;height:72px;overflow:hidden;flex-shrink:0;color:#fff}.likee-chat-thumb video{position:absolute;width:100%;height:100%;inset:0;object-fit:cover}.likee-chat-thumb svg{position:relative;width:19px;height:19px;fill:white;stroke:white;filter:drop-shadow(0 1px 4px #0009)}.likee-chat-copy{display:flex;flex-direction:column;gap:5px;min-width:0}.likee-chat-copy strong{font-size:14px;letter-spacing:-.2px}.likee-chat-copy>span{font-size:12px;opacity:.65;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}@media(min-width:700px){.likee-feed{max-width:520px;margin:auto;border-inline:1px solid #ffffff0b}.likee-header{max-width:520px;margin:auto}.likee-sheet{max-width:520px;margin:0 auto}.likee-details{left:24px}.likee-actions{right:20px}.likee-status{max-width:480px;margin:auto}}@media(prefers-reduced-motion:reduce){.likee-sheet,.likee-sheet-overlay,.likee-action{transition:none}.likee-feed{scroll-behavior:auto}}
+
+
+/* Stemma palette treatment for Likee surfaces and controls. */
+.likee-screen {
+  background: var(--brand-burgundy-deep);
+  color: var(--brand-gold-light);
+  font-family: var(--sans);
+}
+
+.likee-screen button:focus-visible,
+.likee-screen a:focus-visible,
+.likee-screen input:focus-visible,
+.likee-screen textarea:focus-visible {
+  outline-color: var(--brand-gold);
+}
+
+.likee-header {
+  color: var(--brand-gold-light);
+  background: linear-gradient(
+    180deg,
+    rgba(75, 13, 19, .96),
+    rgba(104, 27, 29, .78) 58%,
+    rgba(104, 27, 29, 0)
+  );
+}
+
+.likee-header > button,
+.likee-header-actions button {
+  color: var(--brand-gold-light);
+  background: rgba(75, 13, 19, .22);
+}
+
+.likee-header > button:hover,
+.likee-header-actions button:hover {
+  background: rgba(241, 223, 155, .16);
+}
+
+.likee-brand img {
+  filter: brightness(0) saturate(100%) invert(95%) sepia(25%) saturate(470%) hue-rotate(2deg) brightness(104%) contrast(97%);
+}
+
+.likee-brand h1 {
+  color: var(--brand-gold-light);
+}
+
+.likee-video,
+.likee-media {
+  background-color: var(--brand-burgundy-deep);
+}
+
+.likee-shade {
+  background: linear-gradient(
+    transparent,
+    rgba(75, 13, 19, .18) 28%,
+    rgba(75, 13, 19, .94)
+  );
+}
+
+.likee-avatar {
+  background: var(--brand-burgundy);
+  color: var(--brand-gold-light);
+  box-shadow: 0 0 0 1px rgba(241, 223, 155, .68);
+}
+
+.likee-avatar.likee-creator {
+  border-color: var(--brand-gold);
+}
+
+.likee-screen .likee-follow {
+  color: var(--brand-burgundy-deep);
+  background: var(--brand-gold);
+  box-shadow: 0 0 0 2px var(--brand-burgundy-deep);
+}
+
+.likee-screen .likee-follow[aria-pressed="true"] {
+  color: var(--brand-gold-light);
+  background: var(--brand-burgundy);
+}
+
+.likee-action {
+  color: var(--brand-gold-light);
+  text-shadow: 0 1px 5px rgba(75, 13, 19, .9);
+}
+
+.likee-action svg {
+  filter: drop-shadow(0 2px 4px rgba(75, 13, 19, .8));
+}
+
+.likee-action-like svg,
+.likee-action-bookmark svg {
+  fill: var(--brand-gold-light);
+  stroke: var(--brand-gold-light);
+}
+
+.likee-action-like[aria-pressed="true"],
+.likee-action-like[aria-pressed="true"] svg,
+.likee-action-bookmark[aria-pressed="true"],
+.likee-action-bookmark[aria-pressed="true"] svg {
+  color: var(--brand-gold);
+  fill: var(--brand-gold);
+  stroke: var(--brand-gold);
+}
+
+.likee-action-repost[aria-pressed="true"] {
+  color: var(--brand-gold);
+}
+
+.likee-count {
+  color: var(--brand-gold-light);
+}
+
+.likee-details {
+  color: var(--brand-gold-light);
+  text-shadow: 0 1px 5px rgba(75, 13, 19, .95);
+}
+
+.likee-nickname {
+  color: var(--brand-gold-light);
+}
+
+.likee-screen .likee-more {
+  color: var(--brand-gold);
+}
+
+.likee-status {
+  color: var(--brand-gold-light);
+  text-shadow: 0 1px 4px rgba(75, 13, 19, .9);
+}
+
+.likee-empty {
+  color: var(--brand-burgundy);
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(251, 241, 200, .92), transparent 58%),
+    linear-gradient(145deg, var(--paper-soft), var(--brand-cream));
+}
+
+.likee-empty-mark {
+  filter: brightness(0) saturate(100%) invert(12%) sepia(39%) saturate(1730%) hue-rotate(315deg) brightness(86%) contrast(100%);
+}
+
+.likee-empty h2 {
+  color: var(--brand-burgundy);
+}
+
+.likee-empty p {
+  color: rgba(104, 27, 29, .78);
+}
+
+.likee-screen .likee-empty-post {
+  color: var(--brand-gold-light);
+  background: var(--brand-burgundy);
+  box-shadow: 0 8px 20px rgba(75, 13, 19, .2);
+}
+
+.likee-screen .likee-empty-post:hover {
+  background: var(--brand-burgundy-deep);
+}
+
+.likee-media-error {
+  color: var(--brand-gold-light);
+  text-shadow: 0 1px 4px rgba(75, 13, 19, .9);
+}
+
+.likee-retry {
+  color: var(--brand-gold-light) !important;
+  border-color: var(--brand-gold) !important;
+  background: rgba(75, 13, 19, .88) !important;
+}
+
+.likee-sheet-overlay.is-open {
+  background: rgba(75, 13, 19, .58);
+}
+
+.likee-sheet {
+  color: var(--brand-burgundy);
+  border: 1px solid rgba(241, 223, 155, .78);
+  background: var(--paper-soft);
+  box-shadow: 0 -12px 70px rgba(75, 13, 19, .34);
+}
+
+.likee-sheet-grab {
+  background: var(--brand-gold);
+}
+
+.likee-sheet-header h2 {
+  color: var(--brand-burgundy);
+}
+
+.likee-sheet-header button {
+  color: var(--brand-burgundy);
+  border-radius: 50%;
+}
+
+.likee-sheet-header button:hover {
+  background: rgba(104, 27, 29, .08);
+}
+
+.likee-sheet-hint {
+  color: rgba(104, 27, 29, .72);
+}
+
+.likee-sheet-message {
+  color: rgba(104, 27, 29, .82);
+}
+
+.likee-recipient {
+  color: var(--brand-burgundy);
+}
+
+.likee-selection {
+  border-color: rgba(104, 27, 29, .48);
+}
+
+.likee-recipient[aria-pressed="true"] .likee-selection {
+  color: var(--brand-burgundy);
+  border-color: var(--brand-gold);
+  background: var(--brand-gold);
+}
+
+.likee-screen .likee-send {
+  color: var(--brand-gold-light);
+  background: var(--brand-burgundy);
+}
+
+.likee-screen .likee-send:hover:not(:disabled) {
+  background: var(--brand-burgundy-deep);
+}
+
+.likee-screen .likee-send:disabled {
+  color: rgba(104, 27, 29, .52);
+  background: rgba(241, 223, 155, .42);
+}
+
+.likee-comment {
+  border-bottom-color: rgba(104, 27, 29, .14);
+}
+
+.likee-comment strong {
+  color: rgba(104, 27, 29, .72);
+}
+
+.likee-comment p {
+  color: var(--brand-burgundy);
+}
+
+.likee-comment-form {
+  border-top-color: rgba(104, 27, 29, .16);
+}
+
+.likee-comment-form input,
+.likee-upload textarea {
+  color: var(--brand-burgundy);
+  border: 1px solid rgba(155, 120, 52, .35);
+  background: var(--brand-cream);
+}
+
+.likee-comment-form input::placeholder,
+.likee-upload textarea::placeholder {
+  color: rgba(104, 27, 29, .58);
+}
+
+.likee-comment-form button {
+  color: var(--brand-burgundy);
+}
+
+.likee-upload input {
+  color: var(--brand-burgundy);
+}
+
+.likee-upload input::file-selector-button {
+  color: var(--brand-burgundy);
+  border: 1px solid rgba(155, 120, 52, .4);
+  border-radius: 9px;
+  background: var(--brand-gold-light);
+  padding: 7px 10px;
+  margin-right: 9px;
+  cursor: pointer;
+}
+
+.likee-chat-card {
+  color: var(--brand-burgundy);
+  border: 1px solid rgba(155, 120, 52, .38);
+  border-radius: 13px;
+  background: var(--brand-cream);
+}
+
+.likee-chat-card:hover {
+  border-color: var(--brand-gold);
+  background: var(--brand-gold-light);
+}
+
+.likee-chat-thumb {
+  color: var(--brand-gold-light);
+  background: var(--brand-burgundy-deep);
+}
+
+.likee-chat-thumb svg {
+  fill: var(--brand-gold-light);
+  stroke: var(--brand-gold-light);
+}
+
+.likee-chat-copy strong,
+.likee-chat-copy > span {
+  color: var(--brand-burgundy);
+}
+
+@media (min-width: 700px) {
+  .likee-feed {
+    border-inline-color: rgba(241, 223, 155, .22);
+  }
+}
+
+
+/* Dashboard route embedding keeps the shared Stemma navigation in view. */
+.app-main.likee-view {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.likee-content-grid {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.likee-screen.is-route {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.likee-brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.likee-brand-caption {
+  color: var(--brand-gold);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+@media (max-height: 740px) {
+  .likee-actions { gap: 12px; bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .likee-action { gap: 4px; }
+  .likee-action svg { width: 26px; height: 26px; }
+  .likee-avatar.likee-creator { width: 40px; height: 40px; }
+}

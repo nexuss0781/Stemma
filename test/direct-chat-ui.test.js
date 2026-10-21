@@ -82,6 +82,16 @@ test('direct chat view renders accessible, initially-disabled message controls a
   assert.match(markup, /class="pulse-direct-older" hidden>Load earlier messages/);
 });
 
+test('parent AbortSignal closes an open direct-chat panel during route teardown', () => {
+  const mounted = createMountedChat(async () => response({ messages: [] }));
+  mounted.chat.open({ id: 'route-change', nickName: 'Rin' });
+  assert.equal(mounted.chat.isOpen(), true);
+  mounted.controller.abort();
+  assert.equal(mounted.chat.isOpen(), false);
+  assert.equal(mounted.panel.hidden, true);
+  assert.equal(mounted.elements.textarea.disabled, true);
+});
+
 test('late load, refresh, and send responses never paint into a different conversation', async () => {
   const requests = [];
   const mounted = createMountedChat(() => {

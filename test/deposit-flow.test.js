@@ -300,7 +300,8 @@ test('deposit form markup is numeric, labeled, explicitly non-payment, and cards
     activeRoute: 'cards',
     activeTabs: { cards: 1 },
     payments: { isBillOpen: false, depositAmount: '24.60' },
-    document: { getElementById: id => id === 'dashboard-grid' ? grid : null }
+    document: { getElementById: id => id === 'dashboard-grid' ? grid : null },
+    window: { location: { hash: '' } }
   });
   assert.ok(grid.classList.contains('deposit-entry-grid'));
   assert.match(grid.innerHTML, /deposit-amount-form/);

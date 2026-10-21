@@ -4,7 +4,7 @@
   const categories = Object.freeze([
     { label: 'All', icon: 'pulse' }, { label: 'User', icon: 'user' },
     { label: 'Group', icon: 'pulse-group' }, { label: 'Channel', icon: 'pulse-channel' },
-    { label: 'App', icon: 'grid' }, { label: 'Likee', icon: 'likee' }
+    { label: 'App', icon: 'grid' }
   ]);
   const glyph = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const bone = (classes = '') => `<span class="pulse-bone skeleton-shimmer ${classes}"></span>`;

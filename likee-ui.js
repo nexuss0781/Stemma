@@ -25,7 +25,7 @@
     if (!response.ok) throw new Error(response.status === 401 ? 'Sign in to discover Likee.' : data.error || 'Could not connect. Please try again.');
     return data;
   }
-  let screen, feed, status, sheet, observer, originFocus, backgroundStates = [], videos = [], muted = true, generation = 0, previousHash = '#pulse', activeId = null;
+  let screen, feed, status, sheet, observer, originFocus, videos = [], muted = true, generation = 0, activeId = null;
   function announce(text) { if (status) status.textContent = text; }
   function pauseAll() { screen?.querySelectorAll('video').forEach(v => v.pause()); }
   function closeSheet() {
@@ -37,12 +37,12 @@
     focus?.focus({ preventScroll: true });
     if (!D.hidden && screen) { const active = [...feed.children].find(el => el.dataset.videoId === activeId); active?.querySelector('video')?.play().catch(() => {}); }
   }
-  function close() {
+  function close(silent = false) {
     generation++; closeSheet(); pauseAll(); observer?.disconnect(); screen?.remove(); screen = null;
-    backgroundStates.forEach(([el, was]) => { el.inert = was; }); backgroundStates = [];
-    D.body.classList.remove('likee-focused');
-    if (/^#likee(?:\/|$)/.test(root.location.hash)) root.history.replaceState({}, '', previousHash || '#pulse');
-    originFocus?.focus?.({ preventScroll: true });
+    if (!silent) {
+      root.dispatchEvent(new root.CustomEvent('stemma:likee-back'));
+      originFocus?.focus?.({ preventScroll: true });
+    }
   }
   function sheetView(title) {
     closeSheet(); pauseAll();
@@ -168,20 +168,21 @@
       announce(''); const target = id && [...feed.children].find(el => el.dataset.videoId === id); target?.scrollIntoView({ block: 'start' });
     } catch (error) { if (!screen || revision !== generation) return; announce(error.message); const retry = node('button', 'likee-retry', 'Try again'); retry.type = 'button'; retry.onclick = () => { retry.remove(); void load(id); }; feed.replaceChildren(retry); }
   }
-  function open(id) {
+  function open(id, container) {
+    if (!container) { root.dispatchEvent(new root.CustomEvent('stemma:likee-open', { detail: { id } })); return; }
     if (screen) { if (id) void load(id); return; }
-    generation++; originFocus = D.activeElement; previousHash = /^#likee/.test(root.location.hash) ? '#pulse' : root.location.hash;
-    screen = node('section', 'likee-screen'); screen.setAttribute('role', 'dialog'); screen.setAttribute('aria-modal', 'true'); screen.setAttribute('aria-label', 'Likee video feed');
-    const top = node('header', 'likee-header'); const back = button('Back from Likee', 'back'); back.onclick = close;
-    const brand = node('div', 'likee-brand'); const mark = node('img'); mark.src = '/assets/likee-icon.svg'; mark.alt = ''; brand.append(mark, node('h1', '', 'Likee'));
+    generation++; originFocus = D.activeElement;
+    screen = node('section', 'likee-screen is-route'); screen.setAttribute('role', 'region'); screen.setAttribute('aria-label', 'Likee video feed');
+    const top = node('header', 'likee-header'); const back = button('Back from Likee', 'back'); back.onclick = () => close();
+    const brand = node('div', 'likee-brand'); const mark = node('img'); mark.src = '/assets/likee-icon.svg'; mark.alt = ''; const brandCopy = node('div', 'likee-brand-copy'); brandCopy.append(node('h1', '', 'Likee'), node('span', 'likee-brand-caption', 'by Stemma')); brand.append(mark, brandCopy);
     const actions = node('div', 'likee-header-actions'); const sound = button('Unmute videos', 'mute'); sound.onclick = () => { muted = !muted; sound.innerHTML = svg(muted ? 'mute' : 'sound'); sound.setAttribute('aria-label', muted ? 'Unmute videos' : 'Mute videos'); screen.querySelectorAll('video').forEach(v => { v.muted = muted; }); };
     const post = button('Post a video', 'plus'); post.onclick = upload; actions.append(sound, post); top.append(back, brand, actions);
     feed = node('div', 'likee-feed'); feed.tabIndex = 0; feed.setAttribute('aria-label', 'Vertical video feed');
     status = node('p', 'likee-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-    screen.append(feed, top, status); backgroundStates = [...D.body.children].filter(el => el !== screen && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE').map(el => [el, el.inert]); backgroundStates.forEach(([el]) => { el.inert = true; }); D.body.append(screen); D.body.classList.add('likee-focused');
+    screen.append(feed, top, status); container.append(screen);
     screen.addEventListener('keydown', e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (sheet) closeSheet(); else close(); }
-      if (e.key === 'Tab') { const owner = sheet || screen; const focusables = [...owner.querySelectorAll('button:not([disabled]), input, textarea, [tabindex="0"]')].filter(el => !el.closest('[inert]') && el.getClientRects().length); const first = focusables[0], last = focusables.at(-1); if (e.shiftKey && D.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && D.activeElement === last) { e.preventDefault(); first?.focus(); } }
+      if (e.key === 'Tab' && sheet) { const owner = sheet; const focusables = [...owner.querySelectorAll('button:not([disabled]), input, textarea, [tabindex="0"]')].filter(el => !el.closest('[inert]') && el.getClientRects().length); const first = focusables[0], last = focusables.at(-1); if (e.shiftKey && D.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && D.activeElement === last) { e.preventDefault(); first?.focus(); } }
       if (!sheet && e.target === feed && ['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); feed.scrollBy({ top: feed.clientHeight * (e.key === 'ArrowDown' ? 1 : -1), behavior: root.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }); }
     });
     back.focus(); void load(id);
@@ -197,8 +198,8 @@
     return link;
   }
   D?.addEventListener('visibilitychange', () => { if (D.hidden) pauseAll(); else if (screen && !sheet) { const active = [...feed.children].find(el => el.dataset.videoId === activeId); active?.querySelector('video')?.play().catch(() => {}); } });
-  function deepLink() { const match = root.location.hash.match(new RegExp(`^#likee(?:/video/(${UUID}))?$`, 'i')); if (match) open(match[1]); else if (screen) close(); }
+  function deepLink() { const match = root.location.hash.match(new RegExp(`^#likee(?:/video/(${UUID}))?$`, 'i')); if (match && screen && match[1]) void load(match[1]); else if (!match && screen) close(true); }
   root.addEventListener?.('hashchange', deepLink);
-  root.StemmaLikee = Object.freeze({ open, close, renderChatCard });
+  root.StemmaLikee = Object.freeze({ open, close, renderChatCard, mount: (container, id) => open(id, container), unmount: () => close(true), showVideo: id => { if (screen) void load(id); } });
   if (D?.readyState === 'loading') D.addEventListener('DOMContentLoaded', deepLink, { once: true }); else deepLink();
 })(typeof window !== 'undefined' ? window : globalThis);

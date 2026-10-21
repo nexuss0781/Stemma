@@ -292,7 +292,7 @@
         if (isCurrent(id, revision)) { sending = false; send.disabled = input.disabled || !input.value.trim(); }
       }
     });
-    listen(signal, 'abort', closeView);
+    signal.addEventListener('abort', closeView, { once: true });
     return Object.freeze({ open, closeView, refresh, isOpen: () => !panel.hidden });
   }
   root.StemmaDirectChat = Object.freeze({ view, mount, setAvatarPhoto });

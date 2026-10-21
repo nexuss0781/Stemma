@@ -2,8 +2,8 @@
 (function attachStemmaNavigationMemory(root) {
   'use strict';
 
-  const ROUTES = Object.freeze(['overview', 'cards', 'pulse', 'goals', 'profile']);
-  const TAB_KEYS = Object.freeze(['overview', 'cards', 'pulse', 'goals', 'profile']);
+  const ROUTES = Object.freeze(['overview', 'cards', 'pulse', 'goals', 'likee', 'profile']);
+  const TAB_KEYS = Object.freeze(['overview', 'cards', 'pulse', 'goals', 'likee', 'profile']);
   const INTERVALS = Object.freeze(['15-days', '1-month', '2-months', '3-months']);
   const VIEWS = Object.freeze(['main', 'bill', 'sheet', 'receipt', 'history-details', 'friend-picker']);
   const STORAGE_PREFIX = 'stemma:navigation:v1:';

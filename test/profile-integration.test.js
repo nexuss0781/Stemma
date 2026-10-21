@@ -39,6 +39,7 @@ function createRenderHarness({ profile, state, photoURL, photoNotice, email = ''
   const grid = makeGrid();
   const context = vm.createContext({
     document: { getElementById: id => id === 'dashboard-grid' ? grid : null },
+    window: { location: { hash: '' }, StemmaLikee: { unmount() {} } },
     activeRoute: 'profile', activeTabs: { profile: 0, cards: 0 },
     payments: { isBillOpen: false, isReceiptOpen: false },
     paymentSlides: ['For You', 'For friend'],
@@ -61,7 +62,9 @@ test('Profile remains far-right while Pulse sits immediately after Payment', () 
   assert.ok(routesStart >= 0 && routesEnd > routesStart);
   const routeBlock = app.slice(routesStart, routesEnd + 2);
   const routeIds = [...routeBlock.matchAll(/\bid:\s*'([^']+)'/g)].map(match => match[1]);
-  assert.deepEqual(routeIds, ['cards', 'pulse', 'overview', 'goals', 'profile']);
+  assert.deepEqual(routeIds, ['cards', 'pulse', 'overview', 'likee', 'profile']);
+  assert.match(routeBlock, /\{ id: 'likee', icon: 'likee', label: 'Likee' \}/,
+    'the former Goals navigation entry is now the dedicated Likee route with its sparkle icon');
   assert.match(routeBlock, /\{ id: 'profile', icon: 'user', label: 'Profile' \}\s*\];?$/,
     'Profile retains the far-right route position');
   assert.equal((app.match(/id:\s*'profile'/g) || []).length, 1, 'there is one Profile route, not an extra navigation tab');

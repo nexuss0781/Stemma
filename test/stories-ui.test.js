@@ -36,7 +36,7 @@ test('Pulse mounts four in-order stages and starts with no fabricated story card
   const starts = [...markup.matchAll(/<section class="pulse-panel"/g)].map(match => match.index);
   const panels = starts.map((start, index) => markup.slice(start, starts[index + 1] ?? markup.indexOf('<div class="pulse-create-previews"', start)));
   const feed = panels.join('');
-  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 24);
+  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
   assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
   assert.equal((feed.match(/data-story-stage="[123]"/g) || []).length, 6,
     'All and User each have the circular rail, preview rail, and grid containers');

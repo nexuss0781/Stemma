@@ -23,7 +23,7 @@ const closeHelperEnd = appSource.indexOf("document.addEventListener('submit'", c
 assert.ok(closeHelperStart >= 0 && closeHelperEnd > closeHelperStart, 'payment close helpers exist');
 const closeHelperSource = appSource.slice(closeHelperStart, closeHelperEnd);
 const PREFIX = 'stemma:navigation:v1:';
-const ROUTES = ['overview', 'cards', 'pulse', 'goals', 'profile'];
+const ROUTES = ['overview', 'cards', 'pulse', 'goals', 'likee', 'profile'];
 
 function makeState(route, { tab = 0, view = 'main', ...rest } = {}) {
   const tabs = Object.fromEntries(ROUTES.map(key => [key, 0]));
@@ -97,7 +97,7 @@ function makeHarness() {
   });
   vm.runInContext(memorySource, context, { filename: 'navigation-memory.js' });
   vm.runInContext(`
-    const activeTabs = { overview: 0, cards: 0, pulse: 0, goals: 0, profile: 0 };
+    const activeTabs = { overview: 0, cards: 0, pulse: 0, goals: 0, likee: 0, profile: 0 };
     let activeRoute = 'overview';
     let paymentSlideIndex = 0;
     let paymentDemoInterval = '15-days';
@@ -159,25 +159,36 @@ test('fresh account starts at Overview and ignores another account’s stored ro
 
 test('saved route, every tab index, and route-specific tab state are restored', () => {
   const h = makeHarness();
-  const saved = makeState('goals', { tab: 2 });
+  const saved = makeState('likee', { tab: 0 });
   saved.tabs.overview = 1;
   saved.tabs.profile = 2;
   assert.equal(h.save('google:tabs@example.test', saved), true);
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:tabs@example.test')");
-  assert.equal(h.evaluate('activeRoute'), 'goals');
+  assert.equal(h.evaluate('activeRoute'), 'likee');
   assert.deepEqual(JSON.parse(JSON.stringify(h.evaluate('activeTabs'))), saved.tabs);
   assert.equal(h.evaluate('paymentSlideIndex'), 1);
   assert.equal(h.evaluate('paymentDemoInterval'), '3-months');
   h.flushFrames();
 });
 
-test('Likee deep links restore Pulse and the Likee category ahead of saved navigation memory', () => {
+test('legacy Goals navigation memory restores to the dedicated Likee route', () => {
+  const h = makeHarness();
+  const legacy = makeState('goals');
+  h.storage.values.set(`${PREFIX}google%3Alegacy-goals%40example.test`, JSON.stringify(legacy));
+  h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:legacy-goals@example.test')");
+  assert.equal(h.evaluate('activeRoute'), 'likee');
+  assert.equal(h.window.location.hash, '#likee');
+  h.flushFrames();
+  assert.equal(h.load('google:legacy-goals@example.test').route, 'likee');
+});
+
+test('Likee deep links open the dedicated Likee route ahead of saved navigation memory', () => {
   const h = makeHarness();
   h.save('google:likee@example.test', makeState('cards'));
   h.window.location.hash = '#likee/video/01234567-89ab-cdef-0123-456789abcdef';
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:likee@example.test')");
-  assert.equal(h.evaluate('activeRoute'), 'pulse');
-  assert.equal(h.evaluate('activeTabs.pulse'), 5);
+  assert.equal(h.evaluate('activeRoute'), 'likee');
+  assert.equal(h.evaluate('activeTabs.pulse'), 0, 'the dedicated Likee route does not consume a Pulse category index');
   assert.equal(h.window.location.hash, '#likee/video/01234567-89ab-cdef-0123-456789abcdef');
   h.flushFrames();
 });
@@ -242,11 +253,11 @@ test('account switching saves the active account separately and restores the tar
   assert.equal(h.save('google:bob@example.test', makeState('profile', { tab: 2 })), true);
   h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:alice@example.test')");
   h.flushFrames();
-  h.evaluate("activeRoute = 'goals'; activeTabs.goals = 2; persistNavigationLocation(); restoreNavigationLocation('google:bob@example.test')");
+  h.evaluate("activeRoute = 'likee'; activeTabs.likee = 0; persistNavigationLocation(); restoreNavigationLocation('google:bob@example.test')");
   assert.equal(h.evaluate('activeRoute'), 'profile');
   assert.equal(h.evaluate('activeTabs.profile'), 2);
-  assert.equal(h.load('google:alice@example.test').route, 'goals');
-  assert.equal(h.load('google:alice@example.test').tabs.goals, 2);
+  assert.equal(h.load('google:alice@example.test').route, 'likee');
+  assert.equal(h.load('google:alice@example.test').tabs.likee, 0);
   assert.equal(h.load('google:bob@example.test').route, 'profile');
   assert.equal(h.storage.values.size, 2);
   h.flushFrames();
@@ -337,12 +348,12 @@ test('drawer puts Overview first and Pulse follows Cards in bottom-nav order; si
   const sectionsMatch = /^const sections = \[([\s\S]*?)^\];/m.exec(appSource);
   assert.ok(sectionsMatch, 'navigation section definition exists');
   assert.deepEqual([...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id),
-    ['cards', 'pulse', 'overview', 'goals', 'profile'], 'Pulse follows Payment and Profile remains last');
+    ['cards', 'pulse', 'overview', 'likee', 'profile'], 'Pulse follows Payment and Likee replaces Goals before Profile');
   const cardTargetsMatch = /^const cardTargets = \[([^\]]*)\];/m.exec(appSource);
   assert.ok(cardTargetsMatch, 'placeholder card destinations exist');
   const cardTargets = [...cardTargetsMatch[1].matchAll(/'([^']+)'/g)].map(([, route]) => route);
   const routeIds = [...sectionsMatch[1].matchAll(/id:\s*'([^']+)'/g)].map(([, id]) => id);
-  assert.deepEqual(cardTargets, ['overview', 'goals', 'cards', 'profile']);
+  assert.deepEqual(cardTargets, ['overview', 'likee', 'cards', 'profile']);
   assert.ok(cardTargets.every(route => routeIds.includes(route)), 'every card destination remains a valid navigation route');
   const bottomNav = appSource.match(/function renderBottomNav\(\) \{[\s\S]*?\n\}/)?.[0] || '';
   assert.match(bottomNav, /sections\.map\(item\s*=>/);
