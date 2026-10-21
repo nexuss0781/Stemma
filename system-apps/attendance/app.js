@@ -19,6 +19,17 @@ const closeImportButton = document.querySelector("#close-import");
 const cancelImportButton = document.querySelector("#cancel-import");
 const openImportButton = document.querySelector("#open-import");
 const emptyImportButton = document.querySelector("#empty-import");
+const saveButton = document.querySelector("#save-attendance");
+const viewReportButton = document.querySelector("#view-report");
+const reportView = document.querySelector("#report-view");
+const closeReportButton = document.querySelector("#close-report");
+const exportPDFButton = document.querySelector("#export-pdf");
+const saveToast = document.querySelector("#save-toast");
+const appShell = document.querySelector(".app-shell");
+let dirty = false;
+let savedPresentIds = [];
+let loaded = false;
+let toastTimer;
 let state = { students: [], presentIds: [], date: "" };
 let busy = false;
 let retryOperation = null;
@@ -32,6 +43,8 @@ function localISODate(date = new Date()) {
 }
 function setBusy(value) {
     busy = value;
+    saveButton.disabled = value || !loaded || !dirty;
+    viewReportButton.disabled = value || !loaded;
     dateInput.disabled = value;
     openImportButton.disabled = value;
     emptyImportButton.disabled = value;
@@ -149,7 +162,7 @@ function render() {
             return;
         state.presentIds = selectAll.checked ? students.map((student) => student.id) : [];
         render();
-        void saveAttendance();
+        markDirty();
     });
     const selectAllLabel = document.createElement("label");
     selectAllLabel.htmlFor = selectAll.id;
@@ -176,7 +189,7 @@ function render() {
                 next.delete(student.id);
             state.presentIds = [...next];
             render();
-            void saveAttendance();
+            markDirty();
         });
         const name = document.createElement("span");
         name.className = "student-name";
@@ -203,9 +216,30 @@ function displayRequestError(error, action) {
     }
     setStatus("error", message, action === "import" ? null : action, needsAuth);
 }
+function markDirty() {
+    const saved = new Set(savedPresentIds);
+    dirty = state.presentIds.length !== saved.size || state.presentIds.some((id) => !saved.has(id));
+    saveToast.hidden = true;
+    saveButton.disabled = busy || !loaded || !dirty;
+    setStatus("saved", dirty ? "Unsaved changes — click Save to keep them." : "No unsaved changes");
+    statusLine.dataset.kind = dirty ? "unsaved" : "saved";
+}
+function showSavedToast() {
+    window.clearTimeout(toastTimer);
+    saveToast.hidden = false;
+    toastTimer = window.setTimeout(() => { saveToast.hidden = true; }, 2800);
+}
 async function loadDate(date) {
     if (busy)
         return;
+    if (dirty) {
+        dateInput.value = state.date;
+        setStatus("error", "Save your attendance changes before changing the date.");
+        saveButton.focus();
+        return;
+    }
+    loaded = false;
+    saveToast.hidden = true;
     const restoreDateFocus = document.activeElement === dateInput;
     setBusy(true);
     if (state.date !== date) {
@@ -216,6 +250,8 @@ async function loadDate(date) {
     try {
         const next = await requestState(`${API}?date=${encodeURIComponent(date)}`, { method: "GET" }, date);
         state = next;
+        savedPresentIds = [...next.presentIds];
+        loaded = true;
         render();
         setStatus("saved", "Attendance loaded");
     }
@@ -230,7 +266,7 @@ async function loadDate(date) {
     }
 }
 async function saveAttendance() {
-    if (busy)
+    if (busy || !loaded || !dirty)
         return;
     const focusedInput = document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
     const focusedStudentId = focusedInput?.dataset.studentId;
@@ -246,8 +282,11 @@ async function saveAttendance() {
             body: JSON.stringify({ date, presentIds: snapshot }),
         }, date);
         state = next;
+        savedPresentIds = [...next.presentIds];
         render();
+        dirty = false;
         setStatus("saved", "Saved");
+        showSavedToast();
     }
     catch (error) {
         displayRequestError(error, "save");
@@ -268,6 +307,11 @@ async function saveAttendance() {
 function openDialog() {
     if (busy || dialog.open)
         return;
+    if (dirty) {
+        setStatus("error", "Save your attendance changes before importing students.");
+        saveButton.focus();
+        return;
+    }
     dialogReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : openImportButton;
     clearImportError();
     dialog.showModal();
@@ -292,7 +336,9 @@ async function importStudents(text) {
             body: JSON.stringify({ text }),
         }, date);
         state = next;
+        savedPresentIds = [...next.presentIds];
         render();
+        loaded = true;
         setStatus("saved", "Students imported");
         studentListInput.value = "";
         dialog.close();
@@ -340,8 +386,8 @@ dialog.addEventListener("keydown", (event) => {
 importForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = studentListInput.value;
-    if (text.trim().length === 0) {
-        showImportError("Enter at least one student name.");
+    if (!text.split(/\r?\n/u).some((line) => /^\s*-\s+\S/u.test(line))) {
+        showImportError("Add at least one student on a line beginning with a hyphen (-) and a space.");
         studentListInput.focus();
         return;
     }
@@ -365,3 +411,70 @@ dateInput.addEventListener("change", () => {
 dateInput.value = localISODate();
 render();
 void loadDate(dateInput.value);
+function reportText(id, text) {
+    document.getElementById(id).textContent = text;
+}
+function renderReport() {
+    const total = state.students.length;
+    const present = new Set(state.presentIds);
+    const count = state.students.filter((student) => present.has(student.id)).length;
+    const date = new Date(`${state.date}T12:00:00`);
+    reportText("report-date", date.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }));
+    reportText("report-total", String(total));
+    reportText("report-present", String(count));
+    reportText("report-unmarked", String(total - count));
+    reportText("report-rate", total ? `${Math.round(count / total * 100)}%` : "—");
+    reportText("report-record-label", dirty ? "Unsaved draft" : "Saved attendance");
+    document.getElementById("report-draft").hidden = !dirty;
+    exportPDFButton.disabled = dirty || !loaded;
+    const rows = document.getElementById("report-rows");
+    rows.replaceChildren();
+    state.students.forEach((student, index) => {
+        const row = document.createElement("tr");
+        const number = document.createElement("td");
+        number.textContent = String(index + 1).padStart(2, "0");
+        const name = document.createElement("td");
+        name.textContent = student.name;
+        const status = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = present.has(student.id) ? "attendance-badge is-present" : "attendance-badge";
+        badge.textContent = present.has(student.id) ? "Present" : "Not marked";
+        status.append(badge);
+        row.append(number, name, status);
+        rows.append(row);
+    });
+    document.getElementById("report-empty").hidden = total > 0;
+}
+saveButton.addEventListener("click", () => { void saveAttendance(); });
+viewReportButton.addEventListener("click", () => {
+    if (busy || !loaded)
+        return;
+    renderReport();
+    reportView.hidden = false;
+    appShell.hidden = true;
+    document.title = `Roll — Attendance report — ${state.date}`;
+    window.scrollTo(0, 0);
+    closeReportButton.focus();
+});
+function closeReport() {
+    reportView.hidden = true;
+    appShell.hidden = false;
+    document.title = "Teacher Attendance";
+    viewReportButton.focus();
+}
+closeReportButton.addEventListener("click", closeReport);
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !reportView.hidden)
+        closeReport();
+});
+exportPDFButton.addEventListener("click", () => {
+    if (dirty || !loaded || reportView.hidden)
+        return;
+    window.print();
+});
+window.addEventListener("beforeunload", (event) => {
+    if (!dirty)
+        return;
+    event.preventDefault();
+    event.returnValue = "";
+});

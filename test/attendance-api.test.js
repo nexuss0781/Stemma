@@ -63,16 +63,15 @@ const jsonRequest = (url, method, cookie, origin, body) => fetch(url, {
   body: JSON.stringify(body)
 });
 
-test('parseStudentList handles plain, numbered and bulleted lines and rejects invalid or oversized lists', () => {
-  assert.deepEqual(parseStudentList('  Aster One  \n2. Birch Two\n• Cedar Three\n- Aster   One\n\n'), [
+test('parseStudentList accepts only hyphen bullets and rejects invalid or oversized names', () => {
+  assert.deepEqual(parseStudentList('Roster follows:\n  - Aster One  \n2. Birch Two\n• Cedar Three\n- Aster   One\n-   \n* Dune Four\n\n'), [
     { name: 'Aster One', normalizedName: 'Aster One' },
-    { name: 'Birch Two', normalizedName: 'Birch Two' },
-    { name: 'Cedar Three', normalizedName: 'Cedar Three' }
   ]);
+  assert.deepEqual(parseStudentList('Plain name\n2. Numbered name\n• Other bullet\n* Star bullet\n'), []);
   assert.deepEqual(parseStudentList('\n \n'), []);
-  assert.equal(parseStudentList(`A${'x'.repeat(120)}`), null);
-  assert.equal(parseStudentList('Good Name\nBad\u0000Name'), null);
-  assert.equal(parseStudentList(Array.from({ length: 1001 }, (_, i) => `Student ${i}`).join('\n')), null);
+  assert.equal(parseStudentList(`- A${'x'.repeat(120)}`), null);
+  assert.equal(parseStudentList('- Good Name\n  - Bad\u0000Name'), null);
+  assert.equal(parseStudentList(Array.from({ length: 1001 }, (_, i) => `- Student ${i}`).join('\n')), null);
   assert.equal(parseStudentList('x'.repeat(128 * 1024 + 1)), null);
 });
 
@@ -95,8 +94,19 @@ test('attendance API requires Google session, same-origin JSON writes, and stric
 
   assert.equal((await jsonRequest(`${h.origin}/api/system-apps/attendance/import`, 'POST', google, null, { text: 'Aster One' })).status, 403);
   assert.equal((await jsonRequest(`${h.origin}/api/system-apps/attendance/import`, 'POST', google, 'https://wrong.example', { text: 'Aster One' })).status, 403);
+  const noNames = await jsonRequest(`${h.origin}/api/system-apps/attendance/import?date=2026-05-01`, 'POST', google, h.origin,
+    { text: 'Roster follows:\nAster One\n2. Birch Two\n• Cedar Three' });
+  assert.equal(noNames.status, 400);
+  assert.match((await noNames.json()).error, /No student names found.*hyphen bullets/u);
+  const invalidName = await jsonRequest(`${h.origin}/api/system-apps/attendance/import?date=2026-05-01`, 'POST', google, h.origin,
+    { text: '- Good Name\n  - Bad\u0000Name' });
+  assert.equal(invalidName.status, 400);
+  assert.equal((await invalidName.json()).error, 'Student import request is invalid.');
+  const unchanged = await fetch(`${h.origin}/api/system-apps/attendance?date=2026-05-01`, { headers: { cookie: google } });
+  assert.deepEqual((await unchanged.json()).students, [], 'rejected imports do not mutate the roster');
+
   const imported = await jsonRequest(`${h.origin}/api/system-apps/attendance/import?date=2026-05-01`, 'POST', google, h.origin,
-    { text: '• Aster One\n2. Birch Two\nAster One' });
+    { text: 'Roster follows:\n• Ignored Other\n2. Ignored Numbered\nAster One\n  - Aster One\n- Birch Two\n- Aster   One' });
   assert.equal(imported.status, 200);
   const state = await imported.json();
   assert.deepEqual(state.students.map(student => student.name), ['Aster One', 'Birch Two']);
@@ -148,11 +158,11 @@ test('PostgreSQL attendance roster and dated snapshots persist and remain owner-
     await store.migrate();
     await store.migrate();
 
-    const imported = await store.importStudents('attendance-owner', parseStudentList('Ava Green\nAva Gray\nAva Green'), '2026-06-01');
+    const imported = await store.importStudents('attendance-owner', parseStudentList('- Ava Green\n- Ava Gray\n- Ava Green'), '2026-06-01');
     assert.deepEqual(imported.students.map(student => student.name), ['Ava Green', 'Ava Gray'], 'exact normalized duplicates are deduped while differing full names remain and import order is stable');
     const avaGreen = imported.students[0].id;
     const avaGray = imported.students[1].id;
-    await store.importStudents('attendance-owner', parseStudentList(' Ava   Green \nNia Blue'), '2026-06-02');
+    await store.importStudents('attendance-owner', parseStudentList('- Ava   Green \n- Nia Blue'), '2026-06-02');
     assert.equal((await store.getAttendance('attendance-owner', '2026-06-02')).students.length, 3, 'reimport appends only unseen normalized names');
     assert.equal(await store.saveAttendance('attendance-other', '2026-06-01', [avaGreen]), null, 'other subjects cannot mark a foreign student present');
 

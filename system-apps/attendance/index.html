@@ -18,10 +18,18 @@
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
           <span class="brand-name">Roll</span>
         </a>
+        <div class="topbar-actions" aria-label="Attendance actions">
+          <button class="icon-button toolbar-icon" id="save-attendance" type="button" aria-label="Save attendance" title="Save attendance" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h10l3 3v11H3V3h1Zm2 0v5h7V3M6 17v-6h8v6"/></svg>
+          </button>
+          <button class="icon-button toolbar-icon" id="view-report" type="button" aria-label="View attendance report" title="View report" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 10s3-5.5 8.5-5.5 8.5 5.5 8.5 5.5-3 5.5-8.5 5.5S1.5 10 1.5 10Z"/><circle cx="10" cy="10" r="2.5"/></svg>
+          </button>
         <button class="import-trigger" id="open-import" type="button" aria-label="Import students">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m0 0L6.5 6.5M10 3l3.5 3.5M4 11.5v3A1.5 1.5 0 0 0 5.5 16h9a1.5 1.5 0 0 0 1.5-1.5v-3" /></svg>
           <span>Import students</span>
         </button>
+        </div>
       </header>
 
       <main class="main-content" id="main-content">
@@ -65,6 +73,35 @@
       </main>
     </div>
 
+    <section id="report-view" class="report-view" aria-labelledby="report-title" hidden>
+      <div class="report-toolbar">
+        <button class="secondary-button" id="close-report" type="button">Back to attendance</button>
+        <button class="primary-button" id="export-pdf" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m0 0 3-3m-3 3L7 9M4 13v4h12v-4"/></svg>
+          Export PDF
+        </button>
+      </div>
+      <article class="report-paper" id="report-paper">
+        <header class="report-heading">
+          <div><p class="eyebrow">ROLL / CLASSROOM INSIGHTS</p><h1 id="report-title">Attendance report</h1><p class="report-subtitle">Teacher Attendance <span aria-hidden="true">·</span> <span id="report-date"></span></p></div>
+          <span class="report-seal">Roll<span>DAILY REGISTER</span></span>
+        </header>
+        <p class="report-draft" id="report-draft" hidden>Unsaved changes — save attendance before exporting.</p>
+        <div class="report-metrics" aria-label="Attendance summary">
+          <div class="report-metric"><span>Students</span><strong id="report-total">0</strong><small>In your roster</small></div>
+          <div class="report-metric metric-green"><span>Present</span><strong id="report-present">0</strong><small>Marked for this date</small></div>
+          <div class="report-metric"><span>Not marked</span><strong id="report-unmarked">0</strong><small>Not marked present</small></div>
+          <div class="report-metric metric-violet"><span>Present rate</span><strong id="report-rate">—</strong><small>Of your roster</small></div>
+        </div>
+        <div class="report-register-heading"><h2>Class register</h2><span id="report-record-label">Saved attendance</span></div>
+        <div class="report-table-wrap"><table class="report-table"><thead><tr><th scope="col">No.</th><th scope="col">Student name</th><th scope="col">Attendance</th></tr></thead><tbody id="report-rows"></tbody></table></div>
+        <p id="report-empty" class="report-empty" hidden>No students yet. Import your student list to create a report.</p>
+        <footer class="report-footer"><span>Teacher Attendance <b>/</b> Roll</span><span>Selected-date register · Private to your account</span></footer>
+      </article>
+      <p class="export-help" id="export-help">Export opens your browser’s print preview. Choose “Save as PDF” for a PDF copy.</p>
+    </section>
+    <div class="save-toast" id="save-toast" role="status" aria-live="polite" aria-atomic="true" hidden><span aria-hidden="true">✓</span> Attendance saved successfully</div>
+
     <dialog class="import-dialog" id="import-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-help">
       <form class="dialog-content" id="import-form" novalidate>
         <div class="dialog-heading">
@@ -75,8 +112,8 @@
         </div>
         <h2 id="dialog-title">Import students</h2>
         <label class="textarea-label" for="student-list">Student list</label>
-        <textarea id="student-list" name="text" rows="7" required aria-describedby="dialog-help import-error" placeholder="• Avery Chen&#10;• Jordan Lee&#10;• Sam Rivera"></textarea>
-        <p class="dialog-help" id="dialog-help">One student per line</p>
+        <textarea id="student-list" name="text" rows="7" required aria-describedby="dialog-help import-error" placeholder="Paste your list here.&#10;- Student name&#10;- Student name"></textarea>
+        <p class="dialog-help" id="dialog-help">Only lines starting with a hyphen (-) and a space are imported. All other lines are ignored.</p>
         <p class="form-error" id="import-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button class="secondary-button" id="cancel-import" type="button">Cancel</button>

@@ -20,15 +20,16 @@ function normalizeStudentName(name) {
   return name.normalize('NFC').trim().replace(/\s+/gu, ' ');
 }
 
-/** Parse plain, bullet, or numbered student names. Returns null for invalid/oversized input. */
+/** Parse student names from hyphen-bullet lines only. Returns null for invalid/oversized input. */
 export function parseStudentList(text) {
   if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_IMPORT_BYTES) return null;
   const names = [];
   const seen = new Set();
   for (const rawLine of text.split(/\r?\n/u)) {
-    let line = rawLine.trim();
+    const match = rawLine.match(/^\s*-\s+(.*)$/u);
+    if (!match) continue;
+    const line = match[1].trim();
     if (!line) continue;
-    line = line.replace(/^(?:[-*+•‣▪–—]\s+|\d{1,4}[.)]\s+)/u, '').trim();
     const name = cleanStudentName(line);
     if (!name) return null;
     const normalized = normalizeStudentName(name);
@@ -214,6 +215,7 @@ export function registerAttendanceApi(app, { attendanceStore = null, requireGoog
     if (!date || !validBody(req.body, ['text'])) return res.status(400).json({ error: 'Student import request is invalid.' });
     const names = parseStudentList(req.body.text);
     if (!names) return res.status(400).json({ error: 'Student import request is invalid.' });
+    if (!names.length) return res.status(400).json({ error: 'No student names found. Add names as hyphen bullets (for example, - Aster One).' });
     try {
       return res.json(await attendanceStore.importStudents(req.session.stemmaUser.subject, names, date));
     } catch (error) {
