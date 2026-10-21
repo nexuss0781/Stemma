@@ -137,7 +137,9 @@
           if (peer.username && peer.nickName) heading.append(node('span', 'pulse-direct-row-handle', `@${peer.username}`));
           copy.append(heading);
           const message = conversation.lastMessage;
-          const preview = message ? `${message.mine ? 'You: ' : ''}${String(message.text || '').replace(/\s+/g, ' ').trim()}` : 'No messages yet';
+          const messageText = String(message?.text || '');
+          const summary = /^Likee video\n#likee\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(messageText) ? 'Likee video' : messageText.replace(/\s+/g, ' ').trim();
+          const preview = message ? `${message.mine ? 'You: ' : ''}${summary}` : 'No messages yet';
           copy.append(node('span', 'pulse-direct-preview', preview));
           const meta = node('span', 'pulse-direct-meta');
           if (message?.createdAt) {

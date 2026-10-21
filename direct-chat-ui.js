@@ -79,7 +79,11 @@
     if (root.visualViewport) { listen(root.visualViewport, 'resize', resizeViewport); listen(root.visualViewport, 'scroll', resizeViewport); }
     if (root.addEventListener) listen(root, 'resize', resizeViewport);
     function replyName(mine) { const peer = conversation?.peer || conversation || {}; return mine ? 'You' : peer.nickName || `@${peer.username || 'participant'}`; }
-    function quoteText(text) { return [...String(text || '').replace(/\s+/g, ' ').trim()].slice(0, 160).join(''); }
+    const likeeVideoMessage = /^Likee video\n#likee\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  function quoteText(text) {
+    if (likeeVideoMessage.test(String(text || ''))) return 'Likee video';
+    return [...String(text || '').replace(/\s+/g, ' ').trim()].slice(0, 160).join('');
+  }
     function setReply(message = null) {
       selectedReply = message ? { id: String(message.id), text: message.text, mine: Boolean(message.mine) } : null;
       if (replyPreview) {
@@ -127,7 +131,8 @@
           item.append(quote);
         }
         const attachment = root.StemmaChatAttachments?.render(message.attachment);
-        item.append(attachment || node('p', '', message.text));
+        const likeeCard = !attachment && likeeVideoMessage.test(message.text) ? root.StemmaLikee?.renderChatCard(message.text) : null;
+        item.append(attachment || likeeCard || node('p', '', message.text));
         const date = new Date(message.createdAt);
         const time = node('time', '', Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
         time.setAttribute('title', timestamp(message.createdAt));

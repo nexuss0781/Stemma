@@ -556,10 +556,13 @@ function navigate(route) {
   window.location.hash = route;
 }
 
+
 function syncRouteFromHash() {
   const appsLink = window.location.hash === '#apps';
-  const route = appsLink ? 'pulse' : window.location.hash.replace(/^#/, '');
+  const likeeLink = /^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash);
+  const route = appsLink ? 'pulse' : likeeLink ? 'pulse' : window.location.hash.replace(/^#/, '');
   if (appsLink) activeTabs.pulse = 4;
+  if (likeeLink && activeRoute !== 'pulse') activeTabs.pulse = 5;
   if (!pageTabs[route] || (route === activeRoute && !appsLink)) return;
   window.StemmaParentNavigation?.reset();
   cancelPendingNavigationRestoration();
@@ -990,6 +993,7 @@ function restoreNavigationLocation(accountKey) {
   for (const route of Object.keys(activeTabs)) activeTabs[route] = saved?.tabs?.[route] || 0;
   // A System App's back link always returns to the Apps launcher.
   if (window.location.hash === '#apps') { activeRoute = 'pulse'; activeTabs.pulse = 4; }
+  if (/^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash)) { activeRoute = 'pulse'; activeTabs.pulse = 5; }
   paymentSlideIndex = saved?.paymentSlide || 0;
   paymentDemoInterval = saved?.interval || '15-days';
   depositDraftAmount = saved?.depositAmount || '';
@@ -1001,7 +1005,7 @@ function restoreNavigationLocation(accountKey) {
   routeDirection = 0;
   render();
   window.StemmaNotifications?.setUnderlyingScrollTop(saved?.scrollTop || 0);
-  if (window.location.hash !== '#apps' && window.location.hash !== '#notifications' && window.location.hash !== `#${activeRoute}`) {
+  if (window.location.hash !== '#apps' && window.location.hash !== '#notifications' && !/^#likee(?:\/video\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$/.test(window.location.hash) && window.location.hash !== `#${activeRoute}`) {
     window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#${activeRoute}`);
   }
   pendingNavigationRestore = saved;

@@ -4,7 +4,7 @@
   const categories = Object.freeze([
     { label: 'All', icon: 'pulse' }, { label: 'User', icon: 'user' },
     { label: 'Group', icon: 'pulse-group' }, { label: 'Channel', icon: 'pulse-channel' },
-    { label: 'App', icon: 'grid' }
+    { label: 'App', icon: 'grid' }, { label: 'Likee', icon: 'likee' }
   ]);
   const glyph = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const bone = (classes = '') => `<span class="pulse-bone skeleton-shimmer ${classes}"></span>`;
@@ -12,6 +12,7 @@
   const bookmarkStack = `<svg class="pulse-bookmark-stack" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M5 2h5v9a1 1 0 0 0 1.6.8L14 10l2.4 1.8A1 1 0 0 0 18 11V2h2a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" fill="currentColor"/><path d="M12 2h4v7l-2-1.5L12 9Z" fill="currentColor"/><path d="M27 13v14a4 4 0 0 1-4 4H13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   function rows(kind) {
     if (kind === 'app') return root.StemmaSystemApps?.view() || '';
+    if (kind === 'likee') return `<div class="pulse-likee-entry"><button type="button" data-likee-open>Open Likee</button></div>`;
     if (kind === 'group') return `<div class="pulse-conversations pulse-group-conversations pulse-unified-list" data-group-lists role="list" aria-label="Group conversations"><p class="pulse-list-empty" role="status">Loading groups…</p></div>`;
     if (kind === 'channel') return `<div class="pulse-conversations pulse-unified-list" data-channel-lists role="list" aria-label="Channels"><p class="pulse-list-empty" role="status">Loading channels…</p></div>`;
     if (kind !== 'all' && kind !== 'user') return `<div class="pulse-conversations pulse-unified-list" role="list" aria-label="${kind === 'app' ? 'App' : 'Channel'} conversations"></div>`;
@@ -23,7 +24,7 @@
   function stages(kind) {
     const label = kind === 'all' ? 'Saved Messages and conversations' : kind === 'user' ? 'Direct conversations' : kind === 'group' ? 'Group conversations' : kind === 'channel' ? 'Channels' : 'Empty conversations';
     return ['minimal', 'stories', 'previews', 'grid'].map((name, i) => {
-      const content = i === 0 ? rows(kind) : (root.StemmaStories ? root.StemmaStories.stageView(kind, i) : '');
+      const content = i === 0 ? rows(kind) : (kind === 'likee' ? '' : (root.StemmaStories ? root.StemmaStories.stageView(kind, i) : ''));
       return `<section class="pulse-stage pulse-stage-${name}${i === 0 ? ' is-current' : ''}" ${i === 0 ? '' : 'inert aria-hidden="true"'} aria-label="${i === 0 ? label : (['', 'Circular story rail', 'Story preview rail', 'Two-column story grid'][i])}">${content}</section>`;
     }).join('');
   }
@@ -34,7 +35,7 @@
         <button type="button" class="pulse-search-close" aria-label="Close Pulse search">${glyph('close')}</button>
       </div>
       <span id="pulse-search-hint" class="pulse-announcement">Search users and public groups by name.</span>
-      <nav class="pulse-search-tabs pulse-tabs" role="tablist" aria-label="Search categories">${categories.map((item, i) => `<button type="button" class="pulse-search-tab pulse-tab" role="tab" aria-label="Search ${item.label}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-pulse-search-tab="${i}" aria-controls="pulse-search-results">${glyph(item.icon)}</button>`).join('')}</nav>
+      <nav class="pulse-search-tabs pulse-tabs" role="tablist" aria-label="Search categories">${categories.slice(0, 5).map((item, i) => `<button type="button" class="pulse-search-tab pulse-tab" role="tab" aria-label="Search ${item.label}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-pulse-search-tab="${i}" aria-controls="pulse-search-results">${glyph(item.icon)}</button>`).join('')}</nav>
       <div class="pulse-search-body" id="pulse-search-results" role="region" aria-label="Pulse search results">
         <p class="pulse-data-status pulse-user-status" role="status" aria-live="polite" hidden></p><div class="pulse-user-results" role="list" aria-label="Users" hidden></div><div class="pulse-group-results" data-pulse-group-results role="list" aria-label="Public groups" hidden></div><button type="button" class="pulse-users-more" hidden>Load more users</button>
         <div class="pulse-search-suggestions" tabindex="0" role="region" aria-label="Suggested previews, scroll horizontally"><div aria-hidden="true">${Array.from({ length: 8 }, () => `<div class="pulse-search-suggestion">${bone('pulse-search-circle')}${bone('pulse-search-caption')}</div>`).join('')}</div></div>
@@ -49,7 +50,7 @@
       <div class="pulse-feed">
         <span class="pulse-announcement" role="status" aria-live="polite" aria-atomic="true"></span>
         <nav class="pulse-tabs" role="tablist" aria-label="Pulse categories">${categories.map((item, i) => `<button type="button" class="pulse-tab" role="tab" id="pulse-tab-${i}" aria-label="${item.label}" aria-controls="pulse-panel-${i}" aria-selected="${i === selected}" tabindex="${i === selected ? 0 : -1}" data-pulse-tab="${i}">${glyph(item.icon)}</button>`).join('')}</nav>
-        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'app'][i])}</section>`).join('')}</div></div>
+        <div class="pulse-viewport"><div class="pulse-track" style="transform:translate3d(-${selected * 100}%,0,0)">${categories.map((item, i) => `<section class="pulse-panel" id="pulse-panel-${i}" role="tabpanel" aria-labelledby="pulse-tab-${i}" aria-description="Pull down to reveal stories; swipe up to return. Use Arrow Down or Arrow Up when focused." data-stage="0" tabindex="0" ${i === selected ? '' : 'inert aria-hidden="true"'}>${stages(['all', 'user', 'group', 'channel', 'app', 'likee'][i])}</section>`).join('')}</div></div>
         <div class="pulse-create-previews" id="pulse-create-previews" aria-hidden="true" inert>
           <button type="button" class="pulse-create-story" data-story-create><span aria-hidden="true">＋</span> Story</button>
           <button type="button" class="pulse-create-group" data-group-create><span aria-hidden="true">＋</span> New group</button>
@@ -276,10 +277,12 @@
       panels.forEach((panel, i) => { panel.inert = i !== selected; if (i === selected) panel.removeAttribute('aria-hidden'); else panel.setAttribute('aria-hidden', 'true'); });
       if (focus) tabs[selected].focus();
       onChange(selected);
+      if (selected === 5) root.StemmaLikee?.open();
     }
     listen(shell, 'click', event => {
       const tab = event.target.closest('[data-pulse-tab]');
       if (tab) select(Number(tab.dataset.pulseTab));
+      if (event.target.closest('[data-likee-open]')) root.StemmaLikee?.open();
     });
     listen(shell, 'keydown', event => {
       if (event.target.closest('.pulse-search')) return;
@@ -289,7 +292,7 @@
       select(index, true);
     });
     listen(viewport, 'keydown', event => {
-      if (selected === 4 || event.target.closest('.pulse-stories') || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
+      if (selected >= 4 || event.target.closest('.pulse-stories') || !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const panel = panels[selected];
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : Number(panel.dataset.stage) + (['ArrowDown', 'PageDown'].includes(event.key) ? 1 : -1);
@@ -297,7 +300,7 @@
     });
     // A wheel/trackpad burst is one pull, not three skipped layouts.
     listen(viewport, 'wheel', event => {
-      if (selected === 4 || event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (selected >= 4 || event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       event.preventDefault();
       clearTimeout(wheelTimer);
       wheelTimer = setTimeout(() => { wheelLocked = false; wheelDistance = 0; }, 220);
@@ -322,7 +325,7 @@
           if (drag.rail) { drag = null; return; } // Native story scrolling never selects a category.
           drag.axis = 'x';
           track.classList.add('is-dragging');
-        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) { if (selected === 4) { drag = null; return; } drag.axis = 'y'; drag.start = states[selected].progress; stop(states[selected]); }
+        } else if (Math.abs(dy) > Math.abs(dx) * 1.2) { if (selected >= 4) { drag = null; return; } drag.axis = 'y'; drag.start = states[selected].progress; stop(states[selected]); }
         else return;
         viewport.setPointerCapture(event.pointerId);
       }

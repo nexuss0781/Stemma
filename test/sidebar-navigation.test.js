@@ -171,6 +171,17 @@ test('saved route, every tab index, and route-specific tab state are restored', 
   h.flushFrames();
 });
 
+test('Likee deep links restore Pulse and the Likee category ahead of saved navigation memory', () => {
+  const h = makeHarness();
+  h.save('google:likee@example.test', makeState('cards'));
+  h.window.location.hash = '#likee/video/01234567-89ab-cdef-0123-456789abcdef';
+  h.evaluate("dashboardEntered = true; restoreNavigationLocation('google:likee@example.test')");
+  assert.equal(h.evaluate('activeRoute'), 'pulse');
+  assert.equal(h.evaluate('activeTabs.pulse'), 5);
+  assert.equal(h.window.location.hash, '#likee/video/01234567-89ab-cdef-0123-456789abcdef');
+  h.flushFrames();
+});
+
 test('Pulse route and its highest category index are restored', () => {
   const h = makeHarness();
   const saved = makeState('pulse', { tab: 4 });

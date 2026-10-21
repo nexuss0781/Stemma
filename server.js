@@ -19,6 +19,7 @@ import { createGroupStore, registerGroupsApi, isValidGroupSlug } from './groups-
 import { createStoryStore, registerStoriesApi } from './stories-api.js';
 import { createChannelsStore, registerChannelsApi } from './channels-api.js';
 import { createAttendanceStore, registerAttendanceApi } from './attendance-api.js';
+import { createLikeeStore, registerLikeeApi } from './likee-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -484,7 +485,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, groupStore = null, storyStore = null, channelStore = null, friendBillStore = null, attendanceStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, groupStore = null, storyStore = null, likeeStore = null, channelStore = null, friendBillStore = null, attendanceStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -650,6 +651,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   registerNotificationsApi(app, { notificationStore, requireGoogleSession, config });
   registerPulseApi(app, { pulseStore, attachmentStore, requireGoogleSession, config });
   registerStoriesApi(app, { storyStore, requireGoogleSession, config });
+  registerLikeeApi(app, { likeeStore, requireGoogleSession, config });
   registerDirectChatApi(app, { directChatStore, attachmentStore, requireGoogleSession, config });
   registerGroupsApi(app, { groupsStore: groupStore, attachmentStore, requireGoogleSession, config });
   registerChannelsApi(app, { channelStore, requireGoogleSession, config });
@@ -1040,7 +1042,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     res.set('Cache-Control', 'public, max-age=300');
     res.type('application/javascript').sendFile(path.join(ROOT, 'payment-ui.js'));
   });
-  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'story-video-capture.js', 'stories-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'groups-ui.js', 'channels-ui.js']) {
+  for (const asset of ['profile-photo.js', 'profile-ui.js', 'navigation-memory.js', 'parent-navigation.js', 'friend-ui.js', 'notifications-ui.js', 'pulse-ui.js', 'story-video-capture.js', 'stories-ui.js', 'likee-ui.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'groups-ui.js', 'channels-ui.js']) {
     app.get(`/${asset}`, (_req, res) => {
       res.set('Cache-Control', ['parent-navigation.js', 'direct-chat-ui.js', 'chat-attachments-ui.js', 'channels-ui.js'].includes(asset) ? 'no-store' : 'public, max-age=300');
       res.type('application/javascript').sendFile(path.join(ROOT, asset));
@@ -1057,6 +1059,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.get('/stories.css', (_req, res) => {
     res.set({ 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer' });
     res.type('text/css').sendFile(path.join(ROOT, 'stories.css'));
+  });
+  app.get('/likee.css', (_req, res) => {
+    res.set({ 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer' });
+    res.type('text/css').sendFile(path.join(ROOT, 'likee.css'));
   });
   app.get('/styles.css', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
@@ -1106,6 +1112,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.use((error, req, res, _next) => {
     if (res.headersSent) return;
     setNoStore(res);
+    if (req.path.startsWith('/api/likee/')) {
+      if (error?.status === 413 || error?.type === 'entity.too.large') return res.status(413).json({ error: 'Likee video uploads must not exceed 5 MiB.' });
+      if (error?.status === 400 || error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Likee request JSON is invalid.' });
+    }
     if (req.path === '/api/student-profile' || req.path === '/api/student-profile/photo' || req.path === '/api/notifications/read' || req.path === '/api/pulse/saved' || req.path === '/api/pulse/conversations' || req.path === '/api/pulse/stories' || /^\/api\/pulse\/stories\/[^/]+(?:\/(?:media|avatar))?$/.test(req.path) || /^\/api\/pulse\/(?:saved\/attachments|attachments\/[^/]+|conversations\/[^/]+\/(?:messages|attachments))$/.test(req.path) || req.path === '/api/pulse/groups' || req.path === '/api/pulse/channels' || /^\/api\/pulse\/channels\/[^/]+\/posts$/.test(req.path) || req.path === '/api/system-apps/attendance/import' || req.path === '/api/system-apps/attendance') {
       if (error?.status === 413 || error?.type === 'entity.too.large') {
         return res.status(413).json({ error: req.path.includes('/attachments') ? 'Attachments must not exceed 5 MiB.' : req.path === '/api/notifications/read' ? 'Notification read request is too large.' : req.path === '/api/pulse/stories' ? 'Story attachments must not exceed 5 MiB.' : req.path === '/api/pulse/saved' || req.path.includes('/conversations') ? 'Message request is too large.' : req.path === '/api/pulse/channels' || req.path.endsWith('/posts') ? 'Channel request is too large.' : req.path.endsWith('/photo') ? 'Profile photo must not exceed 1 MiB.' : req.path === '/api/pulse/groups' ? 'Group avatar data must not exceed 1 MiB.' : req.path.startsWith('/api/system-apps/attendance') ? 'Attendance request is too large.' : 'Student profile request is too large.' });
@@ -1133,6 +1143,7 @@ async function startServer() {
   let attachmentStore;
   let groupStore;
   let storyStore;
+  let likeeStore;
   let channelStore;
   let attendanceStore;
   if (config.postgres.host) {
@@ -1161,6 +1172,8 @@ async function startServer() {
     await groupStore.migrate();
     storyStore = createStoryStore(postgresPool);
     await storyStore.migrate();
+    likeeStore = createLikeeStore(postgresPool);
+    await likeeStore.migrate();
     channelStore = createChannelsStore(postgresPool);
     await channelStore.migrate();
     attachmentStore = createAttachmentStore(postgresPool);
@@ -1175,7 +1188,7 @@ async function startServer() {
       ttl: Math.floor(SESSION_TTL_MS / 1000)
     });
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore, storyStore, channelStore, attendanceStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore, storyStore, likeeStore, channelStore, attendanceStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });

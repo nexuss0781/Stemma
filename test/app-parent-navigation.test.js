@@ -86,6 +86,14 @@ test('top-level back/forward route changes render valid routes but ignore notifi
   assert.deepEqual(calls, ['reset', 'cancel-restore', 'close-picker', 'close-history', 'close-sheet', 'close-drawer', 'render']);
 });
 
+test('Likee deep links map to Pulse and preserve current Pulse state', () => {
+  const context = vm.createContext({ activeRoute: 'overview', activeTabs: { pulse: 0 }, pageTabs: { pulse: [] }, window: { location: { hash: '#likee/video/01234567-89ab-cdef-0123-456789abcdef' }, StemmaParentNavigation: { reset() {} } }, cancelPendingNavigationRestoration() {}, closeFriendPicker() {}, closeHistoryDetails() {}, payments: { closeSheet() {} }, closeDrawer() {}, render() {} });
+  vm.runInContext(routeSource, context);
+  vm.runInContext('syncRouteFromHash()', context);
+  assert.equal(context.activeRoute, 'pulse');
+  assert.equal(context.activeTabs.pulse, 5);
+});
+
 test('app explicitly integrates drawer, bill, receipt, review, picker, history and account reset hooks', () => {
   for (const key of ['drawer', 'bill', 'receipt', 'payment-review', 'friend-picker', 'history-detail']) {
     assert.ok(source.includes(`enterParentNavigation('${key}'`), `${key} entry is wired`);

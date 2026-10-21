@@ -24,18 +24,18 @@ function panelsFrom(markup) {
 function stagesFrom(panel) {
   return [...panel.matchAll(/<section\b(?=[^>]*\bclass="pulse-stage\b)[^>]*>([\s\S]*?)<\/section>/g)].map(match => match[0]);
 }
-test('Pulse has five accessible icon-only categories, with All selected by default', () => {
+test('Pulse has six accessible icon-only categories, with All selected by default', () => {
   const { pulse, effects } = load();
   const markup = pulse.render();
-  assert.deepEqual(Array.from(pulse.categories, item => item.label), ['All', 'User', 'Group', 'Channel', 'App']);
-  assert.equal((markup.match(/class="pulse-tab" role="tab"/g) || []).length, 5);
-  assert.equal((markup.match(/role="tabpanel"/g) || []).length, 5);
+  assert.deepEqual(Array.from(pulse.categories, item => item.label), ['All', 'User', 'Group', 'Channel', 'App', 'Likee']);
+  assert.equal((markup.match(/class="pulse-tab" role="tab"/g) || []).length, 6);
+  assert.equal((markup.match(/role="tabpanel"/g) || []).length, 6);
   assert.match(markup, /id="pulse-tab-0"[^>]*aria-selected="true"[^>]*tabindex="0"/);
-  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 19);
+  assert.equal((markup.match(/inert aria-hidden="true"/g) || []).length, 23);
   const panels = panelsFrom(markup);
   assert.doesNotMatch(panels.join(''), /skeleton-shimmer|pulse-bone/,
     'the initial feed contains no skeleton or fabricated loading cards');
-  assert.equal(panels.length, 5);
+  assert.equal(panels.length, 6);
   assert.equal((panels[0].match(/class="pulse-stage /g) || []).length, 4,
     'All retains the four gesture-stage containers');
   assert.equal((panels[0].match(/\bpulse-saved-row\b/g) || []).length, 1,
@@ -91,11 +91,12 @@ test('All minimal stage renders Saved Messages once with an inline bookmark-stac
 test('minimal stages retain category conversations while later stages have no regular chat list', () => {
   const markup = load().pulse.render();
   const panels = panelsFrom(markup);
-  assert.equal(panels.length, 5);
+  assert.equal(panels.length, 6);
   for (const [index, panel] of panels.entries()) {
     const stages = stagesFrom(panel);
     assert.equal(stages.length, 4, `category ${index} retains all four gesture stages`);
     if (index === 4) assert.match(stages[0], /system-apps-launcher/);
+    else if (index === 5) assert.match(stages[0], /data-likee-open/);
     else assert.match(stages[0], /pulse-conversations/);
     if (index === 0) {
       assert.match(stages[0], /pulse-saved-row/);
@@ -196,13 +197,13 @@ test('the New group menu has a restrained transition and honors reduced motion',
 });
 test('each category selection preserves the saved-row scope and four-stage layouts', () => {
   const { pulse } = load();
-  for (let index = 0; index < 5; index++) {
+  for (let index = 0; index < 6; index++) {
     const markup = pulse.render(index);
     assert.match(markup, new RegExp(`id="pulse-tab-${index}"[^>]*aria-selected="true"`));
     assert.match(markup, new RegExp(`translate3d\\(-${index * 100}%,0,0\\)`));
     assert.equal((markup.split('<section class="pulse-search"')[0].match(/aria-selected="true"/g) || []).length, 1);
     const panels = panelsFrom(markup);
-    assert.equal(panels.length, 5);
+    assert.equal(panels.length, 6);
     assert.equal(stagesFrom(panels[index]).length, 4);
     assert.equal((panels[index].match(/\bpulse-saved-row\b/g) || []).length, index === 0 ? 1 : 0);
     assert.doesNotMatch(stagesFrom(panels[index]).slice(1).join(''), /data-pulse-conversations|pulse-direct-list|pulse-direct-row|data-group-lists|pulse-saved-row/);
@@ -253,7 +254,7 @@ test('Pulse source and styles are publicly served as static assets only', async 
 
 test('Pulse retains four ordered in-place stages with circular, square-preview, and two-column story containers', () => {
   const markup = load().pulse.render();
-  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20);
+  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 24);
   assert.match(markup, /pulse-stage-minimal[\s\S]*pulse-stage-stories[\s\S]*pulse-stage-previews[\s\S]*pulse-stage-grid/);
   const allStages = stagesFrom(panelsFrom(markup)[0]);
   assert.match(allStages[1], /pulse-story-circles|pulse-story-ring/);
@@ -281,7 +282,7 @@ test('Pulse announces layouts without visible content and safely handles capture
 
 test('Pulse swipe refinement keeps stages mounted and interpolates live drag progress before release', () => {
   const markup = load().pulse.render();
-  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 20,
+  assert.equal((markup.match(/class="pulse-stage /g) || []).length, 24,
     'all four stage elements remain present in each category panel');
   assert.match(source, /requestAnimationFrame\s*\(/,
     'pointer-driven visual updates are frame-scheduled rather than release-only');

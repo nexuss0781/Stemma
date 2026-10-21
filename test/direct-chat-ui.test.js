@@ -26,7 +26,7 @@ class Element {
   focus() {}
 }
 
-function createMountedChat(fetchImpl) {
+function createMountedChat(fetchImpl, likeeApi = null) {
   const panel = new Element('section');
   const elements = {
     '.pulse-direct-back': new Element('button'),
@@ -47,6 +47,7 @@ function createMountedChat(fetchImpl) {
   const controller = new AbortController();
   const api = { fetch: fetchImpl, setTimeout, clearTimeout, document: { createElement: tag => new Element(tag) } };
   api.window = api;
+  if (likeeApi) api.StemmaLikee = likeeApi;
   vm.runInNewContext(source, api);
   const chat = api.StemmaDirectChat.mount(shell, {
     listen: (element, type, handler) => listeners.push({ element, type, handler }),
@@ -206,4 +207,19 @@ test('unavailable quoted messages render a graceful label without stale private 
   const quote = mounted.elements['.pulse-direct-messages'].children[0].children[0];
   assert.equal(quote.children[0].textContent, 'Original message');
   assert.equal(quote.children[1].textContent, 'Message unavailable');
+});
+
+
+test('Likee video messages render the supplied card and reply quotes use a human label', async () => {
+  const text = 'Likee video\n#likee/video/01234567-89ab-cdef-0123-456789abcdef';
+  const card = new Element('a');
+  const rendered = [];
+  const mounted = createMountedChat(async () => response({ messages: [{ id: 'v1', text, createdAt: '2026-01-01T00:00:00Z', replyTo: { id: 'v0', text, mine: true, available: true } }] }), {
+    renderChatCard(value) { rendered.push(value); return card; }
+  });
+  mounted.chat.open({ id: '9', nickName: 'Robin' }); await flush();
+  const item = mounted.elements['.pulse-direct-messages'].children[0];
+  assert.deepEqual(rendered, [text]);
+  assert.equal(item.children[0].children[1].textContent, 'Likee video');
+  assert.equal(item.children[1], card, 'the rendered card replaces raw message text');
 });
