@@ -2,21 +2,23 @@
 // response bodies, image bytes, full URLs, query strings or arbitrary error messages.
 export function installPhotoDiagnostics({ version, versionCode }, root = window) {
   const endpoint = '/api/student-profile/photo';
-  const stages = new Set(['idle','request','native-connect','native-headers','native-body','http','response-validation','body-read','image-decode','complete','offline','timeout']);
-  const categories = new Set(['none','dns','tls','connect-timeout','read-timeout','connection','redirect','protocol','unknown','network','aborted','offline','timeout','http','not-found','mime','content-length','body-size','empty-body','mime-mismatch','body-read','image-decode','validation']);
-  const mimeTypes = new Set(['image/png','image/jpeg','image/webp','application/json','text/html','text/plain','application/octet-stream']);
+  const stages = new Set(['idle','request','native-connect','native-headers','native-body','http','response-validation','signature-validation','body-read','image-decode','complete','offline','timeout']);
+  const categories = new Set(['none','dns','tls','connect-timeout','read-timeout','connection','redirect','protocol','unknown','network','aborted','offline','timeout','http','not-found','mime','content-length','body-size','empty-body','mime-mismatch','body-read','image-decode','non-image','corrupt-image','image-dimensions','validation']);
+  const magicTypes = new Set(['PNG','JPEG','WebP','GIF','unknown']);
+  const imageMimes = new Set(['image/png','image/jpeg','image/webp']);
   const nativePhases = new Set(['connect','headers','body','http']);
   let state = null, attempts = 0, signedIn = false, serial = 0, renderQueued = false;
   const native = { route:'not-observed', status:null, phase:null, error:null };
   const requestIds = new WeakMap();
   const safeInt = value => value!==null && value!==undefined && value!=='' && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-  const readMime = value => { const mime=String(value||'').split(';',1)[0].trim().toLowerCase(); return mimeTypes.has(mime) ? mime : mime ? 'other' : 'missing'; };
+  const readMime = value => ['missing','invalid'].includes(value) ? value : root.StemmaAndroidPhotoResponse.normalizeMime(value);
+  const readLength = value => ['missing','invalid'].includes(value) ? value : root.StemmaAndroidPhotoResponse.normalizeLength(value);
   function snapshot() {
     if (!state) return null;
     return { appVersion:String(version),versionCode, timestamp:state.timestamp,phase:state.phase,endpoint,signedIn:state.signedIn,
       httpStatus:state.httpStatus,errorCategory:state.errorCategory,responseMime:state.responseMime,
-      declaredByteLength:state.declaredByteLength,byteLength:state.byteLength,route:state.route,
-      nativeStatus:state.nativeStatus,nativePhase:state.nativePhase,nativeError:state.nativeError,
+      declaredByteLength:state.declaredByteLength,byteLength:state.byteLength,magicType:state.magicType,normalizedMime:state.normalizedMime,route:state.route,
+      nativeStatus:state.nativeStatus,nativePhase:state.nativePhase,nativeError:state.nativeError,nativeMime:state.nativeMime,nativeDeclaredByteLength:state.nativeDeclaredByteLength,
       decode:state.decode,retries:state.retries,attempt:state.attempt,elapsedMs:state.elapsedMs??Math.max(0,Math.round(performance.now()-state.started)),
       result:state.result };
   }
@@ -28,8 +30,8 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
   function begin() {
     const id=++serial;
     state={id,started:performance.now(),timestamp:new Date().toISOString(),phase:'request',signedIn,
-      httpStatus:null,errorCategory:null,responseMime:null,declaredByteLength:null,byteLength:null,route:'not-observed',
-      nativeStatus:null,nativePhase:null,nativeError:null,decode:{ok:null,width:null,height:null},retries:attempts++,attempt:attempts,result:'pending'};
+      httpStatus:null,errorCategory:null,responseMime:null,declaredByteLength:'missing',byteLength:null,magicType:'unknown',normalizedMime:null,route:'not-observed',
+      nativeStatus:null,nativePhase:null,nativeError:null,nativeMime:'missing',nativeDeclaredByteLength:'missing',decode:{ok:null,width:null,height:null},retries:attempts++,attempt:attempts,result:'pending'};
     queueRender();return id;
   }
   function update(id, fields) {
@@ -52,7 +54,8 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
     const length=h.get('content-length');
     Object.assign(native,{route,status:nStatus,phase:nativePhases.has(nPhase)?nPhase:null,error:categories.has(nError)?nError:null});
     update(id,{phase:'response-validation',httpStatus:response.status,responseMime:readMime(h.get('content-type')),
-      declaredByteLength:length!=null&&/^\d{1,12}$/.test(length)?safeInt(length):null,route,
+      declaredByteLength:readLength(length),route,
+      nativeMime:readMime(h.get('X-Stemma-Photo-Content-Type')),nativeDeclaredByteLength:readLength(h.get('X-Stemma-Photo-Content-Length')),
       nativeStatus:native.status,nativePhase:native.phase,nativeError:native.error,
       ...(response.status===401?{signedIn:false}:{})});
     if(!response.ok && response.status!==404) {
@@ -67,6 +70,7 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
   }
   function storeError(id,error) {
     if(!state||state.id!==id)return;
+    if(state.result!=='failure' && error?.photoCategory)return fail(id,error.photoCategory,error.photoPhase);
     // Match only known validation conditions; never retain/copy raw error text.
     const text=String(error?.message||'').toLowerCase();
     if(/timed out/.test(text))return fail(id,'timeout','timeout');
@@ -80,9 +84,20 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
     if(error?.name==='AbortError')return fail(id,'aborted','request');
     return fail(id,state.httpStatus===200?'body-read':'validation',state.httpStatus===200?'body-read':'response-validation');
   }
+  function validation(id, fields) {
+    const safe={};
+    if(stages.has(fields.phase))safe.phase=fields.phase;
+    if('responseMime' in fields)safe.responseMime=readMime(fields.responseMime);
+    if('declaredByteLength' in fields)safe.declaredByteLength=readLength(fields.declaredByteLength);
+    if('byteLength' in fields)safe.byteLength=safeInt(fields.byteLength);
+    if(magicTypes.has(fields.magicType))safe.magicType=fields.magicType;
+    if('normalizedMime' in fields)safe.normalizedMime=imageMimes.has(fields.normalizedMime)?fields.normalizedMime:null;
+    if(fields.decode)safe.decode={ok:fields.decode.ok===true,width:safeInt(fields.decode.width),height:safeInt(fields.decode.height)};
+    update(id,safe);
+  }
   function blob(id, value) {
     if(value===null){fail(id,'not-found','http');return;}
-    update(id,{phase:'image-decode',byteLength:safeInt(value?.size),responseMime:readMime(value?.type),result:'pending'});
+    update(id,{phase:'image-decode',byteLength:safeInt(value?.size),normalizedMime:imageMimes.has(value?.type)?value.type:null,result:'pending'});
   }
   function imageResult(image, ok) {
     if(!state || !['overview-profile-photo','profile-photo-image','student-photo-preview'].includes(image?.id))return;
@@ -142,6 +157,7 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
       // A per-call receiver associates the existing fetch options with this attempt.
       // It adds no request headers/fields and does not mutate the real store or its fetch.
       const receiver=Object.create(this),fetch=this.fetch;
+      receiver.photoObserver=fields=>validation(id,fields);
       receiver.fetch=(input,options)=>{if(options && typeof options==='object')requestIds.set(options,id);return fetch.call(this,input,options);};
       try{const value=await get.apply(receiver,args);blob(id,value);return value;}
       catch(error){storeError(id,error);throw error;}

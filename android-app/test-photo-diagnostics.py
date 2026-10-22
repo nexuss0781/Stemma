@@ -19,7 +19,7 @@ BASE_URL = f"http://127.0.0.1:{PORT}"
 RESULT_PATH = ROOT / "photo-diagnostics-results.json"
 PRIVATE_EMAIL = "private-owner@example.invalid"
 PRIVATE_STUDENT_ID = "PRIVATE-STUDENT-ID-7429"
-SECRET_MIME = "application/x-secret-TOKEN"
+SECRET_MIME = "application/octet-stream; trace=secret-TOKEN"
 SECRET_BODY = b'{"private":"BODY-SECRET-TOKEN"}'
 SECRET_HEADER = "private-header-secret-TOKEN"
 
@@ -108,10 +108,10 @@ def assert_safe_snapshot(snapshot: dict):
         "appVersion", "versionCode", "timestamp", "phase", "endpoint", "signedIn",
         "httpStatus", "errorCategory", "responseMime", "declaredByteLength", "byteLength",
         "route", "nativeStatus", "nativePhase", "nativeError", "decode", "retries",
-        "attempt", "elapsedMs", "result",
+        "attempt", "elapsedMs", "result", "magicType", "normalizedMime", "nativeMime", "nativeDeclaredByteLength",
     }
     assert set(snapshot) == expected_keys, snapshot
-    assert snapshot["appVersion"] == "1.0.4" and snapshot["versionCode"] == 5, snapshot
+    assert snapshot["appVersion"] == "1.0.5" and snapshot["versionCode"] == 6, snapshot
     assert snapshot["endpoint"] == "/api/student-profile/photo", snapshot
     assert PRIVATE_EMAIL not in json.dumps(snapshot)
     assert PRIVATE_STUDENT_ID not in json.dumps(snapshot)
@@ -172,8 +172,8 @@ def get_report(page):
     return panel, text, snapshot
 
 
-def assert_success_both_views(browser):
-    context, page = open_authenticated_page(browser, [{"status": 200, "mime": "image/png", "body": PNG_31X23}])
+def assert_success_both_views(browser, mime="image/png", headers=None):
+    context, page = open_authenticated_page(browser, [{"status": 200, "mime": mime, "body": PNG_31X23, "headers":headers or {}}])
     page.wait_for_function("()=>{const i=document.getElementById('overview-profile-photo');return i&&i.complete&&i.naturalWidth===31&&i.naturalHeight===23}")
     overview = page.evaluate("({src:document.getElementById('overview-profile-photo').getAttribute('src'),hidden:document.getElementById('overview-profile-photo').hidden,snapshot:window.StemmaPhotoDiagnostics.snapshot()})")
     assert not overview["hidden"] and overview["src"], overview
@@ -186,6 +186,12 @@ def assert_success_both_views(browser):
     snap = page.evaluate("window.StemmaPhotoDiagnostics.snapshot()")
     assert snap["result"] == "success" and snap["decode"] == {"ok": True, "width": 31, "height": 23}, snap
     assert snap["byteLength"] == len(PNG_31X23), snap
+    assert snap["magicType"]=="PNG" and snap["normalizedMime"]=="image/png",snap
+    assert snap["responseMime"]==(mime.split(';')[0].lower() if mime else "missing"),snap
+    assert_no_device_reads_or_mutations(page,"valid-image-"+str(mime))
+    if headers:
+        assert snap["nativeMime"]=="image/jpg" and snap["nativeDeclaredByteLength"]=="missing",snap
+        assert snap["route"]=="native-proxy" and snap["responseMime"]=="application/octet-stream",snap
     assert all(r["method"] == "GET" for r in local_requests), local_requests
     context.close()
     return {"overviewDecoded31x23": True, "profileDecoded31x23": True, "failurePanelHidden": True}
@@ -235,6 +241,11 @@ def main():
                 local_requests.clear()
 
                 results["successfulImage"] = assert_success_both_views(browser)
+                results["octetStreamRecoveredBothViews"]=assert_success_both_views(browser,"application/octet-stream")
+                results["missingMimeRecoveredBothViews"]=assert_success_both_views(browser,None)
+                results["unexpectedMimeRecoveredBothViews"]=assert_success_both_views(browser,"binary/octet-stream")
+                results["duplicateMimeRecoveredBothViews"]=assert_success_both_views(browser,"image/png, image/png")
+                results["upstreamMetadataPreserved"]=assert_success_both_views(browser,"application/octet-stream",{"X-Stemma-Photo-Route":"native-proxy","X-Stemma-Photo-Status":"200","X-Stemma-Photo-Phase":"headers","X-Stemma-Photo-Error":"none","X-Stemma-Photo-Content-Type":"image/jpg","X-Stemma-Photo-Content-Length":"missing"})
 
                 local_requests.clear()
                 auth_snapshot = assert_failure_case(browser, "401", {"status": 401, "mime": "text/plain", "body": SECRET_BODY}, 401, "http", "text/plain")
@@ -252,8 +263,8 @@ def main():
                 unsupported = assert_failure_case(browser, "unsupported-mime", {
                     "status": 200, "mime": SECRET_MIME, "body": SECRET_BODY,
                     "headers": {"X-Stemma-Photo-Route": "native-proxy", "X-Stemma-Photo-Status": "not-a-status", "X-Stemma-Photo-Phase": "untrusted-phase", "X-Stemma-Photo-Error": SECRET_HEADER},
-                }, 200, "mime", "other", {"route": "native-proxy", "nativeStatus": None, "nativePhase": None, "nativeError": None})
-                assert unsupported["responseMime"] == "other"
+                }, 200, "non-image", "application/octet-stream", {"route": "native-proxy", "nativeStatus": None, "nativePhase": None, "nativeError": None})
+                assert unsupported["responseMime"] == "application/octet-stream" and unsupported["magicType"]=="unknown"
                 results["unsupportedMimeAndHostileHeaders"] = {"mimeSanitized": True, "untrustedHeadersDiscarded": True}
 
                 local_requests.clear()
@@ -261,13 +272,19 @@ def main():
                     "status": 200, "mime": "image/png", "body": PNG_31X23,
                     "headers": {"Content-Length": "not-a-length-TOKEN"},
                 }, 200, "content-length", "image/png")
-                assert bad_length["declaredByteLength"] is None, bad_length
-                results["invalidContentLength"] = {"invalidValueNotCopied": True, "declaredLengthNull": True}
+                assert bad_length["declaredByteLength"] == "invalid", bad_length
+                results["invalidContentLength"] = {"invalidValueNotCopied": True, "declaredLengthInvalid": True}
 
                 local_requests.clear()
-                corrupt = assert_failure_case(browser, "corrupt-image", {"status": 200, "mime": "image/png", "body": b"RAW-ERROR-BODY-TOKEN-not-an-image"}, 200, "image-decode", "image/png")
+                corrupt = assert_failure_case(browser, "corrupt-image", {"status": 200, "mime": "image/png", "body": PNG_31X23[:33]+b"RAW-ERROR-BODY-TOKEN-corrupt"}, 200, "corrupt-image", "image/png")
                 assert corrupt["decode"]["ok"] is False, corrupt
                 results["corruptImageDecode"] = {"actualDecodeFailure": True, "decode": corrupt["decode"]}
+                non_image=assert_failure_case(browser,"html-spoofed-image",{"status":200,"mime":"image/png","body":b"<html><body>RAW-ERROR-BODY-TOKEN login</body></html>"},200,"non-image","image/png")
+                assert non_image["magicType"]=="unknown" and non_image["phase"]=="signature-validation"
+                results["htmlRejectedBeforeDecode"]=True
+                unsupported_image=assert_failure_case(browser,"unsupported-gif",{"status":200,"mime":"image/gif","body":b"GIF89a"+b"\x00"*20},200,"mime","image/gif")
+                assert unsupported_image["magicType"]=="GIF" and unsupported_image["decode"]["ok"] is None
+                results["recognizedUnsupportedGifRejected"]=True
 
                 local_requests.clear()
                 aborted = assert_failure_case(browser, "network-abort", {"abort": "failed"}, None, "network")

@@ -69,7 +69,9 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
                 }
             }
             if(cookieUpdated) cookieManager.flush();
-            String contentType=conn.getContentType(); if(contentType==null)contentType="application/octet-stream";
+            String upstreamContentType=conn.getContentType();
+            String upstreamContentLength=conn.getHeaderField("Content-Length");
+            String contentType=upstreamContentType; if(contentType==null)contentType="application/octet-stream";
             String mime=contentType.split(";")[0];
             Map<String,String> headers=new HashMap<>();
             // WebView's MIME argument alone is not a fetch-visible Content-Type
@@ -78,7 +80,13 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
             headers.put("Content-Type",contentType);
             for(String name:new String[]{"Content-Length","Content-Range","Accept-Ranges","ETag","Last-Modified","Content-Disposition"}) { String value=conn.getHeaderField(name); if(value!=null)headers.put(name,value); }
             headers.put("Cache-Control","private, no-store"); headers.put("X-Content-Type-Options","nosniff");
-            if(photo) addPhotoDiagnostics(headers,backendStatus,"none",backendStatus>=400?"http":"headers");
+            if(photo) {
+                addPhotoDiagnostics(headers,backendStatus,"none",backendStatus>=400?"http":"headers");
+                String safeContentType=normalizePhotoContentType(upstreamContentType);
+                String safeContentLength=normalizePhotoContentLength(upstreamContentLength);
+                headers.put("X-Stemma-Photo-Content-Type",safeContentType);
+                headers.put("X-Stemma-Photo-Content-Length",safeContentLength);
+            }
             final HttpURLConnection owned=conn;
             phase="body";
             InputStream stream=backendStatus>=400?conn.getErrorStream():conn.getInputStream();
@@ -117,5 +125,35 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
         headers.put("X-Stemma-Photo-Status",Integer.toString(status));
         headers.put("X-Stemma-Photo-Error",error);
         headers.put("X-Stemma-Photo-Phase",phase);
+    }
+
+    static String normalizePhotoContentType(String value) {
+        if(value==null || value.trim().isEmpty())return "missing";
+        if(value.length()>1024)return "invalid";
+        for(int i=0;i<value.length();i++) {
+            char c=value.charAt(i);
+            if(c<0x20 || c==0x7f)return "invalid";
+        }
+        String[] values=value.split(",",-1);
+        if(values.length>4)return "invalid";
+        StringBuilder normalized=new StringBuilder();
+        for(String item:values) {
+            int parameter=item.indexOf(';');
+            String essence=(parameter<0?item:item.substring(0,parameter)).trim();
+            if(!essence.matches("[A-Za-z0-9!#$&^_.+\\-]+/[A-Za-z0-9!#$&^_.+\\-]+"))return "invalid";
+            if(normalized.length()>0)normalized.append(", ");
+            normalized.append(essence.toLowerCase(java.util.Locale.ROOT));
+        }
+        return normalized.length()<=127?normalized.toString():"invalid";
+    }
+
+    static String normalizePhotoContentLength(String value) {
+        if(value==null || value.isEmpty())return "missing";
+        for(int i=0;i<value.length();i++) {
+            char c=value.charAt(i);
+            if((c<0x20 && c!=' ' && c!='\t') || c==0x7f)return "invalid";
+        }
+        String digits=value.trim();
+        return digits.matches("[0-9]{1,12}")?digits:"invalid";
     }
 }

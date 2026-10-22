@@ -8,7 +8,10 @@ const out=path.join(__dirname,'www');
 	async function writeHashed(stem,ext,text){const name=`${stem}.${hash(text)}.${ext}`;await fs.writeFile(path.join(out,name),text);return name;}
 		function replaceOnce(code,needle,replacement,label){const first=code.indexOf(needle);if(first<0||code.indexOf(needle,first+needle.length)>=0)throw new Error(`Android navigation transform anchor missing or ambiguous: ${label}`);return code.slice(0,first)+replacement+code.slice(first+needle.length);}
 		function nativeNavigationTransform(file,code){
-		 if(file==='/profile-photo.js') code+='\nwindow.StemmaPhotoDiagnostics?.installStore(window.AuthenticatedProfilePhotoStore);\n';
+		 if(file==='/profile-photo.js'){
+  code=replaceOnce(code,"        const type = String(response.headers?.get?.('content-type') || '').split(';', 1)[0].trim().toLowerCase();\n        if (!ALLOWED_TYPES.has(type)) throw new Error('The saved profile photo has an unsupported image format.');\n        const contentLength = response.headers?.get?.('content-length');\n        if (contentLength !== null && contentLength !== undefined && contentLength !== '' &&\n            (!/^\\d+$/.test(contentLength) || Number(contentLength) <= 0 || Number(contentLength) > MAX_REMOTE_PHOTO_BYTES)) {\n          throw new Error('The saved profile photo has an invalid or oversized content length.');\n        }\n        // Content-Length can describe compressed wire bytes while Fetch exposes the decoded body.\n        // Enforce the actual delivered-byte cap rather than requiring those lengths to match.\n        return await readRemotePhoto(response, type);",'        return await window.StemmaAndroidPhotoResponse.read(response, {signal, observe:this.photoObserver});','Android byte-signature and decode validation');
+  code+='\nwindow.StemmaPhotoDiagnostics?.installStore(window.AuthenticatedProfilePhotoStore);\n';
+ }
 		 if(file==='/app.js'){
   code=replaceOnce(code,'function bindSwipeNavigation(element) {','function bindSwipeNavigation(element) {\n  return; // Android fixed-sequence gestures own top-level navigation.','disable legacy Android route swipes');
 		  code=replaceOnce(code,'    const remoteBlob = await getAuthenticatedPhotoStore().get();','    window.StemmaPhotoDiagnostics?.context({signedIn:Boolean(googleAuthenticated && profilePhotoAccountKey)});\n    const remoteBlob = await getAuthenticatedPhotoStore().get();','photo diagnostic authentication context');
@@ -55,6 +58,7 @@ const out=path.join(__dirname,'www');
 	 return code;
 	}
 	async function main(){
+ await fs.cp(path.join(__dirname,'native-src'),path.join(__dirname,'android','app','src','main','java','app','stemma','mobile'),{recursive:true});
  await fs.rm(out,{recursive:true,force:true});await fs.mkdir(out,{recursive:true});
  await fs.cp(path.join(source,'assets'),path.join(out,'assets'),{recursive:true});
  await fs.cp(path.join(source,'system-apps'),path.join(out,'system-apps'),{recursive:true});

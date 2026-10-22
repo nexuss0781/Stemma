@@ -1,6 +1,16 @@
-# Stemma Android 1.0.4
+# Stemma Android 1.0.5
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.4`, version code `5`. This directory does not change or deploy the website. The Java files in `native-src/` mirror the Android app's Java sources.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.5`, version code `6`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+
+## Authenticated photo validation (1.0.5)
+
+The authenticated 1.0.4 report established a 200 native response rejected by the frontend MIME gate before body read or decode. Its `other` label cannot reveal the exact upstream media type. This patch changes only the Android-bundled store: it reads at most 1 MiB, requires a PNG/JPEG/WebP signature and a real browser decode, and normalizes the returned Blob type from validated bytes instead of trusting a missing, generic, duplicate or incorrect MIME header. GIF is recognized for diagnosis but remains unsupported, as in the existing server format policy. HTML, SVG and arbitrary data are not rendered.
+
+Declared lengths must be positive and at most 1 MiB when present; the streamed byte count is independently capped and oversize reads are cancelled. Images are checked before decode where headers expose dimensions, and after decode, with a maximum side of 8,192 pixels and 16,777,216 total pixels. Decoding has a five-second deadline within the existing request timeout. Streamless responses fail closed instead of being buffered without a bound. Temporary decode object URLs are revoked; no bytes are cached or logged. Account authorization, cookie transport, no-store/offline rules, uploads and device-photo fallback remain unchanged.
+
+Diagnostics separately report safe actual fetch/upstream MIME essences, inferred MIME, magic type, declared length (`missing`/`invalid` when appropriate), actual byte count and validation/decode phase. MIME parameters, URLs, bodies and arbitrary error messages are excluded. `mime` with a known unsupported signature, `non-image` with an unknown signature, and `corrupt-image` after a supported signature fails decode are distinct outcomes.
+
+`python3 test-photo-response.py` tests real PNG/JPEG/WebP bytes, before/after strict-MIME rejection, missing/octet-stream/mismatched headers, HTML and corrupt bodies, cancellation, dimensions and size limits. `python3 test-photo-diagnostics.py` exercises both full-app photo views, the failure panel, privacy and retries with synthetic account data. These are not physical-phone or authenticated-owner-account tests; this release does not claim the owner's photo is visible.
 
 ## Smooth swipe navigation
 
@@ -12,11 +22,11 @@ After bundling, `python3 test-native-swipe-browser.py` runs trusted touch gestur
 
 ## In-app photo diagnostics
 
-Profile now shows an expandable **Photo diagnostics** panel beneath a photo failure message. **Copy details** copies the current attempt's safe JSON report. It records the actual fetch/native proxy, validation and image load/error results: phase, fixed endpoint path, signed-in boolean, HTTP/native status, MIME, declared/delivered size when known, native error category, decode dimensions, retries, timestamp and app version. Unknown fields remain null. The panel disappears after a successfully decoded account photo.
+Profile now shows an expandable **Photo diagnostics** panel beneath a photo failure message. **Copy details** copies the current attempt's safe JSON report. It records the actual fetch/native proxy, validation and image load/error results: phase, fixed endpoint path, signed-in boolean, HTTP/native status, MIME, declared/delivered size when known, native error category, decode dimensions, retries, timestamp and app version. Unknown decode fields remain null; absent or malformed MIME/declared lengths use explicit safe labels. The panel disappears after a successfully decoded account photo.
 
 Reports are memory-only, reset across account changes and never include cookie values, tokens, account identifiers, response bodies, image bytes, blob URLs or query strings. Only allowlisted categories/fields are displayed; raw exception messages are not copied. Native diagnostics are restricted to the account-photo GET. Android automatic restore never imports a device/gallery photo, including on 404. There is no new upload, automatic retry or network diagnostic probe.
 
-This release adds observability, not a claimed fix for the owner's photo. Run `python3 test-photo-diagnostics.py` after bundling for success, failure, retry, Copy details and privacy regressions. Browser tests use fixtures, not the owner's account. A physical-device authenticated report is still required to establish that account's failure.
+The 1.0.4 release added observability; 1.0.5 corrects the now-confirmed pre-body MIME gate without claiming device/account verification. Run `python3 test-photo-diagnostics.py` after bundling for success, failure, retry, Copy details and privacy regressions. Browser tests use fixtures, not the owner's account. A physical-device authenticated test is still required to confirm the owner's photo can be displayed.
 
 ## Existing photo transport (inherited from 1.0.3)
 

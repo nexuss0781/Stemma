@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+from io import BytesIO
 import json
 import os
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent
@@ -13,6 +15,19 @@ WWW = ROOT / "www"
 PORT = int(os.environ.get("PROFILE_PHOTO_TEST_PORT", "8974"))
 BASE_URL = f"http://127.0.0.1:{PORT}"
 RESULT_PATH = ROOT / "profile-photo-results.json"
+
+
+def encode_fixture(format_name: str, color: tuple[int, int, int]) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), color).save(output, format=format_name)
+    return output.getvalue()
+
+
+FIXTURES = {
+    "image/png": encode_fixture("PNG", (220, 30, 40)),
+    "image/jpeg": encode_fixture("JPEG", (30, 210, 40)),
+    "image/webp": encode_fixture("WEBP", (30, 40, 220)),
+}
 
 # Reuse the repository's normal bundled-shell/native-plugin test mock. The
 # added branch models the Capacitor generic remote GET proxy: it returns the
@@ -45,10 +60,10 @@ INIT += r'''
 window.__genericPhotoProxyCalls=[];
 window.__genericPhotoProxy=async(url,init={})=>{
   window.__genericPhotoProxyCalls.push({url:String(url),method:(init.method||'GET').toUpperCase()});
-  return new Response(new Uint8Array(window.__genericPhotoBytes||[71,69,78,69,82,73,67]),{status:200});
+  return new Response(new Uint8Array(window.__genericPhotoBytes||[]),{status:200});
 };
-window.__genericPhotoBytes=[71,69,78,69,82,73,67];
 '''
+INIT += "window.__genericPhotoBytes=" + json.dumps(list(FIXTURES["image/png"])) + ";"
 
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, _format, *_args):
@@ -69,11 +84,6 @@ def serve_www():
 local_requests: list[dict] = []
 response_plan: list[dict] = []
 plan_lock = threading.Lock()
-FIXTURES = {
-    "image/png": bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01]),
-    "image/jpeg": bytes([0xFF, 0xD8, 0xFF, 0xE0, 0x10, 0x20, 0xFF, 0xD9]),
-    "image/webp": b"RIFF\x04\x00\x00\x00WEBP",
-}
 
 
 def set_plan(*entries: dict):

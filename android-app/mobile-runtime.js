@@ -6,10 +6,12 @@ import { Network } from '@capacitor/network';
 import { Preferences } from '@capacitor/preferences';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { installPhotoDiagnostics } from './photo-diagnostics.js';
+import { installPhotoResponseValidation } from './photo-response.js';
 import appPackage from './package.json';
 
+installPhotoResponseValidation(window);
 const ORIGIN = 'https://stemma.wasmer.app';
-const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:5});
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:6});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
   requestAccess: options=>nativeMedia.requestAccess(options),

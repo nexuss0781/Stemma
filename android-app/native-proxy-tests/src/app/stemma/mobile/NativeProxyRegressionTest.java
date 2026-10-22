@@ -43,6 +43,14 @@ public final class NativeProxyRegressionTest {
         verifyImage(client, "image/png", "image/png");
         verifyImage(client, "image/jpeg", "image/jpeg; charset=binary");
         verifyImage(client, "image/webp", "image/webp");
+        verifyMissingUpstreamMime(client);
+        verifyOctetStreamDiagnostic(client);
+        verifyUnexpectedImageMime(client);
+        verifyDuplicateMimeDiagnostic(client);
+        verifyMimeParameterPrivacy(client);
+        verifyInvalidMimeDiagnostics(client);
+        verifyMissingLengthDiagnostic(client);
+        verifyInvalidLengthDiagnostics(client);
         verifyErrorStatus(client, 401, "Unauthorized");
         verifyErrorStatus(client, 503, "Service Unavailable");
         verifyRedirectBlocked(client);
@@ -52,7 +60,7 @@ public final class NativeProxyRegressionTest {
         verifyNonPhotoHasNoDiagnostics(client);
         verifyDelegation(client, "https://example.com/api/student-profile/photo", "GET");
         verifyDelegation(client, PHOTO, "POST");
-        System.out.println("PASS: native proxy JVM regression harness (12 scenarios)");
+        System.out.println("PASS: native proxy JVM regression harness (20 scenarios; 8 new photo-header scenarios)");
     }
 
     private static void verifyImage(StemmaBackendClient client, String expectedMime, String responseType) throws Exception {
@@ -62,6 +70,7 @@ public final class NativeProxyRegressionTest {
         check(response.statusCode == 200, "image status preserved");
         check(expectedMime.equals(response.mimeType), "MIME type should be " + expectedMime + ", got " + response.mimeType);
         check(responseType.equals(response.responseHeaders.get("Content-Type")), "explicit Content-Type header is preserved: " + responseType);
+        check(expectedMime.equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "normalized original MIME diagnostic");
         check("private, no-store".equals(response.responseHeaders.get("Cache-Control")), "no-store header present");
         check("nosniff".equals(response.responseHeaders.get("X-Content-Type-Options")), "nosniff header present");
         verifyDiagnostic(response, "200", "none", "headers");
@@ -71,6 +80,73 @@ public final class NativeProxyRegressionTest {
         check(!lastConnection.disconnected, "connection remains open until response stream closes");
         response.data.close();
         check(lastConnection.disconnected, "connection disconnects when response stream closes");
+    }
+
+    private static void verifyMissingUpstreamMime(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", null, IMAGE_BYTES);
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check("application/octet-stream".equals(response.responseHeaders.get("Content-Type")), "missing upstream MIME still receives existing fallback Content-Type");
+        check("application/octet-stream".equals(response.mimeType), "existing MIME fallback is unchanged");
+        check("missing".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "missing original MIME is explicit");
+        check("missing".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Length")), "missing original length is explicit");
+        response.data.close();
+    }
+
+    private static void verifyOctetStreamDiagnostic(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", "application/octet-stream", IMAGE_BYTES, "123456789012");
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check("application/octet-stream".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "valid octet-stream is reported as received");
+        check("123456789012".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Length")), "12-digit content length is accepted");
+        response.data.close();
+    }
+
+    private static void verifyUnexpectedImageMime(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", "image/jpg", IMAGE_BYTES);
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check("image/jpg".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "unexpected image/jpg remains visible for diagnosis");
+        response.data.close();
+    }
+
+    private static void verifyDuplicateMimeDiagnostic(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", "image/png, IMAGE/JPEG", IMAGE_BYTES);
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check("image/png, image/jpeg".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "comma-separated duplicate MIME values normalize safely");
+        response.data.close();
+    }
+
+    private static void verifyMimeParameterPrivacy(StemmaBackendClient client) throws Exception {
+        String original = "Image/PNG; boundary=private-token";
+        nextResponse = new ResponseSpec(200, "OK", original, IMAGE_BYTES);
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check(original.equals(response.responseHeaders.get("Content-Type")), "actual upstream Content-Type remains unchanged");
+        check("image/png".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "diagnostic strips MIME parameters and lowercases essence");
+        check(!response.responseHeaders.get("X-Stemma-Photo-Content-Type").contains("private-token"), "parameter values are not exposed");
+        response.data.close();
+    }
+
+    private static void verifyInvalidMimeDiagnostics(StemmaBackendClient client) throws Exception {
+        for(String invalid : new String[] {"image/" + "bad\u0001value", "https://example.invalid/photo", "image/png, image/jpeg, image/webp, image/gif, text/plain", "application/" + new String(new char[116]).replace((char)0,'a')}) {
+            nextResponse = new ResponseSpec(200, "OK", invalid, IMAGE_BYTES);
+            WebResourceResponse response = intercept(client, PHOTO, "GET");
+            check("invalid".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Type")), "invalid original MIME is explicit without exposing raw values");
+            response.data.close();
+        }
+    }
+
+    private static void verifyMissingLengthDiagnostic(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", "image/png", IMAGE_BYTES);
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
+        check("missing".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Length")), "absent upstream length is explicit");
+        response.data.close();
+    }
+
+    private static void verifyInvalidLengthDiagnostics(StemmaBackendClient client) throws Exception {
+        for(String invalid : new String[] {"1234567890123", "12bytes", "12\u0001"}) {
+            nextResponse = new ResponseSpec(200, "OK", "image/png", IMAGE_BYTES, invalid);
+            WebResourceResponse response = intercept(client, PHOTO, "GET");
+            check("invalid".equals(response.responseHeaders.get("X-Stemma-Photo-Content-Length")), "invalid length is explicit without exposing raw values");
+            response.data.close();
+        }
     }
 
     private static void verifyErrorStatus(StemmaBackendClient client, int status, String reason) throws Exception {
@@ -167,10 +243,14 @@ public final class NativeProxyRegressionTest {
         public Map<String,String> getRequestHeaders() { return Collections.emptyMap(); }
     }
     private static final class ResponseSpec {
-        final int status; final String reason, contentType; final byte[] body; final IOException connectFailure;
-        ResponseSpec(int status, String reason, String contentType, byte[] body) { this(status,reason,contentType,body,null); }
+        final int status; final String reason, contentType, contentLength; final byte[] body; final IOException connectFailure;
+        ResponseSpec(int status, String reason, String contentType, byte[] body) { this(status,reason,contentType,body,null,null); }
+        ResponseSpec(int status, String reason, String contentType, byte[] body, String contentLength) { this(status,reason,contentType,body,contentLength,null); }
         ResponseSpec(int status, String reason, String contentType, byte[] body, IOException connectFailure) {
-            this.status=status; this.reason=reason; this.contentType=contentType; this.body=body; this.connectFailure=connectFailure;
+            this(status,reason,contentType,body,null,connectFailure);
+        }
+        ResponseSpec(int status, String reason, String contentType, byte[] body, String contentLength, IOException connectFailure) {
+            this.status=status; this.reason=reason; this.contentType=contentType; this.contentLength=contentLength; this.body=body; this.connectFailure=connectFailure;
         }
     }
     private static final class MockHttpsConnection extends HttpURLConnection {
@@ -196,7 +276,7 @@ public final class NativeProxyRegressionTest {
         @Override public int getResponseCode() { return response.status; }
         @Override public String getResponseMessage() { return response.reason; }
         @Override public String getContentType() { return response.contentType; }
-        @Override public String getHeaderField(String name) { return null; }
+        @Override public String getHeaderField(String name) { return "Content-Length".equalsIgnoreCase(name) ? response.contentLength : null; }
         @Override public Map<String,List<String>> getHeaderFields() { return Collections.emptyMap(); }
         @Override public InputStream getInputStream() { return new ByteArrayInputStream(response.body); }
         @Override public InputStream getErrorStream() { return new ByteArrayInputStream(response.body); }
