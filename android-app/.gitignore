@@ -1,0 +1,17 @@
+/node_modules
+www/
+bundle-manifest.json
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/src/main/assets/
+android/capacitor-cordova-android-plugins/
+__pycache__/
+*.log
+*.apk
+*.aab
+*.jks
+*.keystore
+*-results.json
+signing/*
+!signing/release.properties.example
