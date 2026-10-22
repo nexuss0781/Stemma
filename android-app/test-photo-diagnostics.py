@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import json
+import io
+from PIL import Image
 import os
 import struct
 import threading
@@ -63,6 +65,19 @@ def make_png(width: int, height: int) -> bytes:
 
 PNG_31X23 = make_png(31, 23)
 
+def make_webp_15284():
+    out=io.BytesIO();Image.new("RGB",(31,23),(36,126,208)).save(out,format="WEBP",quality=85)
+    data=out.getvalue();padding=15284-len(data)-8
+    assert padding>=0 and padding%2==0
+    result=data+b"JUNK"+struct.pack("<I",padding)+bytes(padding)
+    result=result[:4]+struct.pack("<I",len(result)-8)+result[8:]
+    with Image.open(io.BytesIO(result)) as image: assert image.size==(31,23)
+    assert len(result)==15284
+    return result
+
+WEBP_15284=make_webp_15284()
+
+
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, _format, *_args):
         pass
@@ -108,10 +123,10 @@ def assert_safe_snapshot(snapshot: dict):
         "appVersion", "versionCode", "timestamp", "phase", "endpoint", "signedIn",
         "httpStatus", "errorCategory", "responseMime", "declaredByteLength", "byteLength",
         "route", "nativeStatus", "nativePhase", "nativeError", "decode", "retries",
-        "attempt", "elapsedMs", "result", "magicType", "normalizedMime", "nativeMime", "nativeDeclaredByteLength",
+        "attempt", "elapsedMs", "result", "magicType", "normalizedMime", "nativeMime", "nativeDeclaredByteLength", "headerValueCounts",
     }
     assert set(snapshot) == expected_keys, snapshot
-    assert snapshot["appVersion"] == "1.0.5" and snapshot["versionCode"] == 6, snapshot
+    assert snapshot["appVersion"] == "1.0.6" and snapshot["versionCode"] == 7, snapshot
     assert snapshot["endpoint"] == "/api/student-profile/photo", snapshot
     assert PRIVATE_EMAIL not in json.dumps(snapshot)
     assert PRIVATE_STUDENT_ID not in json.dumps(snapshot)
@@ -172,8 +187,8 @@ def get_report(page):
     return panel, text, snapshot
 
 
-def assert_success_both_views(browser, mime="image/png", headers=None):
-    context, page = open_authenticated_page(browser, [{"status": 200, "mime": mime, "body": PNG_31X23, "headers":headers or {}}])
+def assert_success_both_views(browser, mime="image/png", headers=None, body=PNG_31X23, magic="PNG", normalized="image/png"):
+    context, page = open_authenticated_page(browser, [{"status": 200, "mime": mime, "body": body, "headers":headers or {}}])
     page.wait_for_function("()=>{const i=document.getElementById('overview-profile-photo');return i&&i.complete&&i.naturalWidth===31&&i.naturalHeight===23}")
     overview = page.evaluate("({src:document.getElementById('overview-profile-photo').getAttribute('src'),hidden:document.getElementById('overview-profile-photo').hidden,snapshot:window.StemmaPhotoDiagnostics.snapshot()})")
     assert not overview["hidden"] and overview["src"], overview
@@ -185,13 +200,20 @@ def assert_success_both_views(browser, mime="image/png", headers=None):
     assert page.locator("details[data-photo-diagnostics],.student-profile-notice").count() == 0
     snap = page.evaluate("window.StemmaPhotoDiagnostics.snapshot()")
     assert snap["result"] == "success" and snap["decode"] == {"ok": True, "width": 31, "height": 23}, snap
-    assert snap["byteLength"] == len(PNG_31X23), snap
-    assert snap["magicType"]=="PNG" and snap["normalizedMime"]=="image/png",snap
+    assert snap["byteLength"] == len(body), snap
+    assert snap["declaredByteLength"]==len(body) and snap["headerValueCounts"]["responseContentLength"]==1,snap
+    assert snap["magicType"]==magic and snap["normalizedMime"]==normalized,snap
     assert snap["responseMime"]==(mime.split(';')[0].lower() if mime else "missing"),snap
     assert_no_device_reads_or_mutations(page,"valid-image-"+str(mime))
     if headers:
-        assert snap["nativeMime"]=="image/jpg" and snap["nativeDeclaredByteLength"]=="missing",snap
-        assert snap["route"]=="native-proxy" and snap["responseMime"]=="application/octet-stream",snap
+        assert snap["nativeMime"]==headers.get("X-Stemma-Photo-Content-Type"),snap
+        expected_length=headers.get("X-Stemma-Photo-Content-Length","missing")
+        assert snap["nativeDeclaredByteLength"]==(int(expected_length) if expected_length.isdigit() else expected_length),snap
+        assert snap["route"]=="native-proxy",snap
+        for suffix,key in [("Type","nativeContentType"),("Length","nativeContentLength")]:
+            value=headers.get("X-Stemma-Photo-Content-"+suffix+"-Values")
+            if value is not None:assert snap["headerValueCounts"][key]==int(value),snap
+    assert snap["headerValueCounts"]["responseContentType"]==(mime.count(',')+1 if mime else 0),snap
     assert all(r["method"] == "GET" for r in local_requests), local_requests
     context.close()
     return {"overviewDecoded31x23": True, "profileDecoded31x23": True, "failurePanelHidden": True}
@@ -246,6 +268,15 @@ def main():
                 results["unexpectedMimeRecoveredBothViews"]=assert_success_both_views(browser,"binary/octet-stream")
                 results["duplicateMimeRecoveredBothViews"]=assert_success_both_views(browser,"image/png, image/png")
                 results["upstreamMetadataPreserved"]=assert_success_both_views(browser,"application/octet-stream",{"X-Stemma-Photo-Route":"native-proxy","X-Stemma-Photo-Status":"200","X-Stemma-Photo-Phase":"headers","X-Stemma-Photo-Error":"none","X-Stemma-Photo-Content-Type":"image/jpg","X-Stemma-Photo-Content-Length":"missing"})
+
+                native_headers={"X-Stemma-Photo-Route":"native-proxy","X-Stemma-Photo-Status":"200","X-Stemma-Photo-Phase":"headers","X-Stemma-Photo-Error":"none","X-Stemma-Photo-Content-Type":"image/webp","X-Stemma-Photo-Content-Length":"15284","X-Stemma-Photo-Content-Type-Values":"1","X-Stemma-Photo-Content-Length-Values":"1"}
+                results["webp15284DecodesBothViews"]=assert_success_both_views(browser,"image/webp",native_headers,WEBP_15284,"WebP","image/webp")
+                duplicate_upstream={**native_headers,"X-Stemma-Photo-Content-Type":"image/webp, image/webp","X-Stemma-Photo-Content-Type-Values":"2","X-Stemma-Photo-Content-Length-Values":"2"}
+                results["upstreamDuplicatesCanonicalOnOutput"]=assert_success_both_views(browser,"image/webp",duplicate_upstream,WEBP_15284,"WebP","image/webp")
+                owner=assert_failure_case(browser,"legacy105-duplicated-header-report",{"status":200,"mime":"image/webp, image/webp","body":WEBP_15284,"headers":{**native_headers,"Content-Length":"15284, 15284"}},200,"content-length","image/webp, image/webp")
+                assert owner["headerValueCounts"]=={"responseContentType":2,"responseContentLength":2,"nativeContentType":1,"nativeContentLength":1},owner
+                assert owner["byteLength"] is None and owner["declaredByteLength"]=="invalid",owner
+                results["legacy105FailureNowIdentifiesDuplicateCounts"]=True
 
                 local_requests.clear()
                 auth_snapshot = assert_failure_case(browser, "401", {"status": 401, "mime": "text/plain", "body": SECRET_BODY}, 401, "http", "text/plain")

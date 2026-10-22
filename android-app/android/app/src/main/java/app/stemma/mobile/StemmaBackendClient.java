@@ -8,6 +8,7 @@ import android.webkit.WebView;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeWebViewClient;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,6 +19,8 @@ import java.net.URL;
 import java.net.UnknownHostException;
 import java.net.ProtocolException;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import javax.net.ssl.SSLException;
@@ -27,7 +30,12 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
     static final String ORIGIN = "https://stemma.wasmer.app";
     private static final String PHOTO_PATH = "/api/student-profile/photo";
 
-    public StemmaBackendClient(Bridge bridge) { super(bridge); }
+    private static final int MAX_PHOTO_BYTES=1024*1024;
+    interface ConnectionFactory { HttpURLConnection open(URL url) throws IOException; }
+    private final ConnectionFactory connections;
+
+    public StemmaBackendClient(Bridge bridge) { this(bridge,url -> (HttpURLConnection)url.openConnection()); }
+    StemmaBackendClient(Bridge bridge,ConnectionFactory connections) { super(bridge);this.connections=connections; }
 
     @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         Uri uri=request.getUrl();
@@ -45,7 +53,7 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
         int backendStatus=-1;
         try {
             URL url=new URL(ORIGIN+uri.getEncodedPath()+(uri.getEncodedQuery()==null?"":"?"+uri.getEncodedQuery()));
-            conn=(HttpURLConnection)url.openConnection();
+            conn=connections.open(url);
             conn.setConnectTimeout(15000); conn.setReadTimeout(45000); conn.setInstanceFollowRedirects(false);
             conn.setRequestProperty("Origin",ORIGIN);
             String cookies=CookieManager.getInstance().getCookie(ORIGIN);
@@ -63,7 +71,9 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
             }
             CookieManager cookieManager=CookieManager.getInstance();
             boolean cookieUpdated=false;
-            for(Map.Entry<String,List<String>> entry:conn.getHeaderFields().entrySet()) {
+            Map<String,List<String>> upstreamFields=conn.getHeaderFields();
+            if(upstreamFields==null)upstreamFields=Collections.emptyMap();
+            for(Map.Entry<String,List<String>> entry:upstreamFields.entrySet()) {
                 if(entry.getKey()!=null && entry.getKey().equalsIgnoreCase("Set-Cookie")) {
                     for(String cookie:entry.getValue()) { cookieManager.setCookie(ORIGIN,cookie); cookieUpdated=true; }
                 }
@@ -74,18 +84,34 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
             String contentType=upstreamContentType; if(contentType==null)contentType="application/octet-stream";
             String mime=contentType.split(";")[0];
             Map<String,String> headers=new HashMap<>();
-            // WebView's MIME argument alone is not a fetch-visible Content-Type
-            // when an explicit response-header map is supplied. Photo validation
-            // must see the account response's actual image MIME type.
-            headers.put("Content-Type",contentType);
-            for(String name:new String[]{"Content-Length","Content-Range","Accept-Ranges","ETag","Last-Modified","Content-Disposition"}) { String value=conn.getHeaderField(name); if(value!=null)headers.put(name,value); }
+            // Chromium creates Content-Type from mimeType and Content-Length from
+            // InputStream.available(), THEN AddHeader() appends the header map.
+            // Photo responses give those singleton headers exactly ONE owner.
+            if(!photo)headers.put("Content-Type",contentType);
+            for(String name:new String[]{"Content-Range","Accept-Ranges","ETag","Last-Modified","Content-Disposition"}) { String value=conn.getHeaderField(name); if(value!=null)headers.put(name,value); }
+            if(!photo && upstreamContentLength!=null)headers.put("Content-Length",upstreamContentLength);
             headers.put("Cache-Control","private, no-store"); headers.put("X-Content-Type-Options","nosniff");
             if(photo) {
+                List<String> typeValues=headerValues(upstreamFields,"Content-Type",upstreamContentType);
+                List<String> lengthValues=headerValues(upstreamFields,"Content-Length",upstreamContentLength);
+                String safeContentType=normalizePhotoContentType(joinBounded(typeValues));
+                String safeContentLength=normalizePhotoContentLengths(lengthValues);
+                mime=canonicalPhotoMime(safeContentType);
                 addPhotoDiagnostics(headers,backendStatus,"none",backendStatus>=400?"http":"headers");
-                String safeContentType=normalizePhotoContentType(upstreamContentType);
-                String safeContentLength=normalizePhotoContentLength(upstreamContentLength);
                 headers.put("X-Stemma-Photo-Content-Type",safeContentType);
                 headers.put("X-Stemma-Photo-Content-Length",safeContentLength);
+                headers.put("X-Stemma-Photo-Content-Type-Values",Integer.toString(headerValueCount(typeValues)));
+                headers.put("X-Stemma-Photo-Content-Length-Values",Integer.toString(headerValueCount(lengthValues)));
+                phase="body";
+                InputStream stream=backendStatus>=400?conn.getErrorStream():conn.getInputStream();
+                byte[] bytes;
+                try(InputStream input=stream) { bytes=readBoundedPhoto(input); }
+                String reason=conn.getResponseMessage(); if(reason==null || reason.trim().isEmpty())reason="Response";
+                conn.disconnect();
+                // A network stream's available() is NOT its total length. A bounded
+                // in-memory stream makes Chromium's generated length byte-exact.
+                // No photo bytes are persisted, cached, logged or sent over JS IPC.
+                return new WebResourceResponse(mime,null,backendStatus,reason,headers,new ByteArrayInputStream(bytes));
             }
             final HttpURLConnection owned=conn;
             phase="body";
@@ -97,11 +123,12 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
         } catch(Exception error) {
             if(conn!=null)conn.disconnect();
             String category=errorCategory(error,phase);
-            return failure(503,"Connection unavailable.",photo,backendStatus,category,phase);
+            return failure(error instanceof PhotoBodyTooLarge?413:503,"Connection unavailable.",photo,backendStatus,category,phase);
         }
     }
 
     private static String errorCategory(Exception error,String phase) {
+        if(error instanceof PhotoBodyTooLarge)return "body-size";
         if(error instanceof UnknownHostException)return "dns";
         if(error instanceof SSLException)return "tls";
         if(error instanceof SocketTimeoutException)return "connect".equals(phase)?"connect-timeout":"read-timeout";
@@ -114,7 +141,6 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
     private WebResourceResponse failure(int status,String message,boolean photo,int backendStatus,String error,String phase) {
         Map<String,String> headers=new HashMap<>();headers.put("Cache-Control","no-store");
         if(photo) {
-            headers.put("Content-Type","text/plain; charset=UTF-8");
             addPhotoDiagnostics(headers,backendStatus,error,phase);
         }
         return new WebResourceResponse("text/plain","UTF-8",status,"Unavailable",headers,new ByteArrayInputStream(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
@@ -125,6 +151,69 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
         headers.put("X-Stemma-Photo-Status",Integer.toString(status));
         headers.put("X-Stemma-Photo-Error",error);
         headers.put("X-Stemma-Photo-Phase",phase);
+    }
+
+    private static final class PhotoBodyTooLarge extends IOException { }
+
+    private static byte[] readBoundedPhoto(InputStream input) throws IOException {
+        if(input==null)return new byte[0];
+        ByteArrayOutputStream output=new ByteArrayOutputStream(16384);
+        byte[] chunk=new byte[8192];int noProgress=0;
+        while(true) {
+            int count=input.read(chunk,0,Math.min(chunk.length,MAX_PHOTO_BYTES+1-output.size()));
+            if(count<0)break;
+            if(count==0){if(++noProgress>16)throw new IOException("Photo stream made no progress.");continue;}
+            noProgress=0;
+            if(output.size()+count>MAX_PHOTO_BYTES)throw new PhotoBodyTooLarge();
+            output.write(chunk,0,count);
+        }
+        return output.toByteArray();
+    }
+
+    private static List<String> headerValues(Map<String,List<String>> fields,String name,String fallback) {
+        List<String> values=new ArrayList<>();
+        for(Map.Entry<String,List<String>> entry:fields.entrySet()) {
+            if(entry.getKey()!=null && entry.getKey().equalsIgnoreCase(name) && entry.getValue()!=null)
+                for(String value:entry.getValue()){if(values.size()>=32)return values;values.add(value==null?"":value);}
+        }
+        if(values.isEmpty() && fallback!=null)values.add(fallback);
+        return values;
+    }
+
+    private static String joinBounded(List<String> values) {
+        if(values.isEmpty())return null;
+        StringBuilder joined=new StringBuilder();
+        for(String value:values){if(value.length()>1024 || joined.length()+value.length()>1024)return "invalid";if(joined.length()>0)joined.append(", ");joined.append(value);}
+        return joined.toString();
+    }
+
+    private static int headerValueCount(List<String> values) {
+        int count=0;
+        for(String value:values){if(value.length()>1024)return 32;count+=value.split(",",-1).length;if(count>=32)return 32;}
+        return count;
+    }
+
+    private static String canonicalPhotoMime(String normalized) {
+        if("missing".equals(normalized) || "invalid".equals(normalized))return "application/octet-stream";
+        String[] values=normalized.split(", ");
+        for(String value:values)if(!values[0].equals(value))return "application/octet-stream";
+        return values[0];
+    }
+
+    private static String normalizePhotoContentLengths(List<String> values) {
+        if(values.isEmpty())return "missing";
+        String canonical=null;
+        for(String value:values) {
+            if(value.length()>1024)return "invalid";
+            for(String part:value.split(",",-1)) {
+                String normalized=normalizePhotoContentLength(part);
+                if("missing".equals(normalized) || "invalid".equals(normalized))return "invalid";
+                String numeric=Long.toString(Long.parseLong(normalized));
+                if(canonical!=null && !canonical.equals(numeric))return "invalid";
+                canonical=numeric;
+            }
+        }
+        return canonical==null?"missing":canonical;
     }
 
     static String normalizePhotoContentType(String value) {

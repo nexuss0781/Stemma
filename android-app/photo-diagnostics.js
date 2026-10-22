@@ -13,13 +13,21 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
   const safeInt = value => value!==null && value!==undefined && value!=='' && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
   const readMime = value => ['missing','invalid'].includes(value) ? value : root.StemmaAndroidPhotoResponse.normalizeMime(value);
   const readLength = value => ['missing','invalid'].includes(value) ? value : root.StemmaAndroidPhotoResponse.normalizeLength(value);
+  const headerCount = value => {
+    if(value==null || String(value).trim()==='')return 0;
+    const text=String(value);if(text.length>1024)return null;
+    let count=1,quoted=false,escaped=false;
+    for(const char of text){if(escaped){escaped=false;continue;}if(quoted && char==='\\'){escaped=true;continue;}if(char==='"')quoted=!quoted;else if(!quoted && char===',')count=Math.min(32,count+1);}
+    return count;
+  };
+  const nativeCount = value => /^\d{1,2}$/.test(String(value)) && Number(value)<=32 ? Number(value) : null;
   function snapshot() {
     if (!state) return null;
     return { appVersion:String(version),versionCode, timestamp:state.timestamp,phase:state.phase,endpoint,signedIn:state.signedIn,
       httpStatus:state.httpStatus,errorCategory:state.errorCategory,responseMime:state.responseMime,
       declaredByteLength:state.declaredByteLength,byteLength:state.byteLength,magicType:state.magicType,normalizedMime:state.normalizedMime,route:state.route,
       nativeStatus:state.nativeStatus,nativePhase:state.nativePhase,nativeError:state.nativeError,nativeMime:state.nativeMime,nativeDeclaredByteLength:state.nativeDeclaredByteLength,
-      decode:state.decode,retries:state.retries,attempt:state.attempt,elapsedMs:state.elapsedMs??Math.max(0,Math.round(performance.now()-state.started)),
+      headerValueCounts:state.headerValueCounts,decode:state.decode,retries:state.retries,attempt:state.attempt,elapsedMs:state.elapsedMs??Math.max(0,Math.round(performance.now()-state.started)),
       result:state.result };
   }
   function queueRender() {
@@ -31,7 +39,7 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
     const id=++serial;
     state={id,started:performance.now(),timestamp:new Date().toISOString(),phase:'request',signedIn,
       httpStatus:null,errorCategory:null,responseMime:null,declaredByteLength:'missing',byteLength:null,magicType:'unknown',normalizedMime:null,route:'not-observed',
-      nativeStatus:null,nativePhase:null,nativeError:null,nativeMime:'missing',nativeDeclaredByteLength:'missing',decode:{ok:null,width:null,height:null},retries:attempts++,attempt:attempts,result:'pending'};
+      nativeStatus:null,nativePhase:null,nativeError:null,nativeMime:'missing',nativeDeclaredByteLength:'missing',headerValueCounts:{responseContentType:null,responseContentLength:null,nativeContentType:null,nativeContentLength:null},decode:{ok:null,width:null,height:null},retries:attempts++,attempt:attempts,result:'pending'};
     queueRender();return id;
   }
   function update(id, fields) {
@@ -57,6 +65,7 @@ export function installPhotoDiagnostics({ version, versionCode }, root = window)
       declaredByteLength:readLength(length),route,
       nativeMime:readMime(h.get('X-Stemma-Photo-Content-Type')),nativeDeclaredByteLength:readLength(h.get('X-Stemma-Photo-Content-Length')),
       nativeStatus:native.status,nativePhase:native.phase,nativeError:native.error,
+      headerValueCounts:{responseContentType:headerCount(h.get('content-type')),responseContentLength:headerCount(length),nativeContentType:nativeCount(h.get('X-Stemma-Photo-Content-Type-Values')),nativeContentLength:nativeCount(h.get('X-Stemma-Photo-Content-Length-Values'))},
       ...(response.status===401?{signedIn:false}:{})});
     if(!response.ok && response.status!==404) {
       const category=native.error && native.error!=='none'?native.error:'http';
