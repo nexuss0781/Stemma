@@ -11,7 +11,7 @@ import appPackage from './package.json';
 
 installPhotoResponseValidation(window);
 const ORIGIN = 'https://stemma.wasmer.app';
-const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:7});
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:8});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
   requestAccess: options=>nativeMedia.requestAccess(options),

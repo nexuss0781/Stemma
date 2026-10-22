@@ -1,6 +1,12 @@
-# Stemma Android 1.0.6
+# Stemma Android 1.0.7
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.6`, version code `7`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.7`, version code `8`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+
+## Drawer and photo-less avatars (1.0.7)
+
+Android-only: Overview remains first, Profile is second, then Payment, Pulse and Likee. Only drawer rendering is reordered; bottom navigation and swipe sequence are unchanged. Photo-less Pulse avatars and drawer initials use the existing burgundy surface and gold foreground tokens. Actual photo avatars, dimensions, borders and effects are unchanged. No website/backend deployment or new color tokens.
+
+Run `python3 test-ui-107.py` for the focused synthetic-account UI checks and screenshots. Set `STEMMA_UI_TEST_WWW` to extracted release APK assets to test the packaged UI.
 
 ## WebView singleton photo headers (1.0.6)
 

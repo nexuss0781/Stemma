@@ -13,6 +13,7 @@ const out=path.join(__dirname,'www');
   code+='\nwindow.StemmaPhotoDiagnostics?.installStore(window.AuthenticatedProfilePhotoStore);\n';
  }
 		 if(file==='/app.js'){
+  code=replaceOnce(code,"    const drawerSections = [sections.find(item => item.id === 'overview'), ...sections.filter(item => item.id !== 'overview')];","    const drawerSections = [sections.find(item => item.id === 'overview'), sections.find(item => item.id === 'profile'), ...sections.filter(item => item.id !== 'overview' && item.id !== 'profile')];",'Android drawer Profile second');
   code=replaceOnce(code,'function bindSwipeNavigation(element) {','function bindSwipeNavigation(element) {\n  return; // Android fixed-sequence gestures own top-level navigation.','disable legacy Android route swipes');
 		  code=replaceOnce(code,'    const remoteBlob = await getAuthenticatedPhotoStore().get();','    window.StemmaPhotoDiagnostics?.context({signedIn:Boolean(googleAuthenticated && profilePhotoAccountKey)});\n    const remoteBlob = await getAuthenticatedPhotoStore().get();','photo diagnostic authentication context');
 		  code=replaceOnce(code,'  if (oldURL && oldURL !== nextURL) URL.revokeObjectURL(oldURL);\n  return true;','  if (oldURL && oldURL !== nextURL) URL.revokeObjectURL(oldURL);\n  window.StemmaPhotoDiagnostics?.applied(nextURL);\n  return true;','photo diagnostic rendered URL correlation');
@@ -96,6 +97,7 @@ const out=path.join(__dirname,'www');
 	 try{css+=await fs.readFile(path.join(__dirname,'native-gallery.css'),'utf8');}catch{}
 	 css+=await fs.readFile(path.join(__dirname,'photo-diagnostics.css'),'utf8');
  css+=await fs.readFile(path.join(__dirname,'native-swipe.css'),'utf8');
+ css+=await fs.readFile(path.join(__dirname,'native-avatar.css'),'utf8');
 	 css+='\n#stemma-offline-status{position:fixed;bottom:0;left:0;right:0;z-index:2147483640;background:#29282c;color:#fff;font:12px/1.4 system-ui;text-align:center;padding:7px 12px max(7px,env(safe-area-inset-bottom));pointer-events:none}#stemma-offline-status[hidden]{display:none}.stemma-is-offline .attachment-feedback:empty::after{content:"Offline — your files are unchanged."}html{overscroll-behavior:none}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent}';
 		 const cssMin=await esbuild.transform(css,{loader:'css',minify:true,target:'chrome100'});
 		 const cssName=await writeHashed('app','css',cssMin.code);

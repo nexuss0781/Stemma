@@ -1,0 +1,6 @@
+/* Android only: keep real photo avatars and all geometry/effects unchanged. */
+#app-shell .pulse-person-mark:not(.pulse-peer-photo-avatar):not(:has(img)),
+#navigation-drawer .drawer-profile-avatar-fallback {
+  background: var(--brand-burgundy);
+  color: var(--brand-gold);
+}
