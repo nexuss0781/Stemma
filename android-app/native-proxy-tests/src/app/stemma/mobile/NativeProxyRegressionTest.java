@@ -11,17 +11,21 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
+import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import javax.net.ssl.SSLException;
 
 public final class NativeProxyRegressionTest {
     private static final String ORIGIN = "https://stemma.wasmer.app";
+    private static final String PHOTO = "https://localhost/api/student-profile/photo";
     private static final byte[] IMAGE_BYTES = new byte[] {0x00, 0x01, 0x7f, (byte)0x80, (byte)0xfe, (byte)0xff};
     private static MockHttpsConnection lastConnection;
     private static ResponseSpec nextResponse;
@@ -40,22 +44,28 @@ public final class NativeProxyRegressionTest {
         verifyImage(client, "image/jpeg", "image/jpeg; charset=binary");
         verifyImage(client, "image/webp", "image/webp");
         verifyErrorStatus(client, 401, "Unauthorized");
-        verifyErrorStatus(client, 404, "Not Found");
+        verifyErrorStatus(client, 503, "Service Unavailable");
         verifyRedirectBlocked(client);
+        verifyInjectedFailure(client, new IOException("private request URL and cookie must not leak"), "connection");
+        verifyInjectedFailure(client, new SSLException("private TLS details must not leak"), "tls");
+        verifyInjectedFailure(client, new UnknownHostException("private hostname must not leak"), "dns");
+        verifyNonPhotoHasNoDiagnostics(client);
         verifyDelegation(client, "https://example.com/api/student-profile/photo", "GET");
-        verifyDelegation(client, "https://localhost/api/student-profile/photo", "POST");
-        System.out.println("PASS: native proxy JVM regression harness (8 scenarios)");
+        verifyDelegation(client, PHOTO, "POST");
+        System.out.println("PASS: native proxy JVM regression harness (12 scenarios)");
     }
 
     private static void verifyImage(StemmaBackendClient client, String expectedMime, String responseType) throws Exception {
         nextResponse = new ResponseSpec(200, "OK", responseType, IMAGE_BYTES);
-        WebResourceResponse response = intercept(client, "https://localhost/api/student-profile/photo", "GET");
+        WebResourceResponse response = intercept(client, PHOTO + "?private_query=do-not-echo", "GET");
         check(response != null, "image response is proxied");
         check(response.statusCode == 200, "image status preserved");
         check(expectedMime.equals(response.mimeType), "MIME type should be " + expectedMime + ", got " + response.mimeType);
         check(responseType.equals(response.responseHeaders.get("Content-Type")), "explicit Content-Type header is preserved: " + responseType);
         check("private, no-store".equals(response.responseHeaders.get("Cache-Control")), "no-store header present");
         check("nosniff".equals(response.responseHeaders.get("X-Content-Type-Options")), "nosniff header present");
+        verifyDiagnostic(response, "200", "none", "headers");
+        checkNoSensitiveData(response.responseHeaders);
         check("session=expected; theme=dark".equals(lastConnection.requestProperties.get("Cookie")), "Cookie header comes from CookieManager at the configured origin");
         check(ArraysEqual(IMAGE_BYTES, readAll(response.data)), "binary image bytes, including high-bit bytes, are exact");
         check(!lastConnection.disconnected, "connection remains open until response stream closes");
@@ -66,20 +76,56 @@ public final class NativeProxyRegressionTest {
     private static void verifyErrorStatus(StemmaBackendClient client, int status, String reason) throws Exception {
         byte[] body = new byte[] {(byte)0x89, 0x00, (byte)status};
         nextResponse = new ResponseSpec(status, reason, "image/jpeg", body);
-        WebResourceResponse response = intercept(client, "https://localhost/api/student-profile/photo", "GET");
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
         check(response.statusCode == status, "HTTP error status " + status + " is preserved");
         check(reason.equals(response.reasonPhrase), "HTTP reason phrase " + reason + " is preserved");
+        verifyDiagnostic(response, Integer.toString(status), "none", "http");
         check(ArraysEqual(body, readAll(response.data)), "HTTP " + status + " body comes from error stream");
         response.data.close();
         check(lastConnection.disconnected, "HTTP " + status + " connection disconnects on close");
     }
 
-    private static void verifyRedirectBlocked(StemmaBackendClient client) throws Exception {
+    private static void verifyRedirectBlocked(StemmaBackendClient client) {
         nextResponse = new ResponseSpec(302, "Found", "text/html", new byte[] {1});
-        WebResourceResponse response = intercept(client, "https://localhost/api/student-profile/photo", "GET");
+        WebResourceResponse response = intercept(client, PHOTO, "GET");
         check(response.statusCode == 502, "redirect is translated to 502");
+        verifyDiagnostic(response, "302", "redirect", "http");
+        check("text/plain; charset=UTF-8".equals(response.responseHeaders.get("Content-Type")), "photo failure exposes explicit content type");
         check(lastConnection.disconnected, "redirect connection disconnects immediately");
         check(!lastConnection.redirectsEnabled, "automatic redirect following is disabled");
+    }
+
+    private static void verifyInjectedFailure(StemmaBackendClient client, IOException injected, String category) {
+        nextResponse = new ResponseSpec(200, "OK", "image/png", IMAGE_BYTES, injected);
+        WebResourceResponse response = intercept(client, PHOTO + "?secret=query-value", "GET");
+        check(response.statusCode == 503, "connection failure remains HTTP 503");
+        verifyDiagnostic(response, "-1", category, "connect");
+        check("text/plain; charset=UTF-8".equals(response.responseHeaders.get("Content-Type")), "exception failure has explicit content type");
+        checkNoSensitiveData(response.responseHeaders);
+        check(lastConnection.disconnected, "connection failure disconnects immediately");
+    }
+
+    private static void verifyNonPhotoHasNoDiagnostics(StemmaBackendClient client) throws Exception {
+        nextResponse = new ResponseSpec(200, "OK", "application/json", new byte[] {1});
+        WebResourceResponse response = intercept(client, "https://localhost/api/other?secret=query", "GET");
+        check(response.statusCode == 200, "other API route remains proxied");
+        for(String name: new String[]{"X-Stemma-Photo-Route","X-Stemma-Photo-Status","X-Stemma-Photo-Error","X-Stemma-Photo-Phase"})
+            check(!response.responseHeaders.containsKey(name), "photo diagnostic is absent on non-photo route: " + name);
+        response.data.close();
+    }
+
+    private static void verifyDiagnostic(WebResourceResponse response, String status, String error, String phase) {
+        check("native-proxy".equals(response.responseHeaders.get("X-Stemma-Photo-Route")), "photo route diagnostic");
+        check(status.equals(response.responseHeaders.get("X-Stemma-Photo-Status")), "backend status diagnostic, expected " + status);
+        check(error.equals(response.responseHeaders.get("X-Stemma-Photo-Error")), "safe error category diagnostic, expected " + error);
+        check(phase.equals(response.responseHeaders.get("X-Stemma-Photo-Phase")), "phase diagnostic, expected " + phase);
+    }
+
+    private static void checkNoSensitiveData(Map<String,String> headers) {
+        String diagnostics = headers.get("X-Stemma-Photo-Route") + headers.get("X-Stemma-Photo-Status") +
+                headers.get("X-Stemma-Photo-Error") + headers.get("X-Stemma-Photo-Phase");
+        check(!diagnostics.contains("secret") && !diagnostics.contains("private") && !diagnostics.contains("session=") &&
+                !diagnostics.contains("https://"), "diagnostics contain no query, URL, cookie, token or exception message");
     }
 
     private static void verifyDelegation(StemmaBackendClient client, String url, String method) {
@@ -121,9 +167,10 @@ public final class NativeProxyRegressionTest {
         public Map<String,String> getRequestHeaders() { return Collections.emptyMap(); }
     }
     private static final class ResponseSpec {
-        final int status; final String reason, contentType; final byte[] body;
-        ResponseSpec(int status, String reason, String contentType, byte[] body) {
-            this.status=status; this.reason=reason; this.contentType=contentType; this.body=body;
+        final int status; final String reason, contentType; final byte[] body; final IOException connectFailure;
+        ResponseSpec(int status, String reason, String contentType, byte[] body) { this(status,reason,contentType,body,null); }
+        ResponseSpec(int status, String reason, String contentType, byte[] body, IOException connectFailure) {
+            this.status=status; this.reason=reason; this.contentType=contentType; this.body=body; this.connectFailure=connectFailure;
         }
     }
     private static final class MockHttpsConnection extends HttpURLConnection {
@@ -132,7 +179,10 @@ public final class NativeProxyRegressionTest {
         boolean disconnected;
         boolean redirectsEnabled = true;
         MockHttpsConnection(URL url, ResponseSpec response) { super(url); this.response=response; }
-        @Override public void connect() { connected=true; }
+        @Override public void connect() throws IOException {
+            if(response.connectFailure!=null) throw response.connectFailure;
+            connected=true;
+        }
         @Override public void disconnect() { disconnected=true; }
         @Override public boolean usingProxy() { return false; }
         @Override public void setInstanceFollowRedirects(boolean follow) {

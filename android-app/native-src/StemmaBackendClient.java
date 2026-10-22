@@ -11,16 +11,24 @@ import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.net.UnknownHostException;
+import java.net.ProtocolException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.net.ssl.SSLException;
 
 /** Streams authenticated backend resources without moving large media over the JS bridge. */
 public final class StemmaBackendClient extends BridgeWebViewClient {
     static final String ORIGIN = "https://stemma.wasmer.app";
+    private static final String PHOTO_PATH = "/api/student-profile/photo";
+
     public StemmaBackendClient(Bridge bridge) { super(bridge); }
+
     @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         Uri uri=request.getUrl();
         if ("https".equals(uri.getScheme()) && "localhost".equals(uri.getHost()) && uri.getPath()!=null && uri.getPath().startsWith("/api/") && "GET".equals(request.getMethod())) {
@@ -28,10 +36,14 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
         }
         return super.shouldInterceptRequest(view,request);
     }
+
     private WebResourceResponse proxy(WebResourceRequest request) {
         HttpURLConnection conn=null;
+        final Uri uri=request.getUrl();
+        final boolean photo=PHOTO_PATH.equals(uri.getPath());
+        String phase="connect";
+        int backendStatus=-1;
         try {
-            Uri uri=request.getUrl();
             URL url=new URL(ORIGIN+uri.getEncodedPath()+(uri.getEncodedQuery()==null?"":"?"+uri.getEncodedQuery()));
             conn=(HttpURLConnection)url.openConnection();
             conn.setConnectTimeout(15000); conn.setReadTimeout(45000); conn.setInstanceFollowRedirects(false);
@@ -42,8 +54,13 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
                 String value=request.getRequestHeaders().get(name);
                 if(value!=null) conn.setRequestProperty(name,value);
             }
-            int status=conn.getResponseCode();
-            if(status>=300 && status<400) { conn.disconnect(); return failure(502,"Backend redirects are not permitted."); }
+            conn.connect();
+            phase="headers";
+            backendStatus=conn.getResponseCode();
+            if(backendStatus>=300 && backendStatus<400) {
+                conn.disconnect();
+                return failure(502,"Backend redirects are not permitted.",photo,backendStatus,"redirect","http");
+            }
             CookieManager cookieManager=CookieManager.getInstance();
             boolean cookieUpdated=false;
             for(Map.Entry<String,List<String>> entry:conn.getHeaderFields().entrySet()) {
@@ -61,16 +78,44 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
             headers.put("Content-Type",contentType);
             for(String name:new String[]{"Content-Length","Content-Range","Accept-Ranges","ETag","Last-Modified","Content-Disposition"}) { String value=conn.getHeaderField(name); if(value!=null)headers.put(name,value); }
             headers.put("Cache-Control","private, no-store"); headers.put("X-Content-Type-Options","nosniff");
+            if(photo) addPhotoDiagnostics(headers,backendStatus,"none",backendStatus>=400?"http":"headers");
             final HttpURLConnection owned=conn;
-            InputStream stream=status>=400?conn.getErrorStream():conn.getInputStream();
+            phase="body";
+            InputStream stream=backendStatus>=400?conn.getErrorStream():conn.getInputStream();
             if(stream==null)stream=new ByteArrayInputStream(new byte[0]);
             InputStream body=new FilterInputStream(stream) { @Override public void close() throws IOException { try{super.close();}finally{owned.disconnect();} } };
             String reason=conn.getResponseMessage(); if(reason==null || reason.trim().isEmpty())reason="Response";
-            return new WebResourceResponse(mime,"UTF-8",status,reason,headers,body);
-        } catch(Exception error) { if(conn!=null)conn.disconnect(); return failure(503,"Connection unavailable."); }
+            return new WebResourceResponse(mime,"UTF-8",backendStatus,reason,headers,body);
+        } catch(Exception error) {
+            if(conn!=null)conn.disconnect();
+            String category=errorCategory(error,phase);
+            return failure(503,"Connection unavailable.",photo,backendStatus,category,phase);
+        }
     }
-    private WebResourceResponse failure(int status,String message) {
+
+    private static String errorCategory(Exception error,String phase) {
+        if(error instanceof UnknownHostException)return "dns";
+        if(error instanceof SSLException)return "tls";
+        if(error instanceof SocketTimeoutException)return "connect".equals(phase)?"connect-timeout":"read-timeout";
+        if(error instanceof ConnectException)return "connection";
+        if(error instanceof ProtocolException)return "protocol";
+        if(error instanceof IOException)return "connection";
+        return "unknown";
+    }
+
+    private WebResourceResponse failure(int status,String message,boolean photo,int backendStatus,String error,String phase) {
         Map<String,String> headers=new HashMap<>();headers.put("Cache-Control","no-store");
+        if(photo) {
+            headers.put("Content-Type","text/plain; charset=UTF-8");
+            addPhotoDiagnostics(headers,backendStatus,error,phase);
+        }
         return new WebResourceResponse("text/plain","UTF-8",status,"Unavailable",headers,new ByteArrayInputStream(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    private static void addPhotoDiagnostics(Map<String,String> headers,int status,String error,String phase) {
+        headers.put("X-Stemma-Photo-Route","native-proxy");
+        headers.put("X-Stemma-Photo-Status",Integer.toString(status));
+        headers.put("X-Stemma-Photo-Error",error);
+        headers.put("X-Stemma-Photo-Phase",phase);
     }
 }

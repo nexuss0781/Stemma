@@ -5,8 +5,11 @@ import { Browser } from '@capacitor/browser';
 import { Network } from '@capacitor/network';
 import { Preferences } from '@capacitor/preferences';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { installPhotoDiagnostics } from './photo-diagnostics.js';
+import appPackage from './package.json';
 
 const ORIGIN = 'https://stemma.wasmer.app';
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:5});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
   requestAccess: options=>nativeMedia.requestAccess(options),
@@ -86,6 +89,7 @@ window.fetch = async (input, init={}) => {
   new Headers(init.headers).forEach((value,key)=>headers.set(key,value));
   headers.set('Origin',ORIGIN);
   if (!connected) {
+    if(method==='GET' && url.pathname==='/api/student-profile/photo') photoDiagnostics.offline();
     if (method==='GET') { const value=await saved(path); if(value) return value; }
     throw new TypeError('You are offline. Your draft is kept; reconnect before sending or making changes.');
   }
@@ -104,7 +108,11 @@ window.fetch = async (input, init={}) => {
       // and can forward localhost cookies instead of the backend account cookie.
       // Keep photo bytes on our streaming proxy, which supplies both explicitly.
       const localUrl = new URL(path,location.origin).href;
-      response = await nativeFetch(input instanceof Request ? new Request(localUrl,input) : localUrl,{...init,headers,credentials:'same-origin'});
+      const diagnosticAttempt = photoDiagnostics.request(init);
+      try {
+        response = await nativeFetch(input instanceof Request ? new Request(localUrl,input) : localUrl,{...init,headers,credentials:'same-origin'});
+        photoDiagnostics.response(diagnosticAttempt,response);
+      } catch(error) { photoDiagnostics.fetchError(diagnosticAttempt,error); throw error; }
     } else response = await nativeFetch(input instanceof Request ? new Request(url.href,input) : url.href,{...init,headers,credentials:'include'});
     if (response.status===401) { if(requestRevision===authRevision) await clearAccount(); return response; }
     if (url.pathname==='/auth/logout' && response.ok) await clearAccount();

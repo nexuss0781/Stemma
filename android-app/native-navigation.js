@@ -142,16 +142,16 @@
     if (!value || (!value.date && !value.month && !value.reportOpen)) return;
     await attendanceState()?.restore?.(value);
   }
-  async function restore(state) {
+  async function restore(state, options = {}) {
     if (!authAllowed || !accountReady || !account) return false;
     let clean = sanitize(state);
-    if (!clean || root.__StemmaAndroidAuthReturn || new URLSearchParams(root.location?.search || '').has('auth')) return false;
+    if (!clean || (!options.userInitiated && (root.__StemmaAndroidAuthReturn || new URLSearchParams(root.location?.search || '').has('auth')))) return false;
     const app = appState();
     const attendanceOnly = !app && Boolean(attendanceState());
     if (!app && !attendanceOnly) return false;
     const launchPath = String(root.__StemmaAndroidInitialPath ?? root.location?.pathname ?? '/');
     if (!attendanceOnly && launchPath !== '/' && !launchPath.endsWith('/index.html')) return false;
-    const hash = String(root.__StemmaAndroidInitialHash ?? root.location?.hash ?? '').replace(/^#/, '');
+    const hash = options.userInitiated ? '' : String(root.__StemmaAndroidInitialHash ?? root.location?.hash ?? '').replace(/^#/, '');
     const explicitLink = Boolean(hash);
     if (hash) {
       const linkedRoute = hash === 'apps' ? 'pulse' : hash === 'goals' ? 'likee' : hash.split('/')[0];
@@ -167,8 +167,9 @@
       if (!explicitLink) await restoreAttendance(clean);
       if (app) {
         const main = root.document?.getElementById('dashboard-grid');
-        scrollTo(main, clean.scroll.mainTop, clean.scroll.mainLeft);
-        if (clean.scroll.windowY) root.scrollTo?.(0, clean.scroll.windowY);
+        const left = options.userInitiated && clean.route==='cards' && clean.tabs.cards===0 ? clean.paymentSlide*(main?.clientWidth||0) : clean.scroll.mainLeft;
+        scrollTo(main, clean.scroll.mainTop, left);
+        if (options.userInitiated || clean.scroll.windowY) root.scrollTo?.(0, clean.scroll.windowY);
       }
       return true;
     } catch (error) { console.warn('Android navigation restore skipped', error); return false; }

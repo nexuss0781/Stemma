@@ -1,0 +1,5 @@
+.stemma-photo-diagnostics{margin:8px 0 14px;padding:10px 12px;border:1px solid rgba(104,27,29,.2);border-radius:12px;background:rgba(104,27,29,.035);color:inherit;font:12px/1.5 system-ui;max-width:100%;box-sizing:border-box}
+.stemma-photo-diagnostics summary{cursor:pointer;font-weight:650;font-size:13px}
+.stemma-photo-diagnostics pre{max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text;font:11px/1.5 ui-monospace,monospace;margin:10px 0}
+.stemma-photo-diagnostics button{display:inline-block;padding:7px 11px;border:1px solid rgba(104,27,29,.3);border-radius:8px;background:transparent;color:inherit;font:600 12px system-ui;cursor:pointer}
+.stemma-photo-diagnostics [role=status]{display:block;margin-top:6px;font-size:11px}

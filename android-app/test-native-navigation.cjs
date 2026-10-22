@@ -6,10 +6,10 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function environment({ account = 'student@example.test', hash = '', pathname = '/', saved = null, attendance = false, screen = '/' } = {}) {
   const listeners = new Map();
-  const calls = { appRestore: [], pulseRestore: [], groupRestore: [], channelRestore: [], directRestore: [], attendanceRestore: [], removed: [], replaced: [] };
+  const calls = { appRestore: [], pulseRestore: [], groupRestore: [], channelRestore: [], directRestore: [], attendanceRestore: [], removed: [], replaced: [], windowScroll: [] };
   const values = new Map();
   const keyRequests = [];
-  const grid = { scrollTop: 0, scrollLeft: 0 };
+  const grid = { scrollTop: 0, scrollLeft: 0, clientWidth:390 };
   let authenticated = false;
   const app = attendance ? null : {
     isAuthenticated: () => authenticated,
@@ -37,7 +37,7 @@ function environment({ account = 'student@example.test', hash = '', pathname = '
     __StemmaAndroidInitialPath: pathname,
     document: { getElementById: id => id === 'dashboard-grid' ? grid : null },
     scrollY: 0,
-    scrollTo: () => {},
+    scrollTo: (...args) => calls.windowScroll.push(args),
     addEventListener(type, fn) { const stack = listeners.get(type) || []; stack.push(fn); listeners.set(type, stack); },
     dispatch(type, detail = {}) { for (const fn of listeners.get(type) || []) fn({ type, detail }); },
     clearTimeout,
@@ -109,6 +109,20 @@ function environment({ account = 'student@example.test', hash = '', pathname = '
   assert.deepEqual(deeplink.calls.replaced, [], 'explicit deep links override last-screen redirect');
   assert.equal(deeplink.calls.appRestore[0]?.tabs?.pulse, 4, '#apps selects the Pulse Apps tab');
   assert.equal(deeplink.calls.groupRestore.length, 0, 'deep links do not reopen stale nested conversations');
+
+  const swipeState={version:1,route:'cards',tabs:{cards:0,overview:2,profile:1},paymentSlide:1,scroll:{mainTop:27,mainLeft:0,windowY:0}};
+  assert.equal(await deeplink.root.StemmaAndroidNavigation.restore(swipeState,{userInitiated:true}),true);
+  assert.equal(deeplink.calls.appRestore.at(-1).route,'cards','deliberate swipe is not overridden by the old #apps launch link');
+  assert.equal(deeplink.calls.appRestore.at(-1).tabs.overview,2,'other selected filters survive swipe restoration');
+  assert.equal(deeplink.grid.scrollLeft,390,'Pay fee selected slide determines carousel position, not stale left scroll');
+  assert.equal(deeplink.grid.scrollTop,27);
+  assert.deepEqual(deeplink.calls.windowScroll.at(-1),[0,0],'zero window scroll is explicitly restored');
+  assert.equal(deeplink.root.__StemmaAndroidInitialHash,'#apps','swiping never mutates the recorded launch link');
+  deeplink.root.__StemmaAndroidAuthReturn=true;
+  assert.equal(await deeplink.root.StemmaAndroidNavigation.restore(swipeState),false,'automatic restore remains blocked during auth-return launch');
+  assert.equal(await deeplink.root.StemmaAndroidNavigation.restore(swipeState,{userInitiated:true}),true,'authenticated deliberate navigation works after auth-return');
+  deeplink.root.dispatch('stemma:account-cleared');
+  assert.equal(await deeplink.root.StemmaAndroidNavigation.restore(swipeState,{userInitiated:true}),false,'swipes cannot bypass account authentication');
 
   console.log('Android navigation persistence tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
