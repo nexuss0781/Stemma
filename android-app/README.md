@@ -1,8 +1,14 @@
-# Stemma Android 1.0.2
+# Stemma Android 1.0.3
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.2`, version code `3`. This directory does not change or deploy the website. The Java files in `native-src/` mirror the Android app's Java sources.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.3`, version code `4`. This directory does not change or deploy the website. The Java files in `native-src/` mirror the Android app's Java sources.
 
-## What changed
+## Profile-photo fetch fix
+
+Account-photo GET requests now use the same-origin native streaming proxy, which forwards the backend account cookie and explicitly exposes the image Content-Type header. Photo bytes and error statuses are preserved; failures do not substitute or upload a device photo. No website files or deployment are involved.
+
+Run `sh native-proxy-tests/run.sh` for the native proxy regression harness and `python3 test-profile-photo.py` after building `www/` for photo-fetch browser regressions. The existing signing key is required for the delivered 1.0.3 update. Signature, build, and regression checks passed; emulator installation and live-account loading were not verified.
+
+## Existing app behavior (unchanged)
 
 - Atomic, fsync-backed app-private persistence outside Android's disposable cache, excluded from backup.
 - Account-scoped navigation, parent/subtabs, nested conversation/group/channel state, attendance navigation, scroll positions and unsent drafts. Explicit links take precedence over remembered navigation.

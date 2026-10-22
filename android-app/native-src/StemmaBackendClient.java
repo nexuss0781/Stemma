@@ -55,6 +55,10 @@ public final class StemmaBackendClient extends BridgeWebViewClient {
             String contentType=conn.getContentType(); if(contentType==null)contentType="application/octet-stream";
             String mime=contentType.split(";")[0];
             Map<String,String> headers=new HashMap<>();
+            // WebView's MIME argument alone is not a fetch-visible Content-Type
+            // when an explicit response-header map is supplied. Photo validation
+            // must see the account response's actual image MIME type.
+            headers.put("Content-Type",contentType);
             for(String name:new String[]{"Content-Length","Content-Range","Accept-Ranges","ETag","Last-Modified","Content-Disposition"}) { String value=conn.getHeaderField(name); if(value!=null)headers.put(name,value); }
             headers.put("Cache-Control","private, no-store"); headers.put("X-Content-Type-Options","nosniff");
             final HttpURLConnection owned=conn;

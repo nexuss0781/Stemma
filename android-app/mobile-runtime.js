@@ -99,6 +99,12 @@ window.fetch = async (input, init={}) => {
       const result=await transport.request({url:url.href,method,body,contentType:headers.get('Content-Type')||'application/json'});
       if(signal?.aborted) throw new DOMException('Request cancelled.','AbortError');
       response=new Response([204,205,304].includes(result.status)?null:result.body,{status:result.status,headers:{'Content-Type':result.contentType||'application/json'}});
+    } else if(method==='GET' && url.pathname==='/api/student-profile/photo') {
+      // The generic Capacitor HTTP proxy omits Content-Type from fetch headers
+      // and can forward localhost cookies instead of the backend account cookie.
+      // Keep photo bytes on our streaming proxy, which supplies both explicitly.
+      const localUrl = new URL(path,location.origin).href;
+      response = await nativeFetch(input instanceof Request ? new Request(localUrl,input) : localUrl,{...init,headers,credentials:'same-origin'});
     } else response = await nativeFetch(input instanceof Request ? new Request(url.href,input) : url.href,{...init,headers,credentials:'include'});
     if (response.status===401) { if(requestRevision===authRevision) await clearAccount(); return response; }
     if (url.pathname==='/auth/logout' && response.ok) await clearAccount();
