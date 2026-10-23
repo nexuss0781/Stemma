@@ -1,6 +1,6 @@
-# Stemma Android 1.0.10
+# Stemma Android 1.0.11
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.10`, version code `11`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.11`, version code `12`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
 
 ## Reusable in-app Gallery and Files (1.0.10)
 
@@ -8,7 +8,13 @@ The Android bundler uses `android-app/chat-attachments-ui.js` instead of the web
 
 Gallery uses Android-version-appropriate read-media permissions and honors Android 14 selected-photo access. Files uses the explicit all-files Settings grant on Android 11+ and a legacy read permission on older supported Android versions. This broad grant is sensitive and subject to Google Play restricted-permission policy; this APK's sideload distribution is not a claim of Play eligibility. Protected Android application directories remain excluded. Only selected files are copied for an action; permission itself never uploads anything.
 
-Likee still exposes Gallery only, not Files or camera, and retains the four-minute video cap and existing upload size limits. The picker no longer imposes a narrow format/extension allowlist, but existing remote APIs still validate upload formats and sizes. This Android-only update does not change or deploy those APIs or the website, and does not claim universal codec support or unrestricted server acceptance. No GitHub Release is created.
+Likee still exposes Gallery only, not Files or camera, and retains the four-minute video cap and existing 256 MiB upload limit. Purpose-aware native preparation converts additional device-decodable images/videos into upload-compatible media while leaving originals unchanged; Files attachments keep their original bytes. The companion attachments API now accepts arbitrary filename extensions and extensionless files up to 5 MiB, with unknown or active content forced to safe attachment downloads instead of inline execution. Existing schema, authentication and upload limits remain. This changes the upload API, not the website UI/assets. Device codecs, Android version, malformed/encrypted input, memory/storage and output-size limits mean universal decode/playback is not promised. No GitHub Release is created.
+
+## Broader upload support (1.0.11)
+
+Gallery queries the image/video MIME families rather than a filename-extension allowlist. Photo actions prepare device-decodable images as JPEG; Likee preserves existing JPEG/PNG/WebP/GIF uploads and prepares other decodable images as JPEG. This includes BMP and, where the Android version/device decoder supports them, HEIC/HEIF and AVIF. Conversion may flatten animation or transparency; the original file is never overwritten. Likee video preparation produces MP4 with H.264 video and AAC audio where present. Input container and codec support depends on Android extractors and device codecs, so MP4/MOV/WebM/MKV and other indexed video formats are not a promise of universal conversion. Unsupported originals can still be sent through Files in attachment-capable destinations, within their size limits.
+
+Preparation can be cancelled, times out after five minutes, bounds image decoding and output size, and checks input and output video/audio track durations against the strict four-minute limit. It does not trim over-length videos or silently discard required audio. Media permission, all-files permission and camera permission are requested separately when needed; no permission grant triggers an upload by itself.
 
 ## Universal usernames (1.0.9)
 

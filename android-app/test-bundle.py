@@ -6,7 +6,7 @@ INIT=r'''(() => {
 const realFetch=window.fetch.bind(window);
 window.__calls=[];window.__prefs={};window.__files={};window.__persistent={};
 window.androidBridge={};
-const methods={StemmaPersistence:['load','save','remove','flushCookies','setSessionActive'],App:['addListener','removeListener','getLaunchUrl','minimizeApp'],Browser:['open','close'],Network:['getStatus','addListener','removeListener'],Filesystem:['readFile','writeFile','deleteFile'],Preferences:['get','set','remove'],StemmaTransport:['request','clearPrivateCache','upload','cancelUpload','addListener','removeListener'],StemmaMedia:['getAccess','requestAccess','requestFileAccess','listFiles','readStorageFile','capturePhoto','listAlbums','listMedia','thumbnail','readFile','recentFiles']};
+const methods={StemmaPersistence:['load','save','remove','flushCookies','setSessionActive'],App:['addListener','removeListener','getLaunchUrl','minimizeApp'],Browser:['open','close'],Network:['getStatus','addListener','removeListener'],Filesystem:['readFile','writeFile','deleteFile'],Preferences:['get','set','remove'],StemmaTransport:['request','clearPrivateCache','upload','cancelUpload','addListener','removeListener'],StemmaMedia:['getAccess','requestAccess','requestFileAccess','listFiles','readStorageFile','capturePhoto','listAlbums','listMedia','thumbnail','readFile','recentFiles','cancelPreparation']};
 window.Capacitor={PluginHeaders:Object.entries(methods).map(([name,methods])=>({name,methods:methods.map(name=>({name,rtype:name==='addListener'?'callback':'promise'}))})),nativeCallback:()=> 'test-callback',nativePromise:async(name,method,options={})=>{
 window.__calls.push({name,method,options});
 if(name==='StemmaPersistence'){if(method==='load')return {value:window.__persistent[options.key]??null};if(method==='save')window.__persistent[options.key]=options.value;if(method==='remove')delete window.__persistent[options.key];return {};}
@@ -18,9 +18,9 @@ if(name==='Preferences'){if(method==='get')return {value:window.__prefs[options.
 if(name==='StemmaMedia'){
 if(method==='getAccess'||method==='requestAccess')return {status:'granted',mediaAccess:true,fileAccess:false,granted:true,fullAccess:true,partial:false};
 if(method==='listAlbums')return {albums:[{id:'camera',name:'Camera',count:2},{id:'screenshots',name:'Screenshots',count:1}]};
-if(method==='listMedia')return {items:[{id:'1',name:'camera.jpg',mimeType:'image/jpeg',size:128,uri:'content://media/external/images/media/1'}],hasMore:false};
+if(method==='listMedia')return {items:[{id:'1',name:'camera.heic',mimeType:'image/heic',mediaType:'image',size:128,uri:'content://media/external/images/media/1'},{id:'2',name:'camera.mkv',mimeType:'video/x-matroska',mediaType:'video',size:128,durationMs:240000,uri:'content://media/external/video/media/2'}],hasMore:false};
 if(method==='thumbnail')return {webPath:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>'};
-if(method==='readFile')return {webPath:'/assets/profile.jpg',path:'/data/user/0/app.stemma.mobile/cache/stemma-media/copy_test.jpg',name:'camera.jpg',mimeType:'image/jpeg'};
+if(method==='readFile'){window.__sourceMetadata={name:'camera.heic',mimeType:'image/heic'};return {webPath:'data:image/jpeg;base64,Y2Fub25pY2FsLWpwZWc=',path:'/data/user/0/app.stemma.mobile/cache/stemma-media/prepared_camera.jpg',name:'camera.jpg',mimeType:'image/jpeg',size:12,converted:true,sourceName:'camera.heic',sourceMimeType:'image/heic'};}
 if(method==='recentFiles')return {files:[]};
 }
 return {};
@@ -60,18 +60,21 @@ with sync_playwright() as p:
  assert 'offline' in result.lower()
  page.evaluate('window.dispatchEvent(new Event("online"))')
  assert not page.locator('#stemma-offline-status').is_visible()
- page.evaluate('''()=>window.StemmaChatAttachments.pickMedia({button:document.querySelector('button'),galleryOnly:true,onSelect:file=>window.__picked={name:file.name,size:file.size,nativePath:file.nativePath}})''')
+ page.evaluate('''()=>window.StemmaChatAttachments.pickMedia({button:document.querySelector('button'),galleryOnly:true,onSelect:file=>window.__picked={name:file.name,size:file.size,type:file.type,nativePath:file.nativePath,nativeDurationMs:file.nativeDurationMs}})''')
  page.locator('select[aria-label="Choose album"]').wait_for(state='visible')
  page.locator('.native-gallery-tile').first.wait_for()
  assert page.locator('select[aria-label="Choose album"] option').count()==3
  page.locator('select[aria-label="Choose album"]').select_option('camera')
- page.get_by_role('button',name='Select camera.jpg',exact=True).click()
+ page.get_by_role('button',name='Select camera.heic',exact=True).click()
  page.get_by_role('button',name='Use media',exact=True).click()
  page.locator('.native-picker-review').wait_for(state='visible')
  page.get_by_role('button',name='Use media',exact=True).click()
  page.wait_for_function('window.__picked')
  picked=page.evaluate('window.__picked')
- assert picked['name']=='camera.jpg' and picked['size']>0 and 'stemma-media' in picked['nativePath']
+ assert picked['name']=='camera.jpg' and picked['size']>0 and picked['type']=='image/jpeg' and 'prepared_camera.jpg' in picked['nativePath']
+ assert page.evaluate("window.__sourceMetadata.mimeType")=='image/heic'
+ preparation=page.evaluate("window.__calls.findLast(c=>c.name==='StemmaMedia'&&c.method==='readFile')")
+ assert preparation['options']['purpose']=='likee',preparation
  page.evaluate('''async()=>{await window.StemmaNative.signIn('google');const call=window.__calls.findLast(c=>c.name==='Browser'&&c.method==='open');const url=new URL(call.options.url);if(url.searchParams.get('state').length!==43||url.searchParams.get('challenge').length!==43)throw Error('bad OAuth state');}''')
  cache_result=page.evaluate('''async()=>{
  window.__testSession={authenticated:true,authProvider:'google',googleProfile:{email:'alice@example.invalid'}};

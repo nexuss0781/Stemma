@@ -55,6 +55,70 @@ test('attachment upload validation checks extension, MIME allowlist, signatures,
   assert.equal(validateAttachmentBody({ ...fileBody(), replyToId: '9' }, { allowReplyTo: true }).replyToId, '9');
 });
 
+test('generic uploads accept arbitrary filenames and bytes but canonicalize only recognized raster data', () => {
+  const generic = (name, mimeType, data) => validateAttachmentBody({ name, mimeType, data: data.toString('base64') }, { allowGeneric: true });
+  for (const [name, mimeType, bytes] of [
+    ['report.foo', 'application/x-custom', Buffer.from([0, 1, 255, 12])],
+    ['no-extension', 'application/octet-stream', Buffer.from([0xde, 0xad, 0xbe, 0xef])],
+    ['UPPERCASE.UNKNOWN', 'application/x-msdownload', Buffer.from('arbitrary executable bytes')],
+    ['vector.svg', 'image/svg+xml', Buffer.from('<svg onload="alert(1)"></svg>')],
+    ['page.HTML', 'text/html', Buffer.from('<script>alert(1)</script>')],
+    ['script.js', 'application/javascript', Buffer.from('alert(1)')],
+    ['spoof.png', 'image/png', Buffer.from('<html>not an image</html>')]
+  ]) {
+    const accepted = generic(name, mimeType, bytes);
+    assert.ok(accepted, `${name} should upload as a generic file`);
+    assert.equal(accepted.mimeType, 'application/octet-stream', `${name} must not retain an unsafe or unverified claimed MIME`);
+    assert.deepEqual(accepted.data, bytes);
+  }
+  const renamedRaster = generic('renamed.FILE', 'application/x-custom', PNG);
+  assert.equal(renamedRaster.mimeType, 'image/png', 'recognized raster bytes are canonical regardless of filename or claim');
+  assert.equal(generic('PHOTO.PNG', 'image/png', PNG).mimeType, 'image/png', 'uppercase file extensions do not affect raster detection');
+  const recognizedDocument = generic('no-extension', 'application/pdf', Buffer.from('%PDF-1.7 test'));
+  assert.equal(recognizedDocument.mimeType, 'application/pdf', 'valid supported document MIME remains usable as a download');
+
+  for (const bad of [
+    { name: 'bad.bin', mimeType: 'x', data: 'not base64' },
+    { name: 'bad.bin', mimeType: 'x', data: 'AAAAA' },
+    { name: 'empty.bin', mimeType: 'x', data: '' },
+    { name: 'too-big.bin', mimeType: 'x', data: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1).toString('base64') }
+  ]) assert.equal(validateAttachmentBody(bad, { allowGeneric: true }), null, 'generic mode must retain strict base64 and size checks');
+  assert.equal(validateAttachmentBody(fileBody('renamed.FILE', PNG), { allowGeneric: true }).mimeType, 'image/png');
+});
+
+test('generic HTML/SVG downloads are octet-stream attachments, while valid raster downloads are canonical inline media', async t => {
+  const files = new Map();
+  const store = {
+    async createSavedAttachment(subject, attachment) {
+      files.set(ATTACHMENT_ID, { id: ATTACHMENT_ID, ...attachment });
+      return { id: '31', text: `Attachment: ${attachment.name}`, createdAt: new Date('2026-03-01T00:00:00Z'),
+        attachment: { id: ATTACHMENT_ID, url: `/api/pulse/attachments/${ATTACHMENT_ID}`, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size } };
+    },
+    async getAttachmentForSubject(subject, id) { return subject === 'uploader' ? files.get(id) ?? null : null; }
+  };
+  const h = await createHarness({ attachmentStore: store });
+  t.after(() => h.close());
+  const user = await h.cookieFor('generic-upload-session', google('uploader'));
+  const html = Buffer.from('<!doctype html><script>alert(1)</script>');
+  const response = await jsonPost(`${h.origin}/api/pulse/saved/attachments`, user, h.origin,
+    { name: 'page.svg', mimeType: 'image/svg+xml', data: html.toString('base64') });
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).message.attachment.mimeType, 'application/octet-stream');
+  let download = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`, { headers: { cookie: user } });
+  assert.equal(download.status, 200);
+  assert.equal(download.headers.get('content-type'), 'application/octet-stream');
+  assert.match(download.headers.get('content-disposition'), /^attachment;/);
+  assert.equal(download.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(download.headers.get('content-security-policy'), /sandbox/);
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), html);
+
+  files.set(ATTACHMENT_ID, { id: ATTACHMENT_ID, name: 'looks-like.txt', mimeType: 'text/html', size: PNG.length, data: PNG });
+  download = await fetch(`${h.origin}/api/pulse/attachments/${ATTACHMENT_ID}`, { headers: { cookie: user } });
+  assert.equal(download.headers.get('content-type'), 'image/png', 'download MIME is derived from verified bytes rather than row metadata');
+  assert.match(download.headers.get('content-disposition'), /^inline;/);
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), PNG);
+});
+
 test('attachment endpoints enforce authentication, same-origin uploads, scoped metadata and safe download headers', async t => {
   const calls = [];
   const store = {

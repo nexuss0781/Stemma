@@ -10,6 +10,24 @@ import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
+import android.media.MediaMetadataRetriever;
+import android.os.Handler;
+import android.os.Looper;
+import androidx.exifinterface.media.ExifInterface;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.transformer.Composition;
+import androidx.media3.transformer.EditedMediaItem;
+import androidx.media3.transformer.ExportException;
+import androidx.media3.transformer.ExportResult;
+import androidx.media3.transformer.Transformer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -82,7 +100,12 @@ public class StemmaMedia extends Plugin {
     private static final String PREFS = "stemma_media_recent_v1";
     private static final String RECENT_DOCS = "recent_documents";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Object preparationLock = new Object();
+    @Nullable private Preparation activePreparation;
     @Nullable private File pendingCameraFile;
+    private static final long MAX_LIKEE_DURATION_MS = 240000L;
+    private static final long PREPARATION_TIMEOUT_MS = 5L * 60L * 1000L;
 
     private static final String[] BASE_COLUMNS = new String[] {
         MediaStore.MediaColumns._ID,
@@ -359,6 +382,10 @@ public class StemmaMedia extends Plugin {
         final String requested = call.getString("path");
         if (requested == null || requested.trim().isEmpty()) { call.reject("path is required", "INVALID_ARGUMENT"); return; }
         if (!hasFileAccess()) { call.reject("File access has not been granted", "PERMISSION_DENIED"); return; }
+        final String purpose;
+        try { purpose = normalizedPurpose(call.getString("purpose")); }
+        catch (Exception e) { call.reject(e.getMessage(), "INVALID_ARGUMENT", e); return; }
+        if (purpose != null && !reservePreparation(call)) return;
         worker.execute(() -> {
             File destination = null;
             try {
@@ -369,16 +396,21 @@ public class StemmaMedia extends Plugin {
                 File dir = mediaCacheDir();
                 String suffix = safeExtension(source.getName());
                 destination = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + suffix);
-                copyFileUnchanged(source, destination);
+                copyFileUnchanged(source, destination, purpose == null ? null : call);
                 String mime = mimeForName(source.getName());
-                JSObject result = fileMetadata(destination, source.getName(), mime);
-                result.put("source", "storage");
-                result.put("dateAdded", source.lastModified() / 1000L);
-                call.resolve(result);
+                if (purpose != null) {
+                    prepareCopiedFile(call, destination, source.getName(), mime, purpose, "storage", source.lastModified() / 1000L);
+                } else {
+                    JSObject result = fileMetadata(destination, source.getName(), mime);
+                    result.put("source", "storage");
+                    result.put("dateAdded", source.lastModified() / 1000L);
+                    call.resolve(result);
+                }
             } catch (Exception e) {
                 if (destination != null) //noinspection ResultOfMethodCallIgnored
                     destination.delete();
-                call.reject("Could not copy storage file", "STORAGE_READ_FAILED", e);
+                if (purpose != null) failPreparation(call, e, "STORAGE_READ_FAILED");
+                else call.reject("Could not copy storage file", "STORAGE_READ_FAILED", e);
             }
         });
     }
@@ -445,37 +477,46 @@ public class StemmaMedia extends Plugin {
     @PluginMethod
     public void readFile(PluginCall call) {
         Long id = parseId(call.getString("id"));
-        if (id == null) {
-            call.reject("id must be a positive numeric MediaStore id", "INVALID_ARGUMENT");
-            return;
-        }
-        if (!hasMediaAccess()) {
-            call.reject("Media access has not been granted", "PERMISSION_DENIED");
-            return;
-        }
+        if (id == null) { call.reject("id must be a positive numeric MediaStore id", "INVALID_ARGUMENT"); return; }
+        if (!hasMediaAccess()) { call.reject("Media access has not been granted", "PERMISSION_DENIED"); return; }
+        final String purpose;
+        try { purpose = normalizedPurpose(call.getString("purpose")); }
+        catch (Exception e) { call.reject(e.getMessage(), "INVALID_ARGUMENT", e); return; }
+        if (purpose != null && !reservePreparation(call)) return;
         final long mediaId = id;
         final String type = normalizedMediaType(call.getString("mediaType", "all"));
         worker.execute(() -> {
+            File copied = null;
             try {
                 Uri uri = findMediaUri(mediaId, false, type);
                 boolean video = false;
-                if (uri == null) {
-                    uri = findMediaUri(mediaId, true, type);
-                    video = uri != null;
-                }
+                if (uri == null) { uri = findMediaUri(mediaId, true, type); video = uri != null; }
                 if (uri == null) throw new IllegalArgumentException("Media item is unavailable");
                 String mime = getContext().getContentResolver().getType(uri);
                 if (!isSupportedMime(mime)) throw new IllegalArgumentException("Unsupported media type");
                 String name = queryDisplayName(uri);
-                File copied = copyUriToPrivateCacheUnchanged(uri, name);
-                JSObject metadata = fileMetadata(copied, name, mime);
-                metadata.put("mediaType", video ? "video" : "image");
-                if (video) metadata.put("durationMs", queryVideoDuration(uri));
-                call.resolve(metadata);
+                copied = copyUriToPrivateCacheUnchanged(uri, name, purpose == null ? null : call);
+                if (purpose != null) {
+                    if (video && "photo".equals(purpose)) throw new IllegalArgumentException("Choose an image for a photo. For unsupported media, use the original Files attachment.");
+                    prepareCopiedFile(call, copied, name, mime, purpose, null, 0L);
+                } else {
+                    JSObject metadata = fileMetadata(copied, name, mime);
+                    metadata.put("mediaType", video ? "video" : "image");
+                    if (video) metadata.put("durationMs", queryVideoDuration(uri));
+                    call.resolve(metadata);
+                }
             } catch (Exception e) {
-                call.reject("Could not copy media item", "MEDIA_READ_FAILED", e);
+                if (purpose != null) failPreparation(call, e, "MEDIA_READ_FAILED");
+                else call.reject("Could not copy media item", "MEDIA_READ_FAILED", e);
             }
         });
+    }
+
+    /** Cancel the currently active image/video preparation, if any. */
+    @PluginMethod
+    public void cancelPreparation(PluginCall call) {
+        cancelActivePreparation("Media preparation cancelled", true);
+        call.resolve(new JSObject().put("cancelled", true));
     }
 
     /** Accessible shared media plus files selected through this plugin's SAF picker. */
@@ -503,6 +544,286 @@ public class StemmaMedia extends Plugin {
                 call.reject("Could not list recent files", "MEDIA_QUERY_FAILED", e);
             }
         });
+    }
+
+    @Nullable
+    private String normalizedPurpose(@Nullable String value) {
+        if (value == null || value.trim().isEmpty() || "attachment".equals(value)) return null;
+        if ("likee".equals(value) || "photo".equals(value)) return value;
+        throw new IllegalArgumentException("purpose must be likee, photo, or attachment");
+    }
+
+    private boolean reservePreparation(PluginCall call) {
+        synchronized (preparationLock) {
+            if (activePreparation != null) { call.reject("Another media preparation is already in progress", "MEDIA_PREPARATION_BUSY"); return false; }
+            Preparation prep = new Preparation(call);
+            activePreparation = prep;
+            prep.timeout = () -> failPreparation(call, new IOException("Media preparation timed out"), "MEDIA_PREPARATION_TIMEOUT");
+            mainHandler.postDelayed(prep.timeout, PREPARATION_TIMEOUT_MS);
+            return true;
+        }
+    }
+
+    private boolean isActive(PluginCall call) {
+        synchronized (preparationLock) { return activePreparation != null && activePreparation.call == call; }
+    }
+
+    private boolean finishPreparation(PluginCall call) {
+        Preparation prep;
+        synchronized (preparationLock) { prep = activePreparation; if (prep == null || prep.call != call) return false; activePreparation = null; }
+        if (prep.timeout != null) mainHandler.removeCallbacks(prep.timeout);
+        if (prep.monitor != null) mainHandler.removeCallbacks(prep.monitor);
+        if (prep.input != null && prep.input != prep.output) prep.input.delete();
+        return true;
+    }
+
+    private void failPreparation(PluginCall call, Exception error, String code) {
+        Preparation prep;
+        synchronized (preparationLock) {
+            prep = activePreparation;
+            if (prep == null || prep.call != call) return;
+            activePreparation = null;
+        }
+        if (prep.timeout != null) mainHandler.removeCallbacks(prep.timeout);
+        if (prep.monitor != null) mainHandler.removeCallbacks(prep.monitor);
+        if (prep.transformer != null) mainHandler.post(prep.transformer::cancel);
+        if (prep.output != null) prep.output.delete();
+        if (prep.input != null && prep.input != prep.output) prep.input.delete();
+        call.reject(error.getMessage() == null ? "Media preparation failed" : error.getMessage(), code, error);
+    }
+
+    private void cancelActivePreparation(String message, boolean reject) {
+        Preparation prep;
+        synchronized (preparationLock) { prep = activePreparation; activePreparation = null; }
+        if (prep == null) return;
+        if (prep.timeout != null) mainHandler.removeCallbacks(prep.timeout);
+        if (prep.monitor != null) mainHandler.removeCallbacks(prep.monitor);
+        final Transformer transformer = prep.transformer;
+        final File output = prep.output;
+        final File input = prep.input;
+        mainHandler.post(() -> {
+            if (transformer != null) transformer.cancel();
+            if (output != null) output.delete();
+            if (input != null && input != output) input.delete();
+        });
+        if (reject) prep.call.reject(message, "MEDIA_PREPARATION_CANCELLED");
+    }
+
+    private void prepareCopiedFile(PluginCall call, File copied, @Nullable String originalName, String originalMime,
+                                  String purpose, @Nullable String source, long dateAdded) throws Exception {
+        if (!isActive(call)) { copied.delete(); return; }
+        synchronized (preparationLock) { if (activePreparation != null && activePreparation.call == call) activePreparation.input = copied; }
+        if (copied.length() <= 0 || copied.length() > MAX_COPY_BYTES) throw new IOException("Media must be non-empty and no larger than 256 MiB");
+        boolean video = originalMime != null && originalMime.toLowerCase(Locale.ROOT).startsWith("video/");
+        if (video) {
+            if (!"likee".equals(purpose)) throw new IllegalArgumentException("Choose an image for a photo. For unsupported media, use the original Files attachment.");
+            VideoTrackInfo trackInfo = validateVideoTracks(copied);
+            File out = new File(copied.getParentFile(), "copy_" + UUID.randomUUID().toString().replace("-", "") + ".mp4");
+            synchronized (preparationLock) { if (activePreparation == null || activePreparation.call != call) return; activePreparation.output = out; }
+            startVideoTransform(call, copied, out, originalName, originalMime, source, dateAdded, trackInfo.hasAudio);
+            return;
+        }
+        if (originalMime == null || !originalMime.toLowerCase(Locale.ROOT).startsWith("image/")) {
+            throw new IllegalArgumentException("Unsupported media type. Use the original Files attachment.");
+        }
+        String lower = originalMime.toLowerCase(Locale.ROOT);
+        boolean compatibleLikee = lower.equals("image/jpeg") || lower.equals("image/jpg") || lower.equals("image/png") || lower.equals("image/webp") || lower.equals("image/gif");
+        boolean compatiblePhoto = lower.equals("image/jpeg") || lower.equals("image/jpg");
+        // Bake EXIF transforms into pixels so every downstream decoder sees the intended orientation.
+        boolean convert = ("likee".equals(purpose) ? !compatibleLikee : !compatiblePhoto) || hasNonNormalExifOrientation(copied);
+        if (!convert) {
+            synchronized (preparationLock) { if (activePreparation != null && activePreparation.call == call) activePreparation.output = copied; }
+            JSObject result = fileMetadata(copied, originalName, originalMime).put("mediaType", "image")
+                .put("originalName", originalName == null ? copied.getName() : originalName).put("originalMimeType", originalMime).put("converted", false);
+            if (source != null) result.put("source", source);
+            if (dateAdded > 0) result.put("dateAdded", dateAdded);
+            if (finishPreparation(call)) call.resolve(result);
+            else copied.delete();
+            return;
+        }
+        File jpeg = new File(copied.getParentFile(), "copy_" + UUID.randomUUID().toString().replace("-", "") + ".jpg");
+        synchronized (preparationLock) { if (activePreparation == null || activePreparation.call != call) return; activePreparation.output = jpeg; }
+        try {
+            normalizeImageToJpeg(copied, jpeg);
+            if (!isActive(call)) { jpeg.delete(); return; }
+            JSObject result = fileMetadata(jpeg, replaceExtension(originalName, ".jpg"), "image/jpeg").put("mediaType", "image")
+                .put("originalName", originalName == null ? copied.getName() : originalName).put("originalMimeType", originalMime).put("converted", true);
+            if (source != null) result.put("source", source);
+            if (dateAdded > 0) result.put("dateAdded", dateAdded);
+            if (finishPreparation(call)) call.resolve(result);
+            else jpeg.delete();
+        } catch (Exception e) { jpeg.delete(); throw e; }
+    }
+
+    private String replaceExtension(@Nullable String name, String ext) {
+        if (name == null || name.trim().isEmpty()) return "image" + ext;
+        int dot = name.lastIndexOf('.'); return (dot > 0 ? name.substring(0, dot) : name) + ext;
+    }
+
+    private boolean hasNonNormalExifOrientation(File image) {
+        try {
+            int orientation = new ExifInterface(image.getAbsolutePath()).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            return orientation != ExifInterface.ORIENTATION_NORMAL && orientation != ExifInterface.ORIENTATION_UNDEFINED;
+        } catch (Exception ignored) {
+            // Unsupported metadata does not make otherwise-uploadable original image bytes unusable.
+            return false;
+        }
+    }
+
+    private void normalizeImageToJpeg(File input, File output) throws Exception {
+        BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(input.getAbsolutePath(), bounds);
+        int w = bounds.outWidth, h = bounds.outHeight;
+        if (w <= 0 || h <= 0) throw new IOException("This image format cannot be decoded on this device. Use the original Files attachment.");
+        double pixels = (double) w * (double) h;
+        int sample = 1;
+        while (Math.max(w / sample, h / sample) > 2048 || pixels / ((double) sample * sample) > 4000000d) sample *= 2;
+        Bitmap decoded = null, oriented = null, rgb = null;
+        try {
+            BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inSampleSize = sample; opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            decoded = BitmapFactory.decodeFile(input.getAbsolutePath(), opts);
+            if (decoded == null) throw new IOException("This image format cannot be decoded on this device. Use the original Files attachment.");
+            oriented = decoded;
+            int orientation = new ExifInterface(input.getAbsolutePath()).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            Matrix matrix = new Matrix();
+            switch (orientation) {
+                case ExifInterface.ORIENTATION_ROTATE_90: matrix.setRotate(90); break;
+                case ExifInterface.ORIENTATION_ROTATE_180: matrix.setRotate(180); break;
+                case ExifInterface.ORIENTATION_ROTATE_270: matrix.setRotate(270); break;
+                case ExifInterface.ORIENTATION_FLIP_HORIZONTAL: matrix.setScale(-1, 1); break;
+                case ExifInterface.ORIENTATION_FLIP_VERTICAL: matrix.setScale(1, -1); break;
+                case ExifInterface.ORIENTATION_TRANSPOSE: matrix.setValues(new float[] {0, 1, 0, 1, 0, 0, 0, 0, 1}); break;
+                case ExifInterface.ORIENTATION_TRANSVERSE: matrix.setValues(new float[] {0, -1, decoded.getHeight(), -1, 0, decoded.getWidth(), 0, 0, 1}); break;
+                default: break;
+            }
+            if (!matrix.isIdentity()) oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.getWidth(), decoded.getHeight(), matrix, true);
+            rgb = Bitmap.createBitmap(oriented.getWidth(), oriented.getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(rgb); canvas.drawColor(Color.WHITE); canvas.drawBitmap(oriented, 0, 0, new Paint(Paint.FILTER_BITMAP_FLAG));
+            try (FileOutputStream stream = new FileOutputStream(output)) {
+                if (!rgb.compress(Bitmap.CompressFormat.JPEG, 90, stream)) throw new IOException("Could not encode JPEG image");
+            }
+            if (output.length() <= 0 || output.length() > MAX_COPY_BYTES) throw new IOException("Prepared image exceeds 256 MiB");
+            makeCacheRoom(output.getParentFile(), output, 0L);
+            output.setLastModified(System.currentTimeMillis());
+        } catch (OutOfMemoryError e) {
+            throw new IOException("Image is too large to prepare safely on this device. Use a smaller image or the original Files attachment.", e);
+        } finally {
+            if (rgb != null && !rgb.isRecycled()) rgb.recycle();
+            if (oriented != null && oriented != decoded && !oriented.isRecycled()) oriented.recycle();
+            if (decoded != null && !decoded.isRecycled()) decoded.recycle();
+        }
+    }
+
+    private long readableDurationMs(File file) throws IOException {
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try { retriever.setDataSource(file.getAbsolutePath()); String value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION); return value == null ? 0L : Long.parseLong(value); }
+        catch (Exception e) { throw new IOException("Video duration could not be read; use a supported video or attach the original file", e); }
+        finally { try { retriever.release(); } catch (Exception ignored) { } }
+    }
+
+    private static final class VideoTrackInfo {
+        final long durationMs;
+        final boolean hasAudio;
+        VideoTrackInfo(long durationMs, boolean hasAudio) { this.durationMs = durationMs; this.hasAudio = hasAudio; }
+    }
+
+    private VideoTrackInfo validateVideoTracks(File file) throws IOException {
+        MediaExtractor extractor = new MediaExtractor(); boolean video = false, audio = false; long longestUs = 0L;
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            for (int i=0;i<extractor.getTrackCount();i++) {
+                MediaFormat f=extractor.getTrackFormat(i); String mime=f.getString(MediaFormat.KEY_MIME);
+                boolean videoTrack = mime != null && mime.startsWith("video/");
+                boolean audioTrack = mime != null && mime.startsWith("audio/");
+                if (videoTrack) video=true;
+                if (audioTrack) audio=true;
+                if (videoTrack || audioTrack) {
+                    if (!f.containsKey(MediaFormat.KEY_DURATION)) throw new IOException("Video or audio track duration could not be read; no trimming was performed");
+                    long durationUs = f.getLong(MediaFormat.KEY_DURATION);
+                    if (durationUs <= 0L) throw new IOException("Video or audio track duration must be positive; no trimming was performed");
+                    if (durationUs > MAX_LIKEE_DURATION_MS * 1000L) throw new IOException("Video or audio track exceeds the 240-second Likee limit; no trimming was performed");
+                    longestUs = Math.max(longestUs, durationUs);
+                }
+            }
+        } catch (IOException e) { throw e; } catch (Exception e) { throw new IOException("Video tracks could not be read; use a supported MP4, MOV, or WebM video", e); }
+        finally { extractor.release(); }
+        if (!video) throw new IOException("Likee videos must contain a readable video track");
+        if (longestUs <= 0L) throw new IOException("Video track duration could not be read; no trimming was performed");
+        return new VideoTrackInfo((longestUs + 999L) / 1000L, audio);
+    }
+
+    private void validateOutputTrackDurations(File file, boolean requireAudioTrack) throws IOException {
+        MediaExtractor extractor = new MediaExtractor(); boolean video=false, audio=false;
+        try { extractor.setDataSource(file.getAbsolutePath()); for (int i=0;i<extractor.getTrackCount();i++) {
+            MediaFormat f=extractor.getTrackFormat(i); String mime=f.getString(MediaFormat.KEY_MIME);
+            boolean videoTrack = mime != null && mime.startsWith("video/");
+            boolean audioTrack = mime != null && mime.startsWith("audio/");
+            if (videoTrack) video=true; if (audioTrack) audio=true;
+            if (videoTrack || audioTrack) {
+                if (!f.containsKey(MediaFormat.KEY_DURATION)) throw new IOException("Prepared video or audio track duration could not be read");
+                long durationUs = f.getLong(MediaFormat.KEY_DURATION);
+                if (durationUs <= 0L) throw new IOException("Prepared video or audio track duration must be positive");
+                if (durationUs > MAX_LIKEE_DURATION_MS * 1000L) throw new IOException("Prepared video or audio track exceeds the strict 240-second limit; no trimming was performed");
+            }
+        }} catch (IOException e) { throw e; } catch (Exception e) { throw new IOException("Prepared MP4 tracks could not be validated", e); }
+        finally { extractor.release(); }
+        if (!video) throw new IOException("Prepared MP4 is missing a readable video track");
+        if (requireAudioTrack && !audio) throw new IOException("Prepared MP4 did not retain the input audio track");
+    }
+
+    private void startVideoTransform(PluginCall call, File input, File output, @Nullable String originalName, String originalMime,
+                                     @Nullable String source, long dateAdded, boolean requireAudioTrack) {
+        mainHandler.post(() -> {
+            if (!isActive(call)) { output.delete(); return; }
+            try {
+                Transformer transformer = new Transformer.Builder(getContext())
+                    .setVideoMimeType(MimeTypes.VIDEO_H264).setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .addListener(new Transformer.Listener() {
+                        @Override public void onCompleted(Composition composition, ExportResult result) {
+                            if (!isActive(call)) { output.delete(); return; }
+                            try {
+                                long duration = result.durationMs;
+                                if (duration <= 0L) duration = readableDurationMs(output);
+                                if (duration <= 0L) throw new IOException("Prepared video duration could not be read");
+                                if (duration > MAX_LIKEE_DURATION_MS) throw new IOException("Prepared video exceeds the 240-second Likee limit; no trimming was performed");
+                                validateOutputTrackDurations(output, requireAudioTrack);
+                                if (!output.isFile() || output.length() <= 0 || output.length() > MAX_COPY_BYTES) throw new IOException("Prepared video exceeds 256 MiB or is empty");
+                                JSObject metadata = fileMetadata(output, replaceExtension(originalName, ".mp4"), "video/mp4")
+                                    .put("mediaType", "video").put("durationMs", duration).put("originalName", originalName == null ? input.getName() : originalName)
+                                    .put("originalMimeType", originalMime).put("converted", true);
+                                if (source != null) metadata.put("source", source); if (dateAdded > 0) metadata.put("dateAdded", dateAdded);
+                                if (finishPreparation(call)) call.resolve(metadata);
+                                else output.delete();
+                            } catch (Exception e) { output.delete(); failPreparation(call, e, "MEDIA_PREPARATION_FAILED"); }
+                        }
+                        @Override public void onError(Composition composition, ExportResult result, ExportException error) {
+                            output.delete(); failPreparation(call, new IOException("This video cannot be converted by the device. Try a supported MP4, MOV, or WebM file, or attach the original file.", error), "VIDEO_CONVERSION_FAILED");
+                        }
+                    }).build();
+                synchronized (preparationLock) { if (activePreparation == null || activePreparation.call != call) { transformer.cancel(); output.delete(); return; } activePreparation.transformer = transformer; }
+                transformer.start(new EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input))).build(), output.getAbsolutePath());
+                Runnable monitor = new Runnable() { @Override public void run() {
+                    if (!isActive(call)) return;
+                    if (output.length() > MAX_COPY_BYTES) { transformer.cancel(); output.delete(); failPreparation(call, new IOException("Prepared video exceeds 256 MiB"), "MEDIA_SIZE_LIMIT"); return; }
+                    mainHandler.postDelayed(this, 1000L);
+                }};
+                synchronized (preparationLock) { if (activePreparation != null && activePreparation.call == call) activePreparation.monitor = monitor; }
+                mainHandler.postDelayed(monitor, 1000L);
+            } catch (Exception e) { output.delete(); failPreparation(call, new IOException("Could not start video conversion", e), "VIDEO_CONVERSION_FAILED"); }
+        });
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        cancelActivePreparation("Media plugin destroyed", true);
+        worker.shutdownNow();
+        super.handleOnDestroy();
+    }
+
+    private static final class Preparation {
+        final PluginCall call; @Nullable File input; @Nullable File output; @Nullable Transformer transformer; @Nullable Runnable timeout; @Nullable Runnable monitor;
+        Preparation(PluginCall call) { this.call = call; }
     }
 
     private void queryAlbums(Uri collection, Map<String, Album> albums) {
@@ -889,14 +1210,16 @@ public class StemmaMedia extends Plugin {
         return ".bin";
     }
 
-    private void copyFileUnchanged(File source, File destination) throws IOException {
+    private void copyFileUnchanged(File source, File destination, @Nullable PluginCall preparationCall) throws IOException {
         File dir = destination.getParentFile();
         trimCache(dir, 0L);
+        if (preparationCall != null) registerPreparationInput(preparationCall, destination);
         long copied = 0L;
         try (InputStream input = new FileInputStream(source); OutputStream output = new FileOutputStream(destination)) {
             byte[] buffer = new byte[32 * 1024];
             int count;
             while ((count = input.read(buffer)) != -1) {
+                ensurePreparationActive(preparationCall);
                 copied += count;
                 if (copied > MAX_COPY_BYTES) throw new IOException("File exceeds 256 MiB limit");
                 makeCacheRoom(dir, destination, count);
@@ -912,17 +1235,19 @@ public class StemmaMedia extends Plugin {
         }
     }
 
-    private File copyUriToPrivateCacheUnchanged(Uri uri, @Nullable String originalName) throws Exception {
+    private File copyUriToPrivateCacheUnchanged(Uri uri, @Nullable String originalName, @Nullable PluginCall preparationCall) throws Exception {
         File dir = mediaCacheDir();
         String suffix = originalName == null ? extensionForMime(getContext().getContentResolver().getType(uri)) : safeExtension(originalName);
         File destination = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + suffix);
         trimCache(dir, 0L);
+        if (preparationCall != null) registerPreparationInput(preparationCall, destination);
         long copied = 0L;
         try (InputStream input = getContext().getContentResolver().openInputStream(uri); OutputStream output = new FileOutputStream(destination)) {
             if (input == null) throw new IOException("Media item cannot be opened");
             byte[] buffer = new byte[32 * 1024];
             int count;
             while ((count = input.read(buffer)) != -1) {
+                ensurePreparationActive(preparationCall);
                 copied += count;
                 if (copied > MAX_COPY_BYTES) throw new IOException("File exceeds 256 MiB limit");
                 makeCacheRoom(dir, destination, count);
@@ -936,6 +1261,17 @@ public class StemmaMedia extends Plugin {
             destination.delete();
             throw e;
         }
+    }
+
+    private void registerPreparationInput(PluginCall call, File input) throws IOException {
+        synchronized (preparationLock) {
+            if (activePreparation == null || activePreparation.call != call) throw new IOException("Media preparation cancelled");
+            activePreparation.input = input;
+        }
+    }
+
+    private void ensurePreparationActive(@Nullable PluginCall call) throws IOException {
+        if (call != null && !isActive(call)) throw new IOException("Media preparation cancelled");
     }
 
     private long queryVideoDuration(Uri uri) {

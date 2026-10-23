@@ -30,6 +30,7 @@ const TYPES = Object.freeze({
   'video/quicktime': { extensions: ['mov'], kind: 'mp4' }
 });
 const SAFE_INLINE_IMAGES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const OCTET_STREAM = 'application/octet-stream';
 
 export function cleanAttachmentName(value) {
   if (typeof value !== 'string') return null;
@@ -69,7 +70,23 @@ function signatureMatches(data, kind) {
   }
 }
 
-export function validateAttachmentBody(value, { allowReplyTo = false } = {}) {
+function rasterMimeForData(data) {
+  for (const [mimeType, kind] of [['image/png', 'png'], ['image/jpeg', 'jpeg'], ['image/gif', 'gif'], ['image/webp', 'webp']]) {
+    if (signatureMatches(data, kind)) return mimeType;
+  }
+  return null;
+}
+
+function attachmentMimeForData(data, claimedMimeType) {
+  // Only raster bytes with a recognized signature may ever be served inline. Ignore
+  // both the filename and the sender's claim when identifying those formats.
+  const rasterMime = rasterMimeForData(data);
+  if (rasterMime) return rasterMime;
+  const type = TYPES[claimedMimeType];
+  return type && !type.inline && signatureMatches(data, type.kind) ? claimedMimeType : OCTET_STREAM;
+}
+
+export function validateAttachmentBody(value, { allowReplyTo = false, allowGeneric = false } = {}) {
   const allowedKeys = ['name', 'mimeType', 'data', ...(allowReplyTo ? ['replyToId'] : [])];
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       ![3, 4].includes(Object.keys(value).length) || !['name', 'mimeType', 'data'].every(key => Object.hasOwn(value, key)) ||
@@ -81,15 +98,18 @@ export function validateAttachmentBody(value, { allowReplyTo = false } = {}) {
   }
   const name = cleanAttachmentName(value.name);
   const mimeType = typeof value.mimeType === 'string' ? value.mimeType.toLowerCase().trim() : '';
+  if (typeof value.mimeType !== 'string') return null;
   const type = TYPES[mimeType];
-  if (!name || !type || typeof value.data !== 'string') return null;
+  if (!name || typeof value.data !== 'string' || (!allowGeneric && !type)) return null;
   const extension = name.includes('.') ? name.split('.').at(-1).toLowerCase() : '';
-  if (!type.extensions.includes(extension)) return null;
+  if (!allowGeneric && !type.extensions.includes(extension)) return null;
   const encoded = value.data;
   if (!encoded || encoded.length > Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return null;
   const data = Buffer.from(encoded, 'base64');
-  if (!data.length || data.length > MAX_ATTACHMENT_BYTES || data.toString('base64') !== encoded || !signatureMatches(data, type.kind)) return null;
-  return { name, mimeType, size: data.length, data, ...(replyToId ? { replyToId } : {}) };
+  if (!data.length || data.length > MAX_ATTACHMENT_BYTES || data.toString('base64') !== encoded) return null;
+  if (!allowGeneric && !signatureMatches(data, type.kind)) return null;
+  const canonicalMimeType = allowGeneric ? attachmentMimeForData(data, mimeType) : mimeType;
+  return { name, mimeType: canonicalMimeType, size: data.length, data, ...(replyToId ? { replyToId } : {}) };
 }
 
 function attachmentDto(row) {
@@ -302,7 +322,7 @@ function validateChannelAttachmentBody(value) {
     caption = value.caption.trim();
     if (caption.includes('\0') || [...caption].length > 4000) return null;
   }
-  const attachment = validateAttachmentBody({ name: value.name, mimeType: value.mimeType, data: value.data });
+  const attachment = validateAttachmentBody({ name: value.name, mimeType: value.mimeType, data: value.data }, { allowGeneric: true });
   return attachment ? { ...attachment, caption } : null;
 }
 
@@ -320,7 +340,7 @@ export function registerAttachmentsApi(app, { attachmentStore = null, groupStore
     noStore(res);
     if (!attachmentStore) return unavailable(res);
     if (!validConversationId(req.params.id)) return res.status(400).json({ error: 'Conversation id is invalid.' });
-    const attachment = validateAttachmentBody(req.body, { allowReplyTo: true });
+    const attachment = validateAttachmentBody(req.body, { allowReplyTo: true, allowGeneric: true });
     if (!attachment) return res.status(400).json({ error: 'Attachment file data or type is invalid.' });
     try {
       const row = await attachmentStore.createConversationAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
@@ -332,7 +352,7 @@ export function registerAttachmentsApi(app, { attachmentStore = null, groupStore
     noStore(res);
     if (!attachmentStore) return unavailable(res);
     if (!validGroupChannelId(req.params.id)) return res.status(400).json({ error: 'Group id is invalid.' });
-    const attachment = validateAttachmentBody(req.body);
+    const attachment = validateAttachmentBody(req.body, { allowGeneric: true });
     if (!attachment) return res.status(400).json({ error: 'Attachment file data or type is invalid.' });
     try {
       const groupId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id) ? await groupStore?.getLegacyId(req.params.id) : req.params.id;
@@ -360,7 +380,7 @@ export function registerAttachmentsApi(app, { attachmentStore = null, groupStore
   app.post('/api/pulse/saved/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {
     noStore(res);
     if (!attachmentStore) return unavailable(res);
-    const attachment = validateAttachmentBody(req.body);
+    const attachment = validateAttachmentBody(req.body, { allowGeneric: true });
     if (!attachment) return res.status(400).json({ error: 'Attachment file data or type is invalid.' });
     try {
       const row = await attachmentStore.createSavedAttachment(req.session.stemmaUser.subject, attachment);
@@ -373,14 +393,15 @@ export function registerAttachmentsApi(app, { attachmentStore = null, groupStore
     if (!validAttachmentId(req.params.id)) return res.status(404).json({ error: 'Attachment not found.' });
     try {
       const file = await attachmentStore.getAttachmentForSubject(req.session.stemmaUser.subject, req.params.id);
-      if (!file || !Buffer.isBuffer(file.data) || !TYPES[file.mimeType]) return res.status(404).json({ error: 'Attachment not found.' });
-      const inline = SAFE_INLINE_IMAGES.has(file.mimeType);
+      if (!file || !Buffer.isBuffer(file.data)) return res.status(404).json({ error: 'Attachment not found.' });
+      const mimeType = attachmentMimeForData(file.data, typeof file.mimeType === 'string' ? file.mimeType.toLowerCase().trim() : '');
+      const inline = SAFE_INLINE_IMAGES.has(mimeType);
       const fallbackName = file.name.replace(/["\\\r\n]/g, '_').replace(/[^\x20-\x7e]/g, '_');
       res.set({
         'Cache-Control': 'private, no-store, max-age=0',
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'none'; sandbox",
-        'Content-Type': file.mimeType,
+        'Content-Type': mimeType,
         'Content-Length': String(file.data.length),
         'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(file.name)}`
       });

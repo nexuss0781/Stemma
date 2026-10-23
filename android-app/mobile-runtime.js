@@ -11,7 +11,7 @@ import appPackage from './package.json';
 
 installPhotoResponseValidation(window);
 const ORIGIN = 'https://stemma.wasmer.app';
-const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:11});
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:12});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
   getAccess: options=>nativeMedia.getAccess(options),
@@ -20,6 +20,7 @@ const media = Object.freeze({
   listFiles: options=>nativeMedia.listFiles(options),
   readStorageFile: options=>nativeMedia.readStorageFile(options),
   capturePhoto: options=>nativeMedia.capturePhoto(options),
+  cancelPreparation: options=>nativeMedia.cancelPreparation(options),
   listAlbums: options=>nativeMedia.listAlbums(options),
   listMedia: options=>nativeMedia.listMedia(options),
   thumbnail: options=>nativeMedia.thumbnail(options),

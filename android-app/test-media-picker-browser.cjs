@@ -33,9 +33,11 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
   };
   const mediaCalls = [];
   const likeeItems = [
-    { id: '7', mediaType: 'image', mimeType: 'image/jpeg', name: 'photo.jpg', size: 13, source: 'mediaStore' },
-    { id: '7', mediaType: 'video', mimeType: 'video/mp4', name: 'four-minutes.mp4', size: 13, durationMs: 240000, source: 'mediaStore' }
+    { id: '7', mediaType: 'image', mimeType: 'image/heic', name: 'photo.heic', size: 13, source: 'mediaStore' },
+    { id: '7', mediaType: 'video', mimeType: 'video/x-matroska', name: 'four-minutes.mkv', size: 13, durationMs: 240000, source: 'mediaStore' }
   ];
+  const preparations = [], originalMetadata = [];
+  let holdPreparation = false, releasePreparation, cancelPreparationCalls = 0;
   let fileGrant = false, filePath = '/storage/emulated/0';
   const native = {
     getAccess: async () => ({ status: 'granted', fileAccess: fileGrant }),
@@ -43,7 +45,14 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
     listAlbums: async options => { mediaCalls.push(['albums', options]); return { status: 'granted', albums: [{ id: 'album-camera', name: 'Camera Roll' }] }; },
     listMedia: async options => { mediaCalls.push(['media', options]); return { status: 'granted', items: likeeItems, hasMore: false }; },
     thumbnail: async ({ id, mediaType }) => ({ webPath: `thumb://${mediaType}/${id}` }),
-    readFile: async ({ id, mediaType }) => ({ path: `/app/cache/${mediaType}-${id}`, webPath: `native://${mediaType}-${id}`, name: mediaType === 'video' ? 'four-minutes.mp4' : 'photo.jpg', mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg', size: 13, durationMs: mediaType === 'video' ? likeeItems[1].durationMs : undefined }),
+    readFile: async ({ id, mediaType, purpose }) => {
+      preparations.push({ id, mediaType, purpose });
+      if (holdPreparation) await new Promise(resolve => { releasePreparation = resolve; });
+      const source = mediaType === 'video' ? likeeItems[1] : likeeItems[0];
+      originalMetadata.push({ name: source.name, mimeType: source.mimeType, size: source.size });
+      return { path: `/app/cache/prepared-${mediaType}-${id}`, webPath: `native://prepared-${mediaType}-${id}`, name: mediaType === 'video' ? 'four-minutes.mp4' : 'photo.jpg', mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg', size: 13, durationMs: mediaType === 'video' ? source.durationMs : undefined, converted: true, sourceName: source.name, sourceMimeType: source.mimeType };
+    },
+    cancelPreparation: async () => { cancelPreparationCalls++; },
     requestFileAccess: async () => { fileGrant = true; return { fileAccess: true }; },
     listFiles: async ({ path: requested, offset }) => {
       filePath = requested || filePath;
@@ -53,7 +62,7 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
         : [{ path: `${filePath}/Documents`, name: 'Documents', isDirectory: true, size: 0, mimeType: '', source: 'storage' }];
       return { items, path: filePath, parentPath: filePath === '/storage/emulated/0' ? null : '/storage/emulated/0', roots: [{ name: 'Internal', path: '/storage/emulated/0' }], hasMore: false };
     },
-    readStorageFile: async ({ path: selectedPath }) => { mediaCalls.push(['readStorageFile', selectedPath]); return { path: '/app/cache/original-file', webPath: 'native://original-file', name: selectedPath.split('/').pop(), mimeType: 'application/octet-stream', size: 13 }; }
+    readStorageFile: async ({ path: selectedPath, purpose }) => { const result = { path: '/app/cache/original-file', webPath: 'native://original-file', name: selectedPath.split('/').pop(), mimeType: 'application/octet-stream', size: 13 }; mediaCalls.push(['readStorageFile', selectedPath, purpose, result]); return result; }
   };
   const reads = [];
   w.fetch = async url => {
@@ -70,7 +79,8 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
     abort() { this.onabort?.(); }
   }
   w.XMLHttpRequest = MockXHR;
-  w.StemmaNative = { media: native, upload: async () => null };
+  let nativeUploadCalls = 0;
+  w.StemmaNative = { media: native, upload: async () => { nativeUploadCalls++; return null; } };
   vm.runInNewContext(source, { window: w, Blob: w.Blob, File: w.File, FileReader: w.FileReader, AbortController: w.AbortController, URL: w.URL, Promise, console, setTimeout: w.setTimeout.bind(w), clearTimeout: w.clearTimeout.bind(w) });
   const api = w.StemmaChatAttachments;
 
@@ -86,18 +96,22 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
   assert.ok([...album.options].some(option => option.textContent === 'Camera Roll'), 'native album names are shown');
   album.value = 'album-camera'; album.dispatchEvent(new w.Event('change', { bubbles: true }));
   await until(() => mediaCalls.some(call => call[0] === 'media' && call[1].albumId === 'album-camera'), 'selected album is sent to native listing');
-  await until(() => likeeDialog.querySelector('input[aria-label="Select four-minutes.mp4"]'), 'album media renders');
+  await until(() => likeeDialog.querySelector('input[aria-label="Select four-minutes.mkv"]'), 'album media renders');
   assert.equal(likeeDialog.querySelector('[data-camera]'), null, 'Likee markup has no camera control');
   assert.equal(likeeDialog.querySelector('.native-camera-tile'), null, 'Likee Gallery has no camera tile');
   assert.equal(likeeDialog.querySelectorAll('[data-native-key]').length, 2, 'same numeric image/video IDs remain separate tiles');
-  const videoCheck = likeeDialog.querySelector('input[aria-label="Select four-minutes.mp4"]');
+  const videoCheck = likeeDialog.querySelector('input[aria-label="Select four-minutes.mkv"]');
   assert.ok(videoCheck, 'galleryOnly lists video as well as photo');
   videoCheck.checked = true; videoCheck.dispatchEvent(new w.Event('change', { bubbles: true }));
   likeeDialog.querySelector('[data-confirm]').click(); // metadata review
   likeeDialog.querySelector('[data-confirm]').click(); // Use media callback
   await until(() => selectedBlob, 'Likee callback receives a File/Blob');
   assert.equal(selectedBlob.type, 'video/mp4');
-  assert.equal(selectedBlob.nativePath, '/app/cache/video-7');
+  assert.equal(selectedBlob.nativePath, '/app/cache/prepared-video-7');
+  assert.equal(selectedBlob.nativeDurationMs, 240000, 'normalized video retains its native duration');
+  assert.deepEqual(preparations.at(-1), { id: '7', mediaType: 'video', purpose: 'likee' });
+  assert.equal(originalMetadata.at(-1).mimeType, 'video/x-matroska', 'source metadata remains the original MKV');
+  assert.match(likeeDialog.textContent, /your original stays unchanged/i, 'conversion provenance note is shown');
   assert.equal(JSON.stringify(mediaCalls.find(x => x[0] === 'media')[1]), JSON.stringify({ mediaType: 'all', albumId: undefined, limit: 60, offset: 0 }));
   assert.equal(reads.length, 1);
   assert.equal(w.document.querySelectorAll('input[type="file"]').length, 0, 'no hidden chooser inputs exist');
@@ -106,8 +120,8 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
     likeeItems[1].durationMs = duration;
     const before = selectedBlob;
     const dialog = api.pickMedia({ button: likeeButton, galleryOnly: true, maxBytes: 256 * 1024 * 1024, ready: () => true, onSelect: blob => { selectedBlob = blob; } });
-    await until(() => dialog.querySelector('input[aria-label="Select four-minutes.mp4"]'), 'video tile rendered for duration check');
-    const choice = dialog.querySelector('input[aria-label="Select four-minutes.mp4"]'); choice.checked = true; choice.dispatchEvent(new w.Event('change', { bubbles: true }));
+    await until(() => dialog.querySelector('input[aria-label="Select four-minutes.mkv"]'), 'video tile rendered for duration check');
+    const choice = dialog.querySelector('input[aria-label="Select four-minutes.mkv"]'); choice.checked = true; choice.dispatchEvent(new w.Event('change', { bubbles: true }));
     dialog.querySelector('[data-confirm]').click(); dialog.querySelector('[data-confirm]').click();
     await until(() => dialog.querySelector('.native-picker-message').textContent.includes(expectedMessage), 'duration validation fails closed');
     assert.equal(selectedBlob, before, 'invalid duration never reaches the media callback');
@@ -117,16 +131,36 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
   await tryVideo(240001, '4 minutes or shorter');
   await tryVideo(undefined, 'Native video duration could not be read');
 
+  // Closing during asynchronous native preparation cancels work and fences off late results.
+  holdPreparation = true;
+  let lateSelections = 0;
+  const cancelDialog = api.pickMedia({ button: likeeButton, galleryOnly: true, maxBytes: 256 * 1024 * 1024, ready: () => true, onSelect: () => { lateSelections++; } });
+  await until(() => cancelDialog.querySelector('input[aria-label="Select four-minutes.mkv"]'), 'cancellation fixture video renders');
+  const cancelChoice = cancelDialog.querySelector('input[aria-label="Select four-minutes.mkv"]');
+  cancelChoice.checked = true; cancelChoice.dispatchEvent(new w.Event('change', { bubbles: true }));
+  cancelDialog.querySelector('[data-confirm]').click();
+  await until(() => preparations.at(-1)?.purpose === 'likee' && releasePreparation, 'native media preparation is pending');
+  const uploadsBeforeCancel = nativeUploadCalls;
+  cancelDialog.querySelector('[data-close]').click();
+  await until(() => cancelPreparationCalls === 1, 'native preparation cancellation is requested');
+  releasePreparation(); holdPreparation = false;
+  await tick(20);
+  assert.equal(lateSelections, 0, 'late native result cannot reach onSelect after picker close');
+  assert.equal(nativeUploadCalls, uploadsBeforeCancel, 'late native result cannot trigger an upload');
+
   // pickPhoto remains photo-only and returns a Blob/File through its existing callback contract.
   let photoBlob = null;
   const photoDialog = api.pickPhoto({ button: likeeButton, onSelect: blob => { photoBlob = blob; } });
-  await until(() => photoDialog.querySelector('input[aria-label="Select photo.jpg"]'), 'photo-only Gallery item renders');
+  await until(() => photoDialog.querySelector('input[aria-label="Select photo.heic"]'), 'photo-only Gallery item renders');
   assert.equal(photoDialog.querySelectorAll('.native-gallery-tile:not(.native-camera-tile)').length, 1, 'pickPhoto filters videos but keeps photos');
   assert.ok(mediaCalls.some(call => call[0] === 'albums' && call[1].mediaType === 'images'), 'pickPhoto asks native API for images only');
-  photoDialog.querySelector('input[aria-label="Select photo.jpg"]').click();
+  photoDialog.querySelector('input[aria-label="Select photo.heic"]').click();
   photoDialog.querySelector('[data-confirm]').click(); photoDialog.querySelector('[data-confirm]').click();
   await until(() => photoBlob, 'pickPhoto callback receives selected image');
   assert.equal(photoBlob.type, 'image/jpeg');
+  assert.equal(photoBlob.nativePath, '/app/cache/prepared-all-7');
+  assert.deepEqual(preparations.at(-1), { id: '7', mediaType: 'all', purpose: 'photo' });
+  assert.equal(originalMetadata.at(-1).mimeType, 'image/heic', 'photo preparation preserves original source metadata');
 
   // General attachment browsing requests shared-files permission only after the Files tab, then lists unrestricted names.
   const form = w.document.querySelector('#form'); let clickHandler;
@@ -160,7 +194,9 @@ async function until(test, message) { for (let i=0; i<120; i++) { if (test()) re
   assert.equal(payload.mimeType, 'application/octet-stream');
   assert.ok(payload.data, 'original file bytes are base64 encoded for existing attachment API');
   assert.ok(mediaCalls.some(x => x[0] === 'files'));
-  assert.ok(mediaCalls.some(x => x[0] === 'readStorageFile'), 'selected file bytes are read through the scoped native storage API');
-  console.log('media picker browser mock tests: Likee photo/video listing and callback, 240s allowance, chooser-free Files grant/navigation, unrestricted extension, and JSON upload passed');
+  assert.ok(mediaCalls.some(x => x[0] === 'readStorageFile' && x[2] === 'attachment'), 'selected file bytes are read through the scoped native storage API with attachment purpose');
+  assert.equal(payload.mimeType, 'application/octet-stream', 'generic Files upload keeps its original MIME instead of requesting conversion');
+  assert.equal(mediaCalls.find(x => x[0] === 'readStorageFile')[3].converted, undefined, 'generic attachment read does not ask for or receive native conversion');
+  console.log('media picker browser mock tests: HEIC/MKV normalization, photo/Likee/attachment purposes, strict duration, cancellation fencing, chooser-free Files navigation, and original-byte attachment upload passed');
   dom.window.close();
 })().catch(error => { console.error(error); process.exitCode = 1; });

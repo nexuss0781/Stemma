@@ -42,10 +42,33 @@ def test_file_listing_and_reads_are_confined_and_bounded():
     assert "getCanonicalFile()" in JAVA and "isWithinRoots" in JAVA
     assert '"Android".equalsIgnoreCase(first)' in JAVA
     assert "resolveStoragePath(requested, roots)" in method_body("readStorageFile")
-    assert "MAX_COPY_BYTES" in JAVA and "copyFileUnchanged(source, destination)" in method_body("readStorageFile")
+    assert "MAX_COPY_BYTES" in JAVA and "copyFileUnchanged(source, destination," in method_body("readStorageFile")
     assert "makeCacheRoom(dir, destination, count)" in JAVA
-    assert "copyFileUnchanged(source, destination)" in method_body("readStorageFile")
-    assert "normalizeImageToJpeg" not in JAVA
+    assert "copyFileUnchanged(source, destination," in method_body("readStorageFile")
+    assert 'purpose = normalizedPurpose(call.getString("purpose"))' in method_body("readStorageFile")
+    assert 'if (purpose != null)' in method_body("readStorageFile")
+    assert '"attachment".equals(value)) return null' in JAVA
+
+
+def test_purpose_aware_media_preparation():
+    assert 'purpose = normalizedPurpose(call.getString("purpose"))' in method_body("readFile")
+    assert '"likee".equals(value) || "photo".equals(value)' in JAVA
+    assert "normalizeImageToJpeg" in JAVA
+    assert ".setVideoMimeType(MimeTypes.VIDEO_H264).setAudioMimeType(MimeTypes.AUDIO_AAC)" in JAVA
+    assert 'put("originalMimeType", originalMime)' in JAVA
+    assert 'put("converted", true)' in JAVA
+    assert "MAX_LIKEE_DURATION_MS" in JAVA and "PREPARATION_TIMEOUT_MS" in JAVA
+    assert "cancelActivePreparation" in method_body("cancelPreparation")
+
+
+def test_preparation_cleanup_orientation_and_cache_bounds():
+    assert "registerPreparationInput(preparationCall, destination)" in JAVA
+    assert "ensurePreparationActive(preparationCall)" in JAVA
+    assert "if (finishPreparation(call)) call.resolve" in JAVA
+    assert 'MEDIA_PREPARATION_TIMEOUT' in JAVA and 'prep.output.delete()' in JAVA
+    assert 'hasNonNormalExifOrientation(copied)' in JAVA
+    assert 'ExifInterface.ORIENTATION_TRANSVERSE' in JAVA and 'makeCacheRoom(output.getParentFile(), output, 0L)' in JAVA
+    assert 'VIDEO_CONVERSION_FAILED' in JAVA and 'did not retain the input audio track' in JAVA
 
 
 def test_camera_and_manifest_permissions():
@@ -62,14 +85,15 @@ def test_camera_and_manifest_permissions():
 def test_media_store_is_family_based_and_preserves_duration_metadata():
     assert 'return value.startsWith("image/") || value.startsWith("video/")' in JAVA
     assert 'MediaStore.MediaColumns.MIME_TYPE + " LIKE ?"' in JAVA
-    assert "copyUriToPrivateCacheUnchanged(uri, name)" in method_body("readFile")
+    assert "copyUriToPrivateCacheUnchanged(uri, name," in method_body("readFile")
     assert "durationMs" in JAVA
     assert "ACTION_OPEN_DOCUMENT" not in JAVA
 
 
 if __name__ == "__main__":
     tests = [test_permission_first_storage_and_no_picker, test_file_listing_and_reads_are_confined_and_bounded,
-             test_camera_and_manifest_permissions, test_media_store_is_family_based_and_preserves_duration_metadata]
+             test_camera_and_manifest_permissions, test_media_store_is_family_based_and_preserves_duration_metadata,
+             test_purpose_aware_media_preparation, test_preparation_cleanup_orientation_and_cache_bounds]
     for test in tests:
         test()
         print(f"PASS {test.__name__}")
