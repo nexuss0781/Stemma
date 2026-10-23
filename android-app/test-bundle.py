@@ -6,7 +6,7 @@ INIT=r'''(() => {
 const realFetch=window.fetch.bind(window);
 window.__calls=[];window.__prefs={};window.__files={};window.__persistent={};
 window.androidBridge={};
-const methods={StemmaPersistence:['load','save','remove','flushCookies','setSessionActive'],App:['addListener','removeListener','getLaunchUrl','minimizeApp'],Browser:['open','close'],Network:['getStatus','addListener','removeListener'],Filesystem:['readFile','writeFile','deleteFile'],Preferences:['get','set','remove'],StemmaTransport:['request','clearPrivateCache','upload','cancelUpload','addListener','removeListener'],StemmaMedia:['requestAccess','listAlbums','listMedia','thumbnail','readFile','selectFile','recentFiles']};
+const methods={StemmaPersistence:['load','save','remove','flushCookies','setSessionActive'],App:['addListener','removeListener','getLaunchUrl','minimizeApp'],Browser:['open','close'],Network:['getStatus','addListener','removeListener'],Filesystem:['readFile','writeFile','deleteFile'],Preferences:['get','set','remove'],StemmaTransport:['request','clearPrivateCache','upload','cancelUpload','addListener','removeListener'],StemmaMedia:['getAccess','requestAccess','requestFileAccess','listFiles','readStorageFile','capturePhoto','listAlbums','listMedia','thumbnail','readFile','recentFiles']};
 window.Capacitor={PluginHeaders:Object.entries(methods).map(([name,methods])=>({name,methods:methods.map(name=>({name,rtype:name==='addListener'?'callback':'promise'}))})),nativeCallback:()=> 'test-callback',nativePromise:async(name,method,options={})=>{
 window.__calls.push({name,method,options});
 if(name==='StemmaPersistence'){if(method==='load')return {value:window.__persistent[options.key]??null};if(method==='save')window.__persistent[options.key]=options.value;if(method==='remove')delete window.__persistent[options.key];return {};}
@@ -16,7 +16,7 @@ if(name==='App' && method==='getLaunchUrl')return {};
 if(name==='Filesystem') {if(method==='readFile'){if(!(options.path in window.__files))throw new Error('not found');return {data:window.__files[options.path]};}if(method==='writeFile'){window.__files[options.path]=options.data;return {};}if(method==='deleteFile'){delete window.__files[options.path];return {};}}
 if(name==='Preferences'){if(method==='get')return {value:window.__prefs[options.key]??null};if(method==='set')window.__prefs[options.key]=options.value;if(method==='remove')delete window.__prefs[options.key];return {};}
 if(name==='StemmaMedia'){
-if(method==='requestAccess')return {access:'full',granted:true,limited:false};
+if(method==='getAccess'||method==='requestAccess')return {status:'granted',mediaAccess:true,fileAccess:false,granted:true,fullAccess:true,partial:false};
 if(method==='listAlbums')return {albums:[{id:'camera',name:'Camera',count:2},{id:'screenshots',name:'Screenshots',count:1}]};
 if(method==='listMedia')return {items:[{id:'1',name:'camera.jpg',mimeType:'image/jpeg',size:128,uri:'content://media/external/images/media/1'}],hasMore:false};
 if(method==='thumbnail')return {webPath:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>'};
@@ -61,11 +61,13 @@ with sync_playwright() as p:
  page.evaluate('window.dispatchEvent(new Event("online"))')
  assert not page.locator('#stemma-offline-status').is_visible()
  page.evaluate('''()=>window.StemmaChatAttachments.pickMedia({button:document.querySelector('button'),galleryOnly:true,onSelect:file=>window.__picked={name:file.name,size:file.size,nativePath:file.nativePath}})''')
- page.locator('[data-native-albums]').wait_for(state='visible')
+ page.locator('select[aria-label="Choose album"]').wait_for(state='visible')
  page.locator('.native-gallery-tile').first.wait_for()
- assert page.locator('[data-native-albums] option').count()==3
- page.locator('[data-native-albums]').select_option('camera')
+ assert page.locator('select[aria-label="Choose album"] option').count()==3
+ page.locator('select[aria-label="Choose album"]').select_option('camera')
  page.get_by_role('button',name='Select camera.jpg',exact=True).click()
+ page.get_by_role('button',name='Use media',exact=True).click()
+ page.locator('.native-picker-review').wait_for(state='visible')
  page.get_by_role('button',name='Use media',exact=True).click()
  page.wait_for_function('window.__picked')
  picked=page.evaluate('window.__picked')

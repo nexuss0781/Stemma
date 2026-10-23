@@ -76,8 +76,10 @@ const out=path.join(__dirname,'www');
  const ordered=[...scripts.filter(x=>!x[2].includes('defer')),...scripts.filter(x=>x[2].includes('defer'))];
  let legacy='';
  for(const item of ordered){
-	   let code=await fs.readFile(path.join(source,item[1].replace(/^\//,'')),'utf8');
-	   code=universalHandles.transformSource(item[1],nativeNavigationTransform(item[1],code));
+   const sourcePath=item[1]==='/chat-attachments-ui.js' ? path.join(__dirname,'chat-attachments-ui.js') : path.join(source,item[1].replace(/^\//,''));
+   let code=await fs.readFile(sourcePath,'utf8');
+   if(item[1]==='/likee-ui.js') code=replaceOnce(code,"          const type = mimes[blob.name.toLowerCase().split('.').at(-1)];","          const type = /^(image|video)\\//i.test(blob.type || '') ? blob.type.toLowerCase() : mimes[blob.name.toLowerCase().split('.').at(-1)];",'Android broad media MIME support');
+   code=universalHandles.transformSource(item[1],nativeNavigationTransform(item[1],code));
    if(item[1]==='/app.js'){
      code=code.replace("window.location.assign('/auth/fayda/start');","void window.StemmaNative.signIn('fayda');");
      code=code.replace(/window\.location\.assign\('\/auth\/google\/start' \+ \(groupPath \? `\?returnTo=\$\{encodeURIComponent\(groupPath\)\}` : ''\)\);/,"void window.StemmaNative.signIn('google');");

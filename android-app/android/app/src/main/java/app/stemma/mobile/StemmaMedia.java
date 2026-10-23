@@ -6,13 +6,14 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.ImageDecoder;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.os.StatFs;
 import android.provider.MediaStore;
 import android.util.Size;
@@ -20,6 +21,7 @@ import android.util.Size;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSArray;
@@ -36,6 +38,8 @@ import androidx.activity.result.ActivityResult;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -46,13 +50,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Stemma's scoped media bridge. MediaStore and SAF are the only shared-storage
- * entry points; this plugin never reads a caller-supplied filesystem path.
+ * Stemma's native media bridge. MediaStore handles the gallery; direct files are
+ * accepted only under canonical, permission-authorized shared-storage roots.
  */
 @CapacitorPlugin(
     name = "StemmaMedia",
@@ -60,24 +65,24 @@ import java.util.concurrent.Executors;
         @Permission(alias = "legacyMedia", strings = {"android.permission.READ_EXTERNAL_STORAGE"}),
         @Permission(alias = "mediaImages", strings = {"android.permission.READ_MEDIA_IMAGES"}),
         @Permission(alias = "mediaVideos", strings = {"android.permission.READ_MEDIA_VIDEO"}),
-        @Permission(alias = "selectedMedia", strings = {"android.permission.READ_MEDIA_VISUAL_USER_SELECTED"})
+        @Permission(alias = "selectedMedia", strings = {"android.permission.READ_MEDIA_VISUAL_USER_SELECTED"}),
+        @Permission(alias = "cameraPermission", strings = {"android.permission.CAMERA"})
     }
 )
 public class StemmaMedia extends Plugin {
     private static final int MAX_PAGE = 80;
     private static final int MAX_OFFSET = 100000;
     private static final long MAX_COPY_BYTES = 256L * 1024L * 1024L;
-    private static final int MAX_DECODE_DIMENSION = 4096;
     // A bounded durable working set: keep imports useful across restarts without
     // allowing this private cache to consume the device's remaining storage.
     private static final long CACHE_BUDGET_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final long DISK_RESERVE_BYTES = 128L * 1024L * 1024L;
-    private static final long NORMALIZED_OUTPUT_RESERVE_BYTES = 64L * 1024L * 1024L;
     private static final long ACTIVE_COPY_MILLIS = 7L * 24L * 60L * 60L * 1000L;
     private static final int CACHE_MAX_FILES = 2048;
     private static final String PREFS = "stemma_media_recent_v1";
     private static final String RECENT_DOCS = "recent_documents";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    @Nullable private File pendingCameraFile;
 
     private static final String[] BASE_COLUMNS = new String[] {
         MediaStore.MediaColumns._ID,
@@ -250,41 +255,190 @@ public class StemmaMedia extends Plugin {
         });
     }
 
-    /** Open a system document picker; only the selected URI is copied into app-private durable storage. */
+    /** Legacy compatibility endpoint: the native bridge intentionally has no OS document picker. */
     @PluginMethod
     public void selectFile(PluginCall call) {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivityForResult(call, intent, "documentPicked");
+        call.reject("System file picker is not supported; use permission-first storage browsing", "UNSUPPORTED");
+    }
+
+    @PluginMethod
+    public void getAccess(PluginCall call) {
+        call.resolve(accessStatus());
+    }
+
+    @PluginMethod
+    public void requestFileAccess(PluginCall call) {
+        if (hasFileAccess()) { call.resolve(accessStatus()); return; }
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:" + getContext().getPackageName()));
+                startActivityForResult(call, intent, "fileSettingsReturned");
+            } catch (ActivityNotFoundException missingAppSettings) {
+                try {
+                    startActivityForResult(call, new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION), "fileSettingsReturned");
+                } catch (Exception e) {
+                    call.reject("Storage access settings are unavailable", "FILE_ACCESS_UNAVAILABLE", e);
+                }
+            }
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            requestPermissionForAliases(new String[] {"legacyMedia"}, call, "filePermissionResult");
+        } else {
+            call.resolve(accessStatus());
+        }
+    }
+
+    @PermissionCallback
+    public void filePermissionResult(PluginCall call) {
+        if (call != null) call.resolve(accessStatus());
     }
 
     @ActivityCallback
-    public void documentPicked(PluginCall call, ActivityResult result) {
+    public void fileSettingsReturned(PluginCall call, ActivityResult result) {
+        // Settings result codes do not indicate a grant; always re-check system state.
+        if (call != null) call.resolve(accessStatus());
+    }
+
+    @PluginMethod
+    public void listFiles(PluginCall call) {
+        if (!hasFileAccess()) { call.reject("File access has not been granted", "PERMISSION_DENIED"); return; }
+        final int limit = safeLimit(call);
+        final int offset = safeOffset(call);
+        final String requested = call.getString("path");
+        worker.execute(() -> {
+            try {
+                List<FileRoot> roots = storageRoots();
+                if (roots.isEmpty()) throw new IOException("No shared storage roots are available");
+                File directory = requested == null || requested.trim().isEmpty() ? roots.get(0).path : resolveStoragePath(requested, roots);
+                if (!directory.isDirectory() || !directory.canRead()) throw new IOException("Directory is not readable");
+                File[] children = directory.listFiles();
+                if (children == null) throw new IOException("Could not list directory");
+                Comparator<File> orderFiles = (a, b) -> {
+                    if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
+                    int order = a.getName().compareToIgnoreCase(b.getName());
+                    return order != 0 ? order : a.getName().compareTo(b.getName());
+                };
+                // Keep only the requested page plus one look-ahead item while scanning.
+                int window = offset + limit + 1;
+                java.util.PriorityQueue<File> pageCandidates = new java.util.PriorityQueue<>(Math.max(1, window), orderFiles.reversed());
+                int visibleCount = 0;
+                for (File child : children) {
+                    try {
+                        File canonical = child.getCanonicalFile();
+                        if (!isWithinRoots(canonical, roots) || isProtectedStoragePath(canonical, roots)) continue;
+                        if (!canonical.isDirectory() && !canonical.isFile()) continue;
+                        visibleCount++;
+                        if (pageCandidates.size() < window) pageCandidates.add(canonical);
+                        else if (orderFiles.compare(canonical, pageCandidates.peek()) < 0) {
+                            pageCandidates.poll();
+                            pageCandidates.add(canonical);
+                        }
+                    } catch (IOException ignored) { /* broken links are omitted */ }
+                }
+                List<File> safe = new ArrayList<>(pageCandidates);
+                Collections.sort(safe, orderFiles);
+                JSArray items = new JSArray();
+                int from = Math.min(offset, safe.size());
+                int to = Math.min(safe.size(), from + limit);
+                for (int i = from; i < to; i++) items.put(storageItem(safe.get(i)));
+                JSArray rootJson = new JSArray();
+                for (FileRoot root : roots) rootJson.put(new JSObject().put("name", root.name).put("path", root.path.getCanonicalPath()).put("source", "storage"));
+                File parent = directory.getParentFile();
+                String parentPath = parent != null && isWithinRoots(parent.getCanonicalFile(), roots) && !isProtectedStoragePath(parent, roots)
+                    ? parent.getCanonicalPath() : null;
+                call.resolve(new JSObject().put("items", items).put("path", directory.getCanonicalPath())
+                    .put("parentPath", parentPath).put("roots", rootJson).put("hasMore", visibleCount > offset + limit));
+            } catch (Exception e) {
+                call.reject("Could not list storage directory", "STORAGE_LIST_FAILED", e);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void readStorageFile(PluginCall call) {
+        final String requested = call.getString("path");
+        if (requested == null || requested.trim().isEmpty()) { call.reject("path is required", "INVALID_ARGUMENT"); return; }
+        if (!hasFileAccess()) { call.reject("File access has not been granted", "PERMISSION_DENIED"); return; }
+        worker.execute(() -> {
+            File destination = null;
+            try {
+                List<FileRoot> roots = storageRoots();
+                File source = resolveStoragePath(requested, roots);
+                if (!source.isFile() || !source.canRead() || isProtectedStoragePath(source, roots)) throw new IOException("File is unavailable");
+                if (source.length() > MAX_COPY_BYTES) throw new IOException("File exceeds 256 MiB limit");
+                File dir = mediaCacheDir();
+                String suffix = safeExtension(source.getName());
+                destination = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + suffix);
+                copyFileUnchanged(source, destination);
+                String mime = mimeForName(source.getName());
+                JSObject result = fileMetadata(destination, source.getName(), mime);
+                result.put("source", "storage");
+                result.put("dateAdded", source.lastModified() / 1000L);
+                call.resolve(result);
+            } catch (Exception e) {
+                if (destination != null) //noinspection ResultOfMethodCallIgnored
+                    destination.delete();
+                call.reject("Could not copy storage file", "STORAGE_READ_FAILED", e);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void capturePhoto(PluginCall call) {
+        if (!granted(Manifest.permission.CAMERA)) {
+            requestPermissionForAliases(new String[] {"cameraPermission"}, call, "cameraPermissionResult");
+            return;
+        }
+        launchCamera(call);
+    }
+
+    @PermissionCallback
+    public void cameraPermissionResult(PluginCall call) {
         if (call == null) return;
-        if (result == null || result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+        if (granted(Manifest.permission.CAMERA)) launchCamera(call);
+        else call.reject("Camera permission was not granted", "PERMISSION_DENIED");
+    }
+
+    private void launchCamera(PluginCall call) {
+        try {
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            if (intent.resolveActivity(getContext().getPackageManager()) == null) throw new ActivityNotFoundException("No camera app is available");
+            File dir = mediaCacheDir();
+            trimCache(dir, 0L);
+            File output = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + ".jpg");
+            pendingCameraFile = output;
+            Uri outputUri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", output);
+            intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, outputUri);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(call, intent, "cameraCaptureReturned");
+        } catch (Exception e) {
+            pendingCameraFile = null;
+            call.reject("Could not open the camera", "CAMERA_UNAVAILABLE", e);
+        }
+    }
+
+    @ActivityCallback
+    public void cameraCaptureReturned(PluginCall call, ActivityResult result) {
+        File image = pendingCameraFile;
+        pendingCameraFile = null;
+        if (call == null) return;
+        if (result == null || result.getResultCode() != Activity.RESULT_OK || image == null || !image.isFile() || image.length() == 0L) {
+            if (image != null) //noinspection ResultOfMethodCallIgnored
+                image.delete();
             call.resolve(new JSObject().put("cancelled", true));
             return;
         }
-        final Uri selected = result.getData().getData();
-        worker.execute(() -> {
-            try {
-                String mime = getContext().getContentResolver().getType(selected);
-                if (mime == null) mime = "application/octet-stream";
-                File copied = copyUriToPrivateCache(selected, null);
-                String name = queryDisplayName(selected);
-                if (requiresJpegNormalization(mime)) { mime = "image/jpeg"; name = jpegName(name); }
-                if (name == null || name.trim().isEmpty()) name = copied.getName();
-                JSObject entry = fileMetadata(copied, name, mime);
-                entry.put("source", "document");
-                entry.put("dateAdded", System.currentTimeMillis() / 1000L);
-                addRecentDocument(entry);
-                call.resolve(entry);
-            } catch (Exception e) {
-                call.reject("Could not copy the selected document", "DOCUMENT_READ_FAILED", e);
-            }
-        });
+        try {
+            if (image.length() > MAX_COPY_BYTES) throw new IOException("Captured photo exceeds 256 MiB limit");
+            makeCacheRoom(image.getParentFile(), image, 0L);
+            image.setLastModified(System.currentTimeMillis());
+            call.resolve(fileMetadata(image, image.getName(), "image/jpeg").put("source", "camera")
+                .put("dateAdded", System.currentTimeMillis() / 1000L));
+        } catch (Exception e) {
+            //noinspection ResultOfMethodCallIgnored
+            image.delete();
+            call.reject("Captured photo exceeds the private media cache limits", "CAMERA_CAPTURE_FAILED", e);
+        }
     }
 
     /** Copy an authorized MediaStore item into app-private durable storage. Never accepts file paths. */
@@ -313,9 +467,11 @@ public class StemmaMedia extends Plugin {
                 String mime = getContext().getContentResolver().getType(uri);
                 if (!isSupportedMime(mime)) throw new IllegalArgumentException("Unsupported media type");
                 String name = queryDisplayName(uri);
-                File copied = copyUriToPrivateCache(uri, name);
-                if (requiresJpegNormalization(mime)) { mime = "image/jpeg"; name = jpegName(name); }
-                call.resolve(fileMetadata(copied, name, mime));
+                File copied = copyUriToPrivateCacheUnchanged(uri, name);
+                JSObject metadata = fileMetadata(copied, name, mime);
+                metadata.put("mediaType", video ? "video" : "image");
+                if (video) metadata.put("durationMs", queryVideoDuration(uri));
+                call.resolve(metadata);
             } catch (Exception e) {
                 call.reject("Could not copy media item", "MEDIA_READ_FAILED", e);
             }
@@ -380,12 +536,9 @@ public class StemmaMedia extends Plugin {
                 MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_ADDED, MediaStore.Images.ImageColumns.BUCKET_ID,
                 MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME, MediaStore.Video.VideoColumns.DURATION}
             : BASE_COLUMNS;
-        StringBuilder selectionBuilder = new StringBuilder(MediaStore.MediaColumns.MIME_TYPE + " IN (?,?,?,?,?,?,?,?,?,?,?)");
+        StringBuilder selectionBuilder = new StringBuilder(MediaStore.MediaColumns.MIME_TYPE + " LIKE ?");
         if (albumId != null) selectionBuilder.append(" AND ").append(MediaStore.Images.ImageColumns.BUCKET_ID).append("=?");
-        String[] mimeArgs = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
-            "image/avif", "image/bmp", "video/mp4", "video/webm", "video/quicktime"};
-        String[] args = albumId == null ? mimeArgs : new String[] {mimeArgs[0], mimeArgs[1], mimeArgs[2], mimeArgs[3], mimeArgs[4],
-            mimeArgs[5], mimeArgs[6], mimeArgs[7], mimeArgs[8], mimeArgs[9], mimeArgs[10], albumId};
+        String[] args = albumId == null ? new String[] {video ? "video/%" : "image/%"} : new String[] {video ? "video/%" : "image/%", albumId};
         try (Cursor cursor = getContext().getContentResolver().query(collection, projection, selectionBuilder.toString(), args,
             MediaStore.MediaColumns.DATE_ADDED + " DESC")) {
             if (cursor == null) return;
@@ -406,6 +559,7 @@ public class StemmaMedia extends Plugin {
                 item.put("mediaType", video ? "video" : "image");
                 item.put("source", "mediaStore");
                 if (video) item.put("duration", longValue(cursor, MediaStore.Video.VideoColumns.DURATION));
+                item.put("durationMs", longValue(cursor, MediaStore.Video.VideoColumns.DURATION));
                 output.add(item);
             }
         } catch (SecurityException ignored) {
@@ -416,7 +570,7 @@ public class StemmaMedia extends Plugin {
     private void queryRecentMediaFiles(List<JSObject> output, int maxRows) {
         String[] projection = {MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.MIME_TYPE, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_ADDED,
-            MediaStore.Files.FileColumns.MEDIA_TYPE};
+            MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.Video.VideoColumns.DURATION};
         String selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?,?)";
         String[] args = {String.valueOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE), String.valueOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO)};
         Uri files = MediaStore.Files.getContentUri("external");
@@ -434,6 +588,7 @@ public class StemmaMedia extends Plugin {
                 item.put("size", longValue(cursor, MediaStore.MediaColumns.SIZE));
                 item.put("dateAdded", longValue(cursor, MediaStore.MediaColumns.DATE_ADDED));
                 item.put("mediaType", kind == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO ? "video" : "image");
+                if (kind == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) { item.put("duration", longValue(cursor, MediaStore.Video.VideoColumns.DURATION)); item.put("durationMs", longValue(cursor, MediaStore.Video.VideoColumns.DURATION)); }
                 item.put("source", "mediaStore");
                 output.add(item);
             }
@@ -457,99 +612,6 @@ public class StemmaMedia extends Plugin {
             return null;
         }
         return null;
-    }
-
-    private File copyUriToPrivateCache(Uri uri, @Nullable String originalName) throws Exception {
-        File dir = mediaCacheDir();
-        trimCache(dir, 0L);
-        String suffix = extensionForMime(getContext().getContentResolver().getType(uri));
-        File destination = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + suffix);
-        long copied = 0L;
-        try (InputStream input = getContext().getContentResolver().openInputStream(uri);
-             OutputStream output = new FileOutputStream(destination)) {
-            if (input == null) throw new IllegalStateException("The selected content cannot be opened");
-            byte[] buffer = new byte[32 * 1024];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                copied += count;
-                if (copied > MAX_COPY_BYTES) throw new IllegalArgumentException("File exceeds 256 MiB limit");
-                makeCacheRoom(dir, destination, count);
-                output.write(buffer, 0, count);
-            }
-            output.flush();
-        } catch (Exception e) {
-            // Ensure an over-limit or failed partial copy is never exposed.
-            //noinspection ResultOfMethodCallIgnored
-            destination.delete();
-            throw e;
-        }
-        // Keep just-imported content stable for active previews/uploads and restarts;
-        // eviction policy protects copy_ files for seven days.
-        destination.setLastModified(System.currentTimeMillis());
-        String sourceMime = getContext().getContentResolver().getType(uri);
-        if (requiresJpegNormalization(sourceMime)) {
-            File converted = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + ".jpg");
-            try {
-                makeCacheRoom(dir, converted, NORMALIZED_OUTPUT_RESERVE_BYTES);
-                normalizeImageToJpeg(destination, converted);
-                makeCacheRoom(dir, converted, 0L);
-                converted.setLastModified(System.currentTimeMillis());
-                //noinspection ResultOfMethodCallIgnored
-                destination.delete();
-                return converted;
-            } catch (Exception e) {
-                //noinspection ResultOfMethodCallIgnored
-                destination.delete();
-                //noinspection ResultOfMethodCallIgnored
-                converted.delete();
-                throw e;
-            }
-        }
-        return destination;
-    }
-
-    private void normalizeImageToJpeg(File source, File destination) throws Exception {
-        Bitmap bitmap;
-        if (Build.VERSION.SDK_INT >= 28) {
-            ImageDecoder.Source decoderSource = ImageDecoder.createSource(source);
-            bitmap = ImageDecoder.decodeBitmap(decoderSource, (decoder, info, src) -> {
-                int width = info.getSize().getWidth();
-                int height = info.getSize().getHeight();
-                float scale = Math.min(1f, (float) MAX_DECODE_DIMENSION / Math.max(width, height));
-                if (scale < 1f) decoder.setTargetSize(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
-                decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
-            });
-        } else {
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(source.getAbsolutePath(), bounds);
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IllegalArgumentException("Android cannot decode this image format");
-            int sample = 1;
-            while (Math.max(bounds.outWidth / sample, bounds.outHeight / sample) > MAX_DECODE_DIMENSION) sample *= 2;
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = sample;
-            bitmap = BitmapFactory.decodeFile(source.getAbsolutePath(), options);
-        }
-        if (bitmap == null) throw new IllegalArgumentException("Android cannot decode this image format");
-        try (FileOutputStream stream = new FileOutputStream(destination)) {
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)) throw new IllegalStateException("JPEG encoding failed");
-            stream.flush();
-        } finally {
-            if (!bitmap.isRecycled()) bitmap.recycle();
-        }
-    }
-
-    private static boolean requiresJpegNormalization(@Nullable String mime) {
-        if (mime == null || !mime.toLowerCase(Locale.ROOT).startsWith("image/")) return false;
-        String type = mime.toLowerCase(Locale.ROOT);
-        return !("image/jpeg".equals(type) || "image/png".equals(type) || "image/webp".equals(type) || "image/gif".equals(type));
-    }
-
-    private static String jpegName(@Nullable String name) {
-        String value = name == null || name.trim().isEmpty() ? "image" : name;
-        int dot = value.lastIndexOf('.');
-        if (dot > 0) value = value.substring(0, dot);
-        return value + ".jpg";
     }
 
     private JSObject fileMetadata(File file, @Nullable String name, String mime) {
@@ -743,6 +805,152 @@ public class StemmaMedia extends Plugin {
         return !file.getName().startsWith("copy_") || now - file.lastModified() >= ACTIVE_COPY_MILLIS;
     }
 
+    private boolean hasFileAccess() {
+        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
+        if (Build.VERSION.SDK_INT >= 23) return granted(Manifest.permission.READ_EXTERNAL_STORAGE);
+        return true;
+    }
+
+    private List<FileRoot> storageRoots() throws IOException {
+        LinkedHashMap<String, FileRoot> roots = new LinkedHashMap<>();
+        File primary = Environment.getExternalStorageDirectory().getCanonicalFile();
+        roots.put(primary.getPath(), new FileRoot("Shared storage", primary));
+        File[] volumeFiles = getContext().getExternalFilesDirs(null);
+        if (volumeFiles != null) for (File filesDir : volumeFiles) {
+            if (filesDir == null) continue;
+            String path = filesDir.getCanonicalPath();
+            String marker = File.separator + "Android" + File.separator + "data" + File.separator + getContext().getPackageName() + File.separator + "files";
+            int markerIndex = path.lastIndexOf(marker);
+            if (markerIndex <= 0) continue;
+            File volume = new File(path.substring(0, markerIndex)).getCanonicalFile();
+            if (!volume.equals(primary) && volume.isDirectory()) roots.put(volume.getPath(), new FileRoot("Removable storage", volume));
+        }
+        return new ArrayList<>(roots.values());
+    }
+
+    private File resolveStoragePath(String path, List<FileRoot> roots) throws IOException {
+        File candidate = new File(path);
+        if (!candidate.isAbsolute()) throw new IOException("Only absolute shared-storage paths are accepted");
+        File canonical = candidate.getCanonicalFile();
+        if (!isWithinRoots(canonical, roots) || isProtectedStoragePath(canonical, roots)) throw new IOException("Path is outside approved storage roots");
+        return canonical;
+    }
+
+    private boolean isWithinRoots(File file, List<FileRoot> roots) {
+        try {
+            String value = file.getCanonicalPath();
+            for (FileRoot root : roots) {
+                String base = root.path.getCanonicalPath();
+                if (value.equals(base) || value.startsWith(base + File.separator)) return true;
+            }
+        } catch (IOException ignored) { }
+        return false;
+    }
+
+    private boolean isProtectedStoragePath(File file, List<FileRoot> roots) {
+        try {
+            String value = file.getCanonicalPath();
+            for (FileRoot root : roots) {
+                String base = root.path.getCanonicalPath();
+                if (value.equals(base)) return false;
+                if (value.startsWith(base + File.separator)) {
+                    String relative = value.substring(base.length() + 1);
+                    String first = relative.split(java.util.regex.Pattern.quote(File.separator), 2)[0];
+                    return "Android".equalsIgnoreCase(first);
+                }
+            }
+        } catch (IOException ignored) { }
+        return true;
+    }
+
+    private JSObject storageItem(File file) {
+        boolean directory = file.isDirectory();
+        String mime = directory ? "inode/directory" : mimeForName(file.getName());
+        return new JSObject().put("id", file.getAbsolutePath()).put("path", file.getAbsolutePath())
+            .put("name", file.getName()).put("isDirectory", directory).put("size", directory ? 0L : file.length())
+            .put("mimeType", mime).put("source", "storage").put("dateAdded", file.lastModified() / 1000L);
+    }
+
+    private String mimeForName(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot > 0 && dot < name.length() - 1) {
+            String mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+            if (mime != null) return mime;
+        }
+        return "application/octet-stream";
+    }
+
+    private String safeExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0 && dot < name.length() - 1) {
+            String ext = name.substring(dot + 1);
+            if (ext.matches("[A-Za-z0-9]{1,8}")) return "." + ext.toLowerCase(Locale.ROOT);
+        }
+        return ".bin";
+    }
+
+    private void copyFileUnchanged(File source, File destination) throws IOException {
+        File dir = destination.getParentFile();
+        trimCache(dir, 0L);
+        long copied = 0L;
+        try (InputStream input = new FileInputStream(source); OutputStream output = new FileOutputStream(destination)) {
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                copied += count;
+                if (copied > MAX_COPY_BYTES) throw new IOException("File exceeds 256 MiB limit");
+                makeCacheRoom(dir, destination, count);
+                output.write(buffer, 0, count);
+            }
+            output.flush();
+            destination.setLastModified(System.currentTimeMillis());
+        } catch (Exception e) {
+            //noinspection ResultOfMethodCallIgnored
+            destination.delete();
+            if (e instanceof IOException) throw (IOException)e;
+            throw new IOException("Copy failed", e);
+        }
+    }
+
+    private File copyUriToPrivateCacheUnchanged(Uri uri, @Nullable String originalName) throws Exception {
+        File dir = mediaCacheDir();
+        String suffix = originalName == null ? extensionForMime(getContext().getContentResolver().getType(uri)) : safeExtension(originalName);
+        File destination = new File(dir, "copy_" + UUID.randomUUID().toString().replace("-", "") + suffix);
+        trimCache(dir, 0L);
+        long copied = 0L;
+        try (InputStream input = getContext().getContentResolver().openInputStream(uri); OutputStream output = new FileOutputStream(destination)) {
+            if (input == null) throw new IOException("Media item cannot be opened");
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                copied += count;
+                if (copied > MAX_COPY_BYTES) throw new IOException("File exceeds 256 MiB limit");
+                makeCacheRoom(dir, destination, count);
+                output.write(buffer, 0, count);
+            }
+            output.flush();
+            destination.setLastModified(System.currentTimeMillis());
+            return destination;
+        } catch (Exception e) {
+            //noinspection ResultOfMethodCallIgnored
+            destination.delete();
+            throw e;
+        }
+    }
+
+    private long queryVideoDuration(Uri uri) {
+        try (Cursor cursor = getContext().getContentResolver().query(uri, new String[] {MediaStore.Video.VideoColumns.DURATION}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) return longValue(cursor, MediaStore.Video.VideoColumns.DURATION);
+        } catch (Exception ignored) { }
+        return 0L;
+    }
+
+    private static final class FileRoot {
+        final String name;
+        final File path;
+        FileRoot(String name, File path) { this.name = name; this.path = path; }
+    }
+
     private JSObject accessStatus() {
         boolean image = granted("android.permission.READ_MEDIA_IMAGES");
         boolean video = granted("android.permission.READ_MEDIA_VIDEO");
@@ -753,6 +961,9 @@ public class StemmaMedia extends Plugin {
         String status = full ? "granted" : (accessible ? "partial" : "denied");
         JSObject result = new JSObject();
         result.put("status", status);
+        result.put("mediaAccess", accessible);
+        result.put("fileAccess", hasFileAccess());
+        result.put("cameraPermission", granted(Manifest.permission.CAMERA));
         result.put("granted", accessible);
         result.put("fullAccess", full);
         result.put("partial", accessible && !full);
@@ -760,7 +971,9 @@ public class StemmaMedia extends Plugin {
             .put("images", Build.VERSION.SDK_INT >= 33 ? image : legacy)
             .put("videos", Build.VERSION.SDK_INT >= 33 ? video : legacy)
             .put("selectedMedia", selected)
-            .put("legacy", legacy));
+            .put("legacy", legacy)
+            .put("camera", granted(Manifest.permission.CAMERA))
+            .put("files", hasFileAccess()));
         return result;
     }
 
@@ -774,7 +987,8 @@ public class StemmaMedia extends Plugin {
 
     private boolean canReadVideos() {
         if (Build.VERSION.SDK_INT <= 32) return granted("android.permission.READ_EXTERNAL_STORAGE");
-        return granted("android.permission.READ_MEDIA_VIDEO");
+        return granted("android.permission.READ_MEDIA_VIDEO")
+            || (Build.VERSION.SDK_INT >= 34 && granted("android.permission.READ_MEDIA_VISUAL_USER_SELECTED"));
     }
 
     private boolean granted(String permission) {
@@ -835,10 +1049,7 @@ public class StemmaMedia extends Plugin {
     private boolean isSupportedMime(@Nullable String mime) {
         if (mime == null) return false;
         String value = mime.toLowerCase(Locale.ROOT);
-        return "image/jpeg".equals(value) || "image/png".equals(value) || "image/webp".equals(value)
-            || "image/gif".equals(value) || "image/heic".equals(value) || "image/heif".equals(value)
-            || "image/avif".equals(value) || "image/bmp".equals(value)
-            || "video/mp4".equals(value) || "video/webm".equals(value) || "video/quicktime".equals(value);
+        return value.startsWith("image/") || value.startsWith("video/");
     }
 
     private String extensionForMime(@Nullable String mime) {

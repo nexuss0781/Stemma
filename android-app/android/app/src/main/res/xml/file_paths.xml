@@ -1,1 +1,1 @@
-<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="private_cache" path="stemma-media/" /><external-files-path name="camera_pictures" path="Pictures/" /></paths>
+<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="private_cache" path="stemma-media/" /><files-path name="durable_media" path="stemma-media/" /><external-files-path name="camera_pictures" path="Pictures/" /></paths>

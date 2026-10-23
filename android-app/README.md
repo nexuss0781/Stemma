@@ -1,6 +1,14 @@
-# Stemma Android 1.0.9
+# Stemma Android 1.0.10
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.9`, version code `10`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.10`, version code `11`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+
+## Reusable in-app Gallery and Files (1.0.10)
+
+The Android bundler uses `android-app/chat-attachments-ui.js` instead of the website picker. Selection stays inside Stemma after permission is granted: MediaStore albums and photo/video pages in Gallery, and directory navigation in Files. Files does not use a filename-extension allowlist. Gallery includes MediaStore image and video MIME families, preserving originals; thumbnail, preview and playback availability depend on the device codec. Camera capture requests camera access only when used and returns a full-resolution private capture for review, never an automatic upload.
+
+Gallery uses Android-version-appropriate read-media permissions and honors Android 14 selected-photo access. Files uses the explicit all-files Settings grant on Android 11+ and a legacy read permission on older supported Android versions. This broad grant is sensitive and subject to Google Play restricted-permission policy; this APK's sideload distribution is not a claim of Play eligibility. Protected Android application directories remain excluded. Only selected files are copied for an action; permission itself never uploads anything.
+
+Likee still exposes Gallery only, not Files or camera, and retains the four-minute video cap and existing upload size limits. The picker no longer imposes a narrow format/extension allowlist, but existing remote APIs still validate upload formats and sizes. This Android-only update does not change or deploy those APIs or the website, and does not claim universal codec support or unrestricted server acceptance. No GitHub Release is created.
 
 ## Universal usernames (1.0.9)
 
@@ -93,3 +101,5 @@ For a release, securely provision the **existing Stemma signing key**, copy `sig
 `node test-native-cache.cjs` and `node test-native-navigation.cjs` exercise cache and navigation persistence. The Python Playwright suites use synthetic native bridges and accounts; serve `www/` on localhost port 8972 before running `test-bundle.py`, `test-runtime-persistence.py` and `test-navigation-browser.py`. They do not modify live accounts.
 
 `NativePersistenceTest.java` contains Android instrumentation checks for durable state and cookie flushing. These were not executed successfully in this environment because the software emulator failed to finish booting. Release compilation, signature validation, APK integrity, JavaScript persistence, account isolation, cold-launch tab restoration and splash fallback tests passed for the delivered APK.
+
+Picker checks: `node test-media-picker.cjs`, `python3 native-focused-tests/test_stemma_media_contract.py`, and `python3 test-picker-review.py`. The DOM interaction suite `node test-media-picker-browser.cjs` additionally uses the optional `jsdom` development dependency (install it in a temporary test directory and set `NODE_PATH` if it is not installed locally). It covers mixed-media IDs, Likee duration boundaries, Files grants/navigation and unchanged JSON upload contracts. The full-app `test-bundle.py` exercises native media selection through the bundled runtime. These use synthetic bridges; they do not substitute for permission/camera testing on a physical Android phone.

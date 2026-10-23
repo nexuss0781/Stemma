@@ -11,17 +11,20 @@ import appPackage from './package.json';
 
 installPhotoResponseValidation(window);
 const ORIGIN = 'https://stemma.wasmer.app';
-const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:9});
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:11});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
+  getAccess: options=>nativeMedia.getAccess(options),
   requestAccess: options=>nativeMedia.requestAccess(options),
+  requestFileAccess: options=>nativeMedia.requestFileAccess(options),
+  listFiles: options=>nativeMedia.listFiles(options),
+  readStorageFile: options=>nativeMedia.readStorageFile(options),
+  capturePhoto: options=>nativeMedia.capturePhoto(options),
   listAlbums: options=>nativeMedia.listAlbums(options),
   listMedia: options=>nativeMedia.listMedia(options),
   thumbnail: options=>nativeMedia.thumbnail(options),
   readFile: options=>nativeMedia.readFile(options),
-  recentFiles: options=>nativeMedia.recentFiles(options),
-  selectFile: options=>nativeMedia.selectFile(options),
-  pickDocuments: async()=>{const file=await nativeMedia.selectFile();return {files:file?.cancelled?[]:[file]};}
+  recentFiles: options=>nativeMedia.recentFiles(options)
 });
 const transport = registerPlugin('StemmaTransport');
 const nativeFetch = window.fetch.bind(window);
