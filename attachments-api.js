@@ -289,6 +289,7 @@ function sameOriginJson(config) {
 }
 
 function validConversationId(value) { return typeof value === 'string' && /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n; }
+function validGroupChannelId(value) { return validConversationId(value) || typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
 function validAttachmentId(value) { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
 
 function validateChannelAttachmentBody(value) {
@@ -305,7 +306,7 @@ function validateChannelAttachmentBody(value) {
   return attachment ? { ...attachment, caption } : null;
 }
 
-export function registerAttachmentsApi(app, { attachmentStore = null, requireGoogleSession, config }) {
+export function registerAttachmentsApi(app, { attachmentStore = null, groupStore = null, channelStore = null, requireGoogleSession, config }) {
   if (typeof requireGoogleSession !== 'function') throw new TypeError('Google-session middleware is required.');
   const limiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false,
     handler: (_req, res) => { noStore(res); res.status(429).json({ error: 'Too many attachment requests. Please wait and try again.' }); }
@@ -330,11 +331,13 @@ export function registerAttachmentsApi(app, { attachmentStore = null, requireGoo
   app.post('/api/pulse/groups/:id/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {
     noStore(res);
     if (!attachmentStore) return unavailable(res);
-    if (!validConversationId(req.params.id)) return res.status(400).json({ error: 'Group id is invalid.' });
+    if (!validGroupChannelId(req.params.id)) return res.status(400).json({ error: 'Group id is invalid.' });
     const attachment = validateAttachmentBody(req.body);
     if (!attachment) return res.status(400).json({ error: 'Attachment file data or type is invalid.' });
     try {
-      const row = await attachmentStore.createGroupAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
+      const groupId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id) ? await groupStore?.getLegacyId(req.params.id) : req.params.id;
+      if (!groupId) return res.status(404).json({ error: 'Group not found.' });
+      const row = await attachmentStore.createGroupAttachment(req.session.stemmaUser.subject, groupId, attachment);
       if (!row) return res.status(404).json({ error: 'Group not found.' });
       return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), mine: row.authorSubject === req.session.stemmaUser.subject,
         author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' }, attachment: row.attachment } });
@@ -343,11 +346,13 @@ export function registerAttachmentsApi(app, { attachmentStore = null, requireGoo
   app.post('/api/pulse/channels/:id/attachments', requireGoogleSession, limiter, sameOriginJson(config), parser, async (req, res) => {
     noStore(res);
     if (!attachmentStore) return unavailable(res);
-    if (!validConversationId(req.params.id)) return res.status(400).json({ error: 'Channel id is invalid.' });
+    if (!validGroupChannelId(req.params.id)) return res.status(400).json({ error: 'Channel id is invalid.' });
     const attachment = validateChannelAttachmentBody(req.body);
     if (!attachment) return res.status(400).json({ error: 'Attachment file data, type, or caption is invalid.' });
     try {
-      const row = await attachmentStore.createChannelAttachment(req.session.stemmaUser.subject, req.params.id, attachment);
+      const channelId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id) ? await channelStore?.getLegacyId(req.params.id) : req.params.id;
+      if (!channelId) return res.status(404).json({ error: 'Channel not found.' });
+      const row = await attachmentStore.createChannelAttachment(req.session.stemmaUser.subject, channelId, attachment);
       if (!row) return res.status(403).json({ error: 'Only the channel owner may post attachments.' });
       return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: new Date(row.createdAt).toISOString(), attachment: row.attachment } });
     } catch { return unavailable(res); }

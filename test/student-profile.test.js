@@ -98,7 +98,7 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     { ...validProfile(), nickName: 'x'.repeat(61) },
     { ...validProfile(), nickName: 12 },
     { ...validProfile(), username: 'ab' },
-    { ...validProfile(), username: 'user-name' },
+    { ...validProfile(), username: 'four' },
     { ...validProfile(), username: 'üsername' },
     { ...validProfile(), username: 'x'.repeat(31) },
     { ...validProfile(), username: null },
@@ -158,7 +158,7 @@ test('student profile API enforces Google identity, same-origin, strict input, a
     method: 'PUT', headers: { cookie: googleA, origin: h.origin, 'content-type': 'application/json' },
     body: JSON.stringify(completedProfile)
   });
-  const expectedCompleted = { ...expectedA, nickName: 'Ada B.', username: 'Ada.Lovelace_1', bio: 'Mathematician\nand writer.' };
+  const expectedCompleted = { ...expectedA, nickName: 'Ada B.', username: 'ada.lovelace_1', bio: 'Mathematician\nand writer.' };
   assert.equal(completed.status, 200);
   assert.deepEqual(await completed.json(), { profile: expectedCompleted });
   assert.deepEqual(writes[1], { subject: 'google-subject-A', profile: expectedCompleted });

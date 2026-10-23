@@ -2,6 +2,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const esbuild=require('esbuild');
+const universalHandles=require('./universal-handles-transform.cjs');
 const source=path.resolve(process.env.STEMMA_WEB_SOURCE || path.join(__dirname,'..'));
 const out=path.join(__dirname,'www');
 	const hash=text=>crypto.createHash('sha256').update(text).digest('hex').slice(0,12);
@@ -70,12 +71,13 @@ const out=path.join(__dirname,'www');
  delete registry.$schema;
  await fs.writeFile(registryPath,JSON.stringify(registry));
  let html=await fs.readFile(path.join(source,'index.html'),'utf8');
+ html=replaceOnce(html,'<input id="profile-username" name="username" type="text" placeholder="Choose a username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="30" pattern="[A-Za-z0-9_.]{3,30}" title="Use 3–30 letters, numbers, dots, or underscores" required />','<input id="profile-username" name="username" type="text" placeholder="Choose a username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="5" maxlength="30" pattern="[A-Za-z0-9_.]{5,30}" title="Use 5–30 letters, numbers, dots, or underscores" aria-describedby="profile-username-help" required /><small id="profile-username-help" class="student-field-hint">Choose a unique 5–30 character username using letters, numbers, dots, or underscores. Usernames are case-insensitive.</small>');
  const scripts=[...html.matchAll(/<script\s+src="([^"?]+)(?:\?[^\"]*)?"([^>]*)><\/script>/g)];
  const ordered=[...scripts.filter(x=>!x[2].includes('defer')),...scripts.filter(x=>x[2].includes('defer'))];
  let legacy='';
  for(const item of ordered){
 	   let code=await fs.readFile(path.join(source,item[1].replace(/^\//,'')),'utf8');
-	   code=nativeNavigationTransform(item[1],code);
+	   code=universalHandles.transformSource(item[1],nativeNavigationTransform(item[1],code));
    if(item[1]==='/app.js'){
      code=code.replace("window.location.assign('/auth/fayda/start');","void window.StemmaNative.signIn('fayda');");
      code=code.replace(/window\.location\.assign\('\/auth\/google\/start' \+ \(groupPath \? `\?returnTo=\$\{encodeURIComponent\(groupPath\)\}` : ''\)\);/,"void window.StemmaNative.signIn('google');");
@@ -97,7 +99,8 @@ const out=path.join(__dirname,'www');
 	 try{css+=await fs.readFile(path.join(__dirname,'native-gallery.css'),'utf8');}catch{}
 	 css+=await fs.readFile(path.join(__dirname,'photo-diagnostics.css'),'utf8');
  css+=await fs.readFile(path.join(__dirname,'native-swipe.css'),'utf8');
- css+=await fs.readFile(path.join(__dirname,'native-avatar.css'),'utf8');
+	 css+=await fs.readFile(path.join(__dirname,'native-avatar.css'),'utf8');
+	 css+='\n.channel-universal-handle,.group-universal-handle,.student-profile-handle-note{margin:.2rem 0 0;color:var(--muted,#68666a);font-size:.82rem;line-height:1.35}.group-universal-handle[hidden],.channel-universal-handle[hidden]{display:none}';
 	 css+='\n#stemma-offline-status{position:fixed;bottom:0;left:0;right:0;z-index:2147483640;background:#29282c;color:#fff;font:12px/1.4 system-ui;text-align:center;padding:7px 12px max(7px,env(safe-area-inset-bottom));pointer-events:none}#stemma-offline-status[hidden]{display:none}.stemma-is-offline .attachment-feedback:empty::after{content:"Offline — your files are unchanged."}html{overscroll-behavior:none}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent}';
 		 const cssMin=await esbuild.transform(css,{loader:'css',minify:true,target:'chrome100'});
 		 const cssName=await writeHashed('app','css',cssMin.code);

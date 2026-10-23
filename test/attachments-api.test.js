@@ -15,10 +15,10 @@ const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ATTACHMENT_ID = 'e34bac58-083f-4b68-9f33-ea86dc33e052';
 const google = subject => ({ provider: 'google', subject });
 
-async function createHarness({ attachmentStore, pulseStore = null, directChatStore = null, groupStore = null }) {
+async function createHarness({ attachmentStore, pulseStore = null, directChatStore = null, groupStore = null, channelStore = null }) {
   const config = buildConfig({ NODE_ENV: 'test', SESSION_SECRET });
   const sessionStore = new session.MemoryStore();
-  const app = createApp({ config, sessionStore, attachmentStore, pulseStore, directChatStore, groupStore });
+  const app = createApp({ config, sessionStore, attachmentStore, pulseStore, directChatStore, groupStore, channelStore });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -137,7 +137,8 @@ test('group attachments upload into the shared store and remain scoped to curren
       return [{ id: ATTACHMENT_ID, messageId: '91', name: 'sample.png', mimeType: 'image/png', size: PNG.length }];
     }
   };
-  const groups = { async listMessages(subject, id) { return subject === 'group-member' && id === '17' ? [groupMessage] : []; } };
+  const GROUP_UUID = '3c615f4c-01b7-4bd8-9b91-940c4396785d';
+  const groups = { async getLegacyId(id) { return id === GROUP_UUID ? '17' : id; }, async listMessages(subject, id) { return subject === 'group-member' && ['17', GROUP_UUID].includes(id) ? [groupMessage] : []; } };
   const h = await createHarness({ attachmentStore: store, groupStore: groups });
   t.after(() => h.close());
   const member = await h.cookieFor('group-member-session', google('group-member'));
@@ -148,7 +149,11 @@ test('group attachments upload into the shared store and remain scoped to curren
   assert.deepEqual((await response.json()).message, { id: '91', text: 'Attachment: sample.png', createdAt: '2026-02-03T00:00:00.000Z', mine: true,
     author: { username: 'member', nickName: 'Member' }, attachment: groupMessage.attachment });
   assert.equal((await jsonPost(`${h.origin}/api/pulse/groups/17/attachments`, outsider, h.origin, fileBody())).status, 404);
-  assert.deepEqual(created, [['group-member', '17', 'sample.png'], ['group-outsider', '17', 'sample.png']]);
+  response = await jsonPost(`${h.origin}/api/pulse/groups/${GROUP_UUID}/attachments`, member, h.origin, fileBody());
+  assert.equal(response.status, 201, 'UUID group routes resolve to legacy bigint before attachment FK writes');
+  assert.deepEqual(created, [['group-member', '17', 'sample.png'], ['group-outsider', '17', 'sample.png'], ['group-member', '17', 'sample.png']]);
+  response = await fetch(`${h.origin}/api/pulse/groups/${GROUP_UUID}/messages`, { headers: { cookie: member } });
+  assert.deepEqual((await response.json()).messages[0].attachment, groupMessage.attachment, 'attachment scope resolves UUID to the underlying bigint group id');
 
   response = await fetch(`${h.origin}/api/pulse/groups/17/messages`, { headers: { cookie: member } });
   assert.deepEqual((await response.json()).messages[0].attachment, groupMessage.attachment);
@@ -173,14 +178,16 @@ test('channel attachments are owner-only, accept optional captions, and download
         ? { id, name: 'sample.png', mimeType: 'image/png', size: PNG.length, data: PNG } : null;
     }
   };
-  const h = await createHarness({ attachmentStore: store });
+  const CHANNEL_UUID = '6f4c2ed1-89a8-4dcc-8776-a22402ac5fc9';
+  const channelStore = { async getLegacyId(id) { return id === CHANNEL_UUID ? '17' : id; } };
+  const h = await createHarness({ attachmentStore: store, channelStore });
   t.after(() => h.close());
   const owner = await h.cookieFor('channel-owner-session', google('channel-owner'));
   const reader = await h.cookieFor('channel-reader-session', google('channel-reader'));
 
   let response = await jsonPost(`${h.origin}/api/pulse/channels/17/attachments`, reader, h.origin, fileBody());
   assert.equal(response.status, 403, 'a forged non-owner request is rejected');
-  response = await jsonPost(`${h.origin}/api/pulse/channels/17/attachments`, owner, h.origin, { ...fileBody(), caption: '  A channel image  ' });
+  response = await jsonPost(`${h.origin}/api/pulse/channels/${CHANNEL_UUID}/attachments`, owner, h.origin, { ...fileBody(), caption: '  A channel image  ' });
   assert.equal(response.status, 201);
   assert.deepEqual((await response.json()).message, { id: '91', text: 'A channel image', createdAt: '2026-02-04T00:00:00.000Z',
     attachment: { id: ATTACHMENT_ID, url: `/api/pulse/attachments/${ATTACHMENT_ID}`, name: 'sample.png', mimeType: 'image/png', size: 8 } });

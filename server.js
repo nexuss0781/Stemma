@@ -20,6 +20,7 @@ import { createStoryStore, registerStoriesApi } from './stories-api.js';
 import { createChannelsStore, registerChannelsApi } from './channels-api.js';
 import { createAttendanceStore, registerAttendanceApi } from './attendance-api.js';
 import { createLikeeStore, registerLikeeApi } from './likee-api.js';
+import { createUniversalIdentityStore, registerUniversalIdentityApi } from './universal-identity-api.js';
 import {
   createRemoteJWKSet,
   importJWK,
@@ -359,9 +360,9 @@ function validateStudentProfile(value) {
     if (key === 'bio' && /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(value[key])) return null;
     const trimmed = value[key].trim();
     if (key === 'nickName' && (!trimmed || [...trimmed].length > 60)) return null;
-    if (key === 'username' && !/^[A-Za-z0-9_.]{3,30}$/.test(trimmed)) return null;
+    if (key === 'username' && !/^[A-Za-z0-9_.]{5,30}$/.test(trimmed)) return null;
     if (key === 'bio' && [...trimmed].length > 280) return null;
-    profile[key] = trimmed;
+    profile[key] = key === 'username' ? trimmed.toLowerCase() : trimmed;
   }
   return profile;
 }
@@ -512,7 +513,7 @@ async function createClientAssertion(provider, tokenEndpoint, key, keyId = '') {
     .sign(key);
 }
 
-export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, groupStore = null, storyStore = null, likeeStore = null, channelStore = null, friendBillStore = null, attendanceStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
+export function createApp({ config = buildConfig(), sessionStore, googleIdentityStore, studentProfileStore, notificationStore = null, pulseStore = null, directChatStore = null, attachmentStore = null, groupStore = null, storyStore = null, likeeStore = null, channelStore = null, identityStore = null, friendBillStore = null, attendanceStore = null, fetchImpl = fetch, jwksFactory = createRemoteJWKSet } = {}) {
   validateConfig(config);
   if (config.nodeEnv === 'production' && !sessionStore) {
     throw new Error('A persistent PostgreSQL session store is required in production.');
@@ -673,10 +674,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
         await googleIdentityStore.upsertGoogleIdentity({ subject: googleUser.subject, verifiedEmail });
       }
     }
+    const universal = googleUser && identityStore ? await identityStore.getBySubject(googleUser.subject) : null;
     const hasGoogleProfile = Boolean(googleProfile && (googleProfile.name || googleProfile.email || googleProfile.avatarUrl));
     res.json({
       authenticated: Boolean(stemmaUser),
       authProvider: stemmaUser?.provider ?? null,
+      ...(universal ? { accountId: universal.identityId, username: universal.username } : {}),
       faydaConfigured: isFaydaConfigured(config),
       providerConfigured: isFaydaConfigured(config),
       googleConfigured: isGoogleConfigured(config),
@@ -701,7 +704,8 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   registerDirectChatApi(app, { directChatStore, attachmentStore, requireGoogleSession, config });
   registerGroupsApi(app, { groupsStore: groupStore, attachmentStore, requireGoogleSession, config });
   registerChannelsApi(app, { channelStore, requireGoogleSession, config });
-  registerAttachmentsApi(app, { attachmentStore, requireGoogleSession, config });
+  if (identityStore) registerUniversalIdentityApi(app, { identityStore, requireGoogleSession });
+  registerAttachmentsApi(app, { attachmentStore, groupStore: groupStore, channelStore, requireGoogleSession, config });
   registerAttendanceApi(app, { attendanceStore, requireGoogleSession, config });
 
   function requireProfileStore(_req, res, next) {
@@ -1301,6 +1305,7 @@ async function startServer() {
   let likeeStore;
   let channelStore;
   let attendanceStore;
+  let identityStore;
   if (config.postgres.host) {
     postgresPool = new Pool({
       host: config.postgres.host,
@@ -1335,10 +1340,12 @@ async function startServer() {
     await attachmentStore.migrate();
     attendanceStore = createAttendanceStore(postgresPool);
     await attendanceStore.migrate();
+    identityStore = createUniversalIdentityStore(postgresPool);
+    await identityStore.migrate();
     sessionStore = new PostgresSessionStore(postgresPool);
     await sessionStore.migrate();
   }
-  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore, storyStore, likeeStore, channelStore, attendanceStore });
+  const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore, storyStore, likeeStore, channelStore, attendanceStore, identityStore });
   const server = app.listen(config.port, '0.0.0.0', () => {
     process.stdout.write(`Stemma server listening on port ${config.port}; Fayda sign-in ${isFaydaConfigured(config) ? 'configured' : 'not configured'}; Google sign-in ${isGoogleConfigured(config) ? 'configured' : 'not configured'}.\n`);
   });
@@ -1353,7 +1360,8 @@ async function startServer() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  startServer().catch(() => {
+  startServer().catch(error => {
+    if (String(error?.message || '').startsWith('Universal identity migration')) process.stderr.write(`Stemma migration blocked: ${error.message}\n`);
     process.stderr.write('Stemma could not start. Check the server configuration and session-store availability.\n');
     process.exitCode = 1;
   });

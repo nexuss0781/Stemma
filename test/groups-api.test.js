@@ -26,9 +26,9 @@ const get = (url, cookie) => fetch(url, { headers: cookie ? { cookie } : {} });
 const post = (url, cookie, origin, body) => fetch(url, { method: 'POST', headers: { ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}), 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const patch = (url, cookie, origin, body) => fetch(url, { method: 'PATCH', headers: { ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}), 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
-test('group slugs require 3-40 safe characters and reject current app routes/assets', () => {
-  for (const value of ['valid-group', 'three', 'A_B1']) assert.equal(isValidGroupSlug(value), true);
-  for (const value of ['ab', 'has space', 'auth', 'api', 'assets', 'invite', 'dashboard', 'overview', 'cards', 'pulse', 'goals', 'profile', 'app-js', 'groups-ui-js', 'a'.repeat(41)]) assert.equal(isValidGroupSlug(value), false);
+test('group slugs require 5-40 safe characters and reject current app routes/assets', () => {
+  for (const value of ['valid-group', 'three', 'A_B12']) assert.equal(isValidGroupSlug(value), true);
+  for (const value of ['ab', 'A_B1', 'has space', 'auth', 'api', 'assets', 'invite', 'dashboard', 'overview', 'cards', 'pulse', 'goals', 'profile', 'app-js', 'groups-ui-js', 'a'.repeat(41)]) assert.equal(isValidGroupSlug(value), false);
 });
 
 test('group SPA URLs serve the app without exposing invite tokens as referrers', async t => {

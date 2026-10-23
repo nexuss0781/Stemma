@@ -10,6 +10,7 @@ const MAX_NAME_LENGTH = 80;
 const MAX_TEXT_LENGTH = 4000;
 const ID_RE = /^[1-9]\d{0,18}$/;
 const MAX_BIGINT = 9_223_372_036_854_775_807n;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ATTACHMENT_SELECT = `(SELECT jsonb_build_object(
       'id', a.id::text, 'url', '/api/pulse/attachments/' || a.id::text,
@@ -18,7 +19,21 @@ const ATTACHMENT_SELECT = `(SELECT jsonb_build_object(
 
 export function createChannelsStore(pool) {
   if (!pool || typeof pool.query !== 'function') throw new TypeError('A PostgreSQL pool is required.');
-  const selectChannels = `SELECT c.id::text AS id, c.name,
+  async function legacyChannelId(id) {
+    if (!UUID_RE.test(String(id))) return id;
+    const result = await pool.query(`SELECT entity_key FROM stemma_universal_identities WHERE identity_id = $1::uuid AND entity_type = 'channel' LIMIT 1`, [id]);
+    return result.rows[0]?.entity_key ?? null;
+  }
+  async function withIdentity(rows) {
+    if (!rows.length) return rows;
+    const ready = await pool.query("SELECT to_regclass('stemma_universal_identities') IS NOT NULL AS ready");
+    if (!ready.rows[0]?.ready) return rows;
+    const ids = await pool.query(`SELECT entity_key, identity_id::text AS "identityId" FROM stemma_universal_identities
+      WHERE entity_type = 'channel' AND entity_key = ANY($1::text[])`, [rows.map(row => row.id)]);
+    const byKey = new Map(ids.rows.map(row => [row.entity_key, row.identityId]));
+    return rows.map(row => ({ ...row, identityId: byKey.get(row.id) || null }));
+  }
+  const selectChannels = `SELECT c.id::text AS id, c.name, c.username,
       (c.owner_subject = $1) AS "isOwner", c.created_at AS "createdAt", c.updated_at AS "updatedAt",
       lp.id::text AS "lastPostId", lp.text AS "lastPostText", lp.created_at AS "lastPostCreatedAt",
       (SELECT count(*)::int FROM stemma_pulse_channel_subscribers sc WHERE sc.channel_id = c.id) AS "subscriberCount",
@@ -43,37 +58,45 @@ export function createChannelsStore(pool) {
       ${ATTACHMENT_SELECT} AS attachment
     FROM stemma_pulse_channel_posts p`;
   return {
+    async getLegacyId(id) { return legacyChannelId(id); },
     async migrate() {
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '014_pulse_channels.sql'), 'utf8'));
       await pool.query(await fs.readFile(path.join(ROOT, 'migrations', '015_pulse_channels_membership.sql'), 'utf8'));
+      await pool.query('ALTER TABLE stemma_pulse_channels ADD COLUMN IF NOT EXISTS username VARCHAR(40)');
     },
     async listChannels(subject) {
       const result = await pool.query(`${selectChannels} ORDER BY c.updated_at DESC, c.id DESC`, [subject]);
-      return result.rows;
+      return withIdentity(result.rows);
     },
-    async createChannel(subject, name) {
+    async createChannel(subject, name, username = null) {
       const result = await pool.query(`WITH inserted AS (
-          INSERT INTO stemma_pulse_channels (owner_subject, name) VALUES ($1, $2)
-          RETURNING id, owner_subject, name, created_at, updated_at
-        ) SELECT i.id::text AS id, i.name, true AS "isOwner", i.created_at AS "createdAt", i.updated_at AS "updatedAt",
+          INSERT INTO stemma_pulse_channels (owner_subject, name, username) VALUES ($1, $2, $3)
+          RETURNING id, owner_subject, name, username, created_at, updated_at
+        ) SELECT i.id::text AS id, i.name, i.username, true AS "isOwner", i.created_at AS "createdAt", i.updated_at AS "updatedAt",
             0::int AS "subscriberCount", false AS "isSubscribed", false AS muted, NULL::text AS "lastReadPostId",
             COALESCE(NULLIF(btrim(p.nick_name), ''), NULLIF(btrim(p.username), '')) AS "ownerName",
             NULL::text AS "avatarUrl", NULL::text AS "pinnedPostId", NULL::text AS "pinnedPostText",
             NULL::timestamptz AS "pinnedPostCreatedAt", NULL::jsonb AS "pinnedPostAttachment"
-          FROM inserted i LEFT JOIN stemma_student_profiles p ON p.google_subject = i.owner_subject`, [subject, name]);
-      return result.rows[0] ?? null;
+          FROM inserted i LEFT JOIN stemma_student_profiles p ON p.google_subject = i.owner_subject`, [subject, name, username]);
+      return (await withIdentity(result.rows))[0] ?? null;
     },
     async getChannel(subject, id) {
-      const result = await pool.query(`${selectChannels} WHERE c.id = $2::bigint LIMIT 1`, [subject, id]);
-      return result.rows[0] ?? null;
+      const resolved = await legacyChannelId(id);
+      if (!resolved) return null;
+      const result = await pool.query(`${selectChannels} WHERE c.id = $2::bigint LIMIT 1`, [subject, resolved]);
+      return (await withIdentity(result.rows))[0] ?? null;
     },
     async listPosts(id, before, limit) {
+      id = await legacyChannelId(id);
+      if (!id) return [];
       const result = await pool.query(`${postSelect}
         WHERE p.channel_id = $1::bigint AND ($2::bigint IS NULL OR p.id < $2::bigint)
         ORDER BY p.id DESC LIMIT $3`, [id, before, limit]);
       return result.rows;
     },
     async createPost(subject, id, text) {
+      id = await legacyChannelId(id);
+      if (!id) return null;
       // Ownership is part of the INSERT predicate: an API authorization check alone is not sufficient.
       const result = await pool.query(`INSERT INTO stemma_pulse_channel_posts (channel_id, text)
         SELECT c.id, $3::text FROM stemma_pulse_channels c
@@ -82,6 +105,8 @@ export function createChannelsStore(pool) {
       return result.rows[0] ?? null;
     },
     async setSubscription(subject, id, subscribed) {
+      id = await legacyChannelId(id);
+      if (!id) return false;
       const result = await pool.query(`WITH channel AS (
           SELECT id FROM stemma_pulse_channels WHERE id = $2::bigint
         ), removed AS (
@@ -97,6 +122,8 @@ export function createChannelsStore(pool) {
       return result.rows[0]?.channelExists === true;
     },
     async setMuted(subject, id, muted) {
+      id = await legacyChannelId(id);
+      if (!id) return false;
       const result = await pool.query(`UPDATE stemma_pulse_channel_subscribers s
         SET muted = $3::boolean FROM stemma_pulse_channels c
         WHERE c.id = $2::bigint AND s.channel_id = c.id AND s.google_subject = $1
@@ -104,6 +131,8 @@ export function createChannelsStore(pool) {
       return (result.rowCount ?? result.rows.length) > 0;
     },
     async markRead(subject, id, postId) {
+      id = await legacyChannelId(id);
+      if (!id) return { channelExists: false, postExists: false, isSubscribed: false, lastReadPostId: null };
       const result = await pool.query(`WITH channel AS (
           SELECT id FROM stemma_pulse_channels WHERE id = $2::bigint
         ), target AS (
@@ -121,6 +150,8 @@ export function createChannelsStore(pool) {
       return result.rows[0] ?? { channelExists: false, postExists: false, isSubscribed: false, lastReadPostId: null };
     },
     async setPinnedPost(subject, id, postId) {
+      id = await legacyChannelId(id);
+      if (!id) return false;
       const result = await pool.query(`UPDATE stemma_pulse_channels c SET pinned_post_id = $3::bigint
         WHERE c.id = $2::bigint AND c.owner_subject = $1
           AND ($3::bigint IS NULL OR EXISTS (
@@ -157,11 +188,14 @@ function sameOriginJson(config) {
 }
 
 function validId(value) {
+  return typeof value === 'string' && (UUID_RE.test(value) || (ID_RE.test(value) && BigInt(value) <= MAX_BIGINT));
+}
+function validSequenceId(value) {
   return typeof value === 'string' && ID_RE.test(value) && BigInt(value) <= MAX_BIGINT;
 }
 function parseBefore(value) {
   if (value === undefined) return null;
-  if (!validId(value)) return undefined;
+  if (typeof value !== 'string' || !ID_RE.test(value) || BigInt(value) > MAX_BIGINT) return undefined;
   return value;
 }
 function safeDate(value) {
@@ -179,7 +213,7 @@ function serializeAttachment(value) {
 }
 function serializePost(row) {
   const createdAt = row && safeDate(row.createdAt);
-  if (!row || !validId(row.id) || typeof row.text !== 'string' || !createdAt) return null;
+  if (!row || !validSequenceId(row.id) || typeof row.text !== 'string' || !createdAt) return null;
   const post = { id: row.id, text: row.text, createdAt };
   if (Object.hasOwn(row, 'attachment')) {
     const attachment = serializeAttachment(row.attachment);
@@ -202,8 +236,9 @@ function serializeChannel(row) {
   const muted = row.muted === undefined ? false : row.muted;
   const lastReadPostId = row.lastReadPostId === undefined || row.lastReadPostId === null ? null : row.lastReadPostId;
   if (!Number.isSafeInteger(subscriberCount) || subscriberCount < 0 || typeof isSubscribed !== 'boolean' || typeof muted !== 'boolean' ||
-      (lastReadPostId !== null && !validId(lastReadPostId))) return null;
-  return { id: row.id, name: row.name, isOwner: row.isOwner, createdAt, updatedAt, lastPost,
+      (lastReadPostId !== null && !validSequenceId(lastReadPostId))) return null;
+  return { id: row.id, ...(typeof row.identityId === 'string' ? { identityId: row.identityId, uuid: row.identityId } : {}),
+    ...(typeof row.username === 'string' ? { username: row.username } : {}), name: row.name, isOwner: row.isOwner, createdAt, updatedAt, lastPost,
     subscriberCount, isSubscribed, muted, lastReadPostId, pinnedPost,
     ownerName: typeof row.ownerName === 'string' && row.ownerName.trim() ? row.ownerName : null,
     avatarUrl: typeof row.avatarUrl === 'string' && row.avatarUrl.trim() ? row.avatarUrl : null };
@@ -213,10 +248,15 @@ function validateExactBooleanBody(value, key) {
     Object.hasOwn(value, key) && typeof value[key] === 'boolean' ? value[key] : undefined;
 }
 function validateNameBody(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'name') || typeof value.name !== 'string') return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, 'name') || typeof value.name !== 'string' || Object.keys(value).some(key => !['name', 'username'].includes(key))) return null;
   const name = value.name.trim();
   if (!name || name.includes('\0') || [...name].length > MAX_NAME_LENGTH) return null;
-  return name;
+  let username = null;
+  if (Object.hasOwn(value, 'username')) {
+    if (typeof value.username !== 'string' || !/^[A-Za-z0-9_.-]{5,40}$/.test(value.username.trim())) return null;
+    username = value.username.trim().toLowerCase();
+  }
+  return { name, username };
 }
 function validatePostBody(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'text') || typeof value.text !== 'string') return null;
@@ -232,7 +272,7 @@ function validateReadBody(value) {
 function validatePinBody(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'postId')) return undefined;
   if (value.postId === null) return null;
-  return validId(value.postId) ? value.postId : undefined;
+  return typeof value.postId === 'string' && ID_RE.test(value.postId) && BigInt(value.postId) <= MAX_BIGINT ? value.postId : undefined;
 }
 
 export function registerChannelsApi(app, { channelStore = null, channelsStore = channelStore, requireGoogleSession, config }) {
@@ -286,10 +326,10 @@ export function registerChannelsApi(app, { channelStore = null, channelsStore = 
 
   app.post('/api/pulse/channels', requireGoogleSession, limiter, sameOriginJson(config), express.json({ limit: '16kb', strict: true }), async (req, res) => {
     if (!ready(res)) return;
-    const name = validateNameBody(req.body);
-    if (name === null) return res.status(400).json({ error: 'Channel name must be nonblank and at most 80 characters.' });
+    const input = validateNameBody(req.body);
+    if (input === null) return res.status(400).json({ error: 'Channel name or username is invalid.' });
     try {
-      const row = await channelsStore.createChannel(subjectOf(req), name);
+      const row = await channelsStore.createChannel(subjectOf(req), input.name, input.username);
       const channel = serializeChannel(row);
       if (!channel) return res.status(503).json({ error: 'Channels service is unavailable.' });
       return res.status(201).json({ channel });

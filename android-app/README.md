@@ -1,6 +1,12 @@
-# Stemma Android 1.0.8
+# Stemma Android 1.0.9
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.8`, version code `9`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.9`, version code `10`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+
+## Universal usernames (1.0.9)
+
+Readable `@usernames` share one case-insensitive namespace across accounts, groups, channels and registered system apps. Usernames contain at least five characters; the API and database canonicalize them to lowercase. Each named entity has a stable, immutable UUID identity separate from its readable handle. Existing numeric route IDs remain compatible while UUID routes and the identity resolver are available.
+
+Android adds a channel username field, displays channel and public-group handles, and explains universal handles on the profile. Android source transforms enforce the new minimum without changing root website UI assets. The accompanying API migration transactionally reserves names and prevents cross-type duplicates, including concurrent claims. Existing short/colliding test handles must be explicitly corrected before migration. No GitHub Release is created by this update.
 
 ## Persistent sign-in and direct navigation (1.0.8)
 

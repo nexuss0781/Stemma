@@ -9,8 +9,9 @@ import { validateProfileImage } from './profile-image.js';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_SIZE = 50;
 const MAX_MESSAGE_LENGTH = 4000;
-const SLUG_RE = /^[A-Za-z0-9_-]{3,40}$/;
+const SLUG_RE = /^[A-Za-z0-9_-]{5,40}$/;
 const ID_RE = /^[1-9]\d{0,18}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[A-Za-z0-9_-]{40,64}$/;
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/u;
 const RESERVED_SLUGS = new Set([
@@ -36,6 +37,19 @@ export function createGroupsStore(pool) {
       throw error;
     } finally { client.release(); }
   }
+  async function legacyGroupId(id, client = pool) {
+    if (!UUID_RE.test(String(id))) return id;
+    const result = await client.query("SELECT entity_key FROM stemma_universal_identities WHERE identity_id = $1::uuid AND entity_type = 'group' LIMIT 1", [id]);
+    return result.rows[0]?.entity_key ?? null;
+  }
+  async function withIdentities(rows, client = pool) {
+    if (!rows.length) return rows;
+    const ready = await client.query("SELECT to_regclass('stemma_universal_identities') IS NOT NULL AS ready");
+    if (!ready.rows[0]?.ready) return rows;
+    const ids = await client.query("SELECT entity_key, identity_id::text AS \"identityId\" FROM stemma_universal_identities WHERE entity_type = 'group' AND entity_key = ANY($1::text[])", [rows.map(row => row.id)]);
+    const byKey = new Map(ids.rows.map(row => [row.entity_key, row.identityId]));
+    return rows.map(row => ({ ...row, identityId: byKey.get(row.id) || null }));
+  }
   const summarySql = `SELECT g.id::text AS id, g.name, g.slug, g.description, g.visibility,
       g.owner_subject AS "ownerSubject", g.invite_token AS "inviteToken",
       EXISTS (SELECT 1 FROM stemma_group_avatars a WHERE a.group_id = g.id) AS "hasAvatar",
@@ -54,16 +68,22 @@ export function createGroupsStore(pool) {
       const result = await pool.query(`${summarySql} WHERE EXISTS (
         SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1
       ) ORDER BY g.updated_at DESC, g.id DESC`, [subject]);
-      return result.rows;
+      return withIdentities(result.rows);
     },
     async searchPublic(subject, query, limit = PAGE_SIZE) {
       const escaped = query.replace(/[\\%_]/g, '\\$&');
       const result = await pool.query(`${summarySql}
         WHERE g.visibility = 'public' AND g.name ILIKE $2 ESCAPE E'\\\\'
         ORDER BY g.name, g.id LIMIT $3`, [subject, `%${escaped}%`, limit]);
-      return result.rows;
+      return withIdentities(result.rows);
     },
+    async getLegacyId(id) { return legacyGroupId(id); },
     async isSlugAvailable(slug) {
+      const ready = await pool.query("SELECT to_regclass('stemma_universal_identities') IS NOT NULL AS ready");
+      if (ready.rows[0]?.ready) {
+        const global = await pool.query('SELECT NOT EXISTS (SELECT 1 FROM stemma_universal_identities WHERE lower(username) = lower($1)) AS available', [slug]);
+        return global.rows[0]?.available === true;
+      }
       const result = await pool.query('SELECT NOT EXISTS (SELECT 1 FROM stemma_groups WHERE lower(slug) = lower($1)) AS available', [slug]);
       return result.rows[0]?.available === true;
     },
@@ -84,6 +104,7 @@ export function createGroupsStore(pool) {
       return result.rows[0] ? { data: Buffer.from(result.rows[0].data), mimeType: result.rows[0].mimeType } : null;
     },
     async getAvatar(subject, id) {
+      id = await legacyGroupId(id); if (!id) return null;
       const result = await pool.query(`SELECT a.image_data AS data, a.image_mime AS "mimeType"
         FROM stemma_group_avatars a JOIN stemma_groups g ON g.id = a.group_id
         WHERE g.id = $1::bigint AND (g.visibility = 'public' OR EXISTS (
@@ -121,6 +142,7 @@ export function createGroupsStore(pool) {
       });
     },
     async getById(subject, id, inviteToken = null) {
+      id = await legacyGroupId(id); if (!id) return null;
       const group = await fetchSummary(pool, subject, `g.id = $2::bigint AND (
         g.visibility = 'public' OR EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1)
         OR ($3::text IS NOT NULL AND g.invite_token = $3)
@@ -136,6 +158,7 @@ export function createGroupsStore(pool) {
       return group ? detail(group, subject, pool) : null;
     },
     async join(subject, id, inviteToken = null) {
+      id = await legacyGroupId(id); if (!id) return null;
       return transaction(async client => {
         const locked = await client.query(`SELECT id::text AS id, owner_subject AS "ownerSubject", visibility, invite_token AS "inviteToken"
           FROM stemma_groups WHERE id = $1::bigint FOR UPDATE`, [id]);
@@ -151,6 +174,7 @@ export function createGroupsStore(pool) {
       });
     },
     async leave(subject, id) {
+      id = await legacyGroupId(id); if (!id) return null;
       return transaction(async client => {
         const locked = await client.query(`SELECT id::text AS id, owner_subject AS "ownerSubject"
           FROM stemma_groups WHERE id = $1::bigint FOR UPDATE`, [id]);
@@ -175,6 +199,7 @@ export function createGroupsStore(pool) {
       });
     },
     async updateGroup(subject, id, changes) {
+      id = await legacyGroupId(id); if (!id) return null;
       const keys = Object.keys(changes);
       const columns = { name: 'name', description: 'description', visibility: 'visibility', slug: 'slug' };
       return transaction(async client => {
@@ -203,6 +228,7 @@ export function createGroupsStore(pool) {
       });
     },
     async listMessages(subject, id, before, limit) {
+      id = await legacyGroupId(id); if (!id) return [];
       const result = await pool.query(`SELECT m.id::text AS id, m.text, m.created_at AS "createdAt",
           m.author_subject AS "authorSubject", COALESCE(p.username, '') AS username, COALESCE(p.nick_name, '') AS "nickName"
         FROM stemma_groups_messages m
@@ -213,6 +239,7 @@ export function createGroupsStore(pool) {
       return result.rows;
     },
     async sendMessage(subject, id, text) {
+      id = await legacyGroupId(id); if (!id) return null;
       const result = await pool.query(`WITH inserted AS (
           INSERT INTO stemma_groups_messages (group_id, author_subject, text)
           SELECT g.id, $2::varchar(255), $3::text FROM stemma_groups g
@@ -229,6 +256,14 @@ export function createGroupsStore(pool) {
 async function getSummary(client, id, subject) {
   return (await fetchSummary(client, subject, 'g.id = $2::bigint', [subject, id]));
 }
+async function withGroupIdentities(rows, client) {
+  if (!rows.length) return rows;
+  const ready = await client.query("SELECT to_regclass('stemma_universal_identities') IS NOT NULL AS ready");
+  if (!ready.rows[0]?.ready) return rows;
+  const ids = await client.query("SELECT entity_key, identity_id::text AS \"identityId\" FROM stemma_universal_identities WHERE entity_type = 'group' AND entity_key = ANY($1::text[])", [rows.map(row => row.id)]);
+  const byKey = new Map(ids.rows.map(row => [row.entity_key, row.identityId]));
+  return rows.map(row => ({ ...row, identityId: byKey.get(row.id) || null }));
+}
 async function fetchSummary(client, subject, condition, values) {
   const result = await client.query(`SELECT g.id::text AS id, g.name, g.slug, g.description, g.visibility,
       g.owner_subject AS "ownerSubject", g.invite_token AS "inviteToken",
@@ -237,7 +272,7 @@ async function fetchSummary(client, subject, condition, values) {
       EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1) AS "isMember",
       (g.owner_subject = $1 AND EXISTS (SELECT 1 FROM stemma_groups_memberships m WHERE m.group_id = g.id AND m.member_subject = $1 AND m.role = 'owner')) AS "isOwner"
     FROM stemma_groups g WHERE ${condition} LIMIT 1`, values);
-  return result.rows[0] ?? null;
+  return (await withGroupIdentities(result.rows, client))[0] ?? null;
 }
 async function detail(group, subject, client) {
   const dto = groupDto(group);
@@ -249,7 +284,7 @@ async function detail(group, subject, client) {
 }
 function groupDto(row) {
   return {
-    id: row.id, name: row.name, slug: row.slug, description: row.description, visibility: row.visibility,
+    id: row.id, ...(typeof row.identityId === 'string' ? { identityId: row.identityId, uuid: row.identityId } : {}), name: row.name, slug: row.slug, description: row.description, visibility: row.visibility,
     memberCount: Number(row.memberCount) || 0, isMember: row.isMember === true, isOwner: row.isOwner === true,
     ...(row.visibility === 'public' ? { publicUrl: `/${row.slug}` } : {}),
     ...((row.hasAvatar === true || row.avatarUrl === `/api/pulse/groups/${row.id}/avatar`) && (row.visibility === 'public' || row.isMember === true) ? { avatarUrl: `/api/pulse/groups/${row.id}/avatar` } : {}),
@@ -271,7 +306,8 @@ function sameOriginJson(config) {
     return next();
   };
 }
-function validId(value) { return typeof value === 'string' && ID_RE.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n; }
+function validId(value) { return typeof value === 'string' && (UUID_RE.test(value) || (ID_RE.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n)); }
+function validSequenceId(value) { return typeof value === 'string' && ID_RE.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n; }
 function parseBefore(value) {
   if (value === undefined) return null;
   return typeof value === 'string' && ID_RE.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n ? value : undefined;
@@ -316,7 +352,7 @@ function validateCreate(body) {
   let memberUsernames = [];
   if (Object.hasOwn(body, 'memberUsernames')) {
     if (!Array.isArray(body.memberUsernames) || body.memberUsernames.length > 100 ||
-        body.memberUsernames.some(username => typeof username !== 'string' || !/^[A-Za-z0-9_.]{3,30}$/.test(username)) ||
+        body.memberUsernames.some(username => typeof username !== 'string' || !/^[A-Za-z0-9_.-]{5,30}$/.test(username)) ||
         new Set(body.memberUsernames.map(username => username.toLowerCase())).size !== body.memberUsernames.length) return null;
     memberUsernames = [...body.memberUsernames];
   }
@@ -406,7 +442,7 @@ function registerGroupsApi(app, { groupsStore = null, attachmentStore = null, re
   });
   app.get('/api/pulse/groups/candidates/:username/photo', ...auth, async (req, res) => {
     if (!available(res)) return;
-    if (!/^[A-Za-z0-9_.]{3,30}$/.test(req.params.username)) return res.status(404).json({ error: 'Photo not found.' });
+    if (!/^[A-Za-z0-9_.-]{5,30}$/.test(req.params.username)) return res.status(404).json({ error: 'Photo not found.' });
     try {
       const photo = await groupsStore.getCandidatePhoto(req.params.username);
       if (!photo) return res.status(404).json({ error: 'Photo not found.' });
@@ -512,12 +548,14 @@ function registerGroupsApi(app, { groupsStore = null, attachmentStore = null, re
     if (before === undefined) return res.status(400).json({ error: 'Message cursor is invalid.' });
     try {
       const rows = await groupsStore.listMessages(req.session.stemmaUser.subject, req.params.id, before, PAGE_SIZE + 1);
-      const messages = (rows || []).filter(row => row && validId(row.id) && typeof row.text === 'string' && safeDate(row.createdAt));
+      const messages = (rows || []).filter(row => row && validSequenceId(row.id) && typeof row.text === 'string' && safeDate(row.createdAt));
       const hasMore = messages.length > PAGE_SIZE;
       const page = messages.slice(0, PAGE_SIZE);
-      const attachmentRows = attachmentStore?.getAttachmentsForMessages
-        ? await attachmentStore.getAttachmentsForMessages(req.session.stemmaUser.subject, `group:${req.params.id}`, page.map(row => row.id))
-        : [];
+      let attachmentRows = [];
+      if (attachmentStore?.getAttachmentsForMessages) {
+        const legacyId = typeof groupsStore.getLegacyId === 'function' ? await groupsStore.getLegacyId(req.params.id) : req.params.id;
+        if (legacyId) attachmentRows = await attachmentStore.getAttachmentsForMessages(req.session.stemmaUser.subject, `group:${legacyId}`, page.map(row => row.id));
+      }
       const attachmentsByMessage = new Map((Array.isArray(attachmentRows) ? attachmentRows : []).map(row => [row.messageId, safeAttachment(row)]).filter(([, attachment]) => attachment));
       return res.json({ messages: page.map(row => ({
         id: row.id, text: row.text, createdAt: safeDate(row.createdAt), mine: row.authorSubject === req.session.stemmaUser.subject,
@@ -534,7 +572,7 @@ function registerGroupsApi(app, { groupsStore = null, attachmentStore = null, re
     try {
       const row = await groupsStore.sendMessage(req.session.stemmaUser.subject, req.params.id, text);
       if (!row) return res.status(404).json({ error: 'Group not found.' });
-      if (!validId(row.id) || typeof row.text !== 'string' || !safeDate(row.createdAt)) return res.status(503).json({ error: 'Groups service is unavailable.' });
+      if (!validSequenceId(row.id) || typeof row.text !== 'string' || !safeDate(row.createdAt)) return res.status(503).json({ error: 'Groups service is unavailable.' });
       return res.status(201).json({ message: { id: row.id, text: row.text, createdAt: safeDate(row.createdAt), mine: row.authorSubject === req.session.stemmaUser.subject,
         author: { username: typeof row.username === 'string' ? row.username : '', nickName: typeof row.nickName === 'string' ? row.nickName : '' } } });
     } catch { return res.status(503).json({ error: 'Groups service is unavailable.' }); }

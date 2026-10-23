@@ -1,5 +1,5 @@
 {
-  "serverSha256": "92b0e36e0ac039a32408274910e008753cedcb04ce0e7d17fac3bb53ef984ec8",
+  "serverSha256": "89df3c5f8ab035778d0e0ea403ed52bb294a2b59f9e91748fc8f8f267e18429e",
   "overviewHeroSha256": "661dfbe2bbfc00522d4e9c51e6ce69d0cdea61f7fd4b84b03d44e24908d3a7ac",
   "migrations": [
     {
@@ -77,6 +77,10 @@
     {
       "name": "020_likee_media_size.sql",
       "sha256": "b0e77b2a8953b0c7185c36bff0e1ee159b66420e0741836ae1395e0626c3e6b8"
+    },
+    {
+      "name": "021_universal_identity.sql",
+      "sha256": "fbeb4f892ba2c8ff10252e6d32a171090ed9b707db851d449204996b9ee33103"
     }
   ]
 }
