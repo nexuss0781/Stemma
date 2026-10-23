@@ -1,10 +1,10 @@
 {
   "name": "stemma-android-release",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test-native-cache.cjs && node test-native-navigation.cjs",
+    "test": "node test-native-cache.cjs && node test-native-cache-dedupe.cjs && node test-runtime-session-cache.cjs && node test-native-navigation.cjs",
     "build": "node build-web.cjs",
     "sync:android": "npm run build && cap sync android"
   },

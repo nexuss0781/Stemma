@@ -65,9 +65,20 @@ export class DurableResponseCache {
     if (!account) return Promise.resolve();
     const text = JSON.stringify({body,at});
     if (bytes(text) > ITEM_LIMIT) return Promise.resolve();
-    this.remember(path,text);
     return this.run(async () => {
       if (account !== this.account || generation !== this.generation) return;
+      const existing=this.entries[path], cached=this.memory.get(path);
+      if(existing && cached) {
+        try {
+          if(JSON.stringify(JSON.parse(cached.text).body)===JSON.stringify(body)) {
+            this.remember(path,text);
+            existing.at=at;
+            await this.writeIndex();
+            return;
+          }
+        } catch { /* Replace an unreadable in-memory record with the fresh response. */ }
+      }
+      this.remember(path,text);
       const key = 'response-' + await digest(account + '\n' + path);
       await persistence.set(key,text);
       if (account !== this.account || generation !== this.generation) { await persistence.remove(key); return; }
@@ -93,7 +104,12 @@ export class DurableResponseCache {
       if (!text || account !== this.account || generation !== this.generation) return null;
       this.remember(path,text);
     }
-    try { return JSON.parse(text); } catch { return null; }
+    try {
+      const value=JSON.parse(text);
+      const entry=this.entries[path];
+      if(entry) value.at=entry.at;
+      return value;
+    } catch { return null; }
   }
   clear() {
     this.generation++;

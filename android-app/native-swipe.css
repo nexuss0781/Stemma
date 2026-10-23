@@ -2,16 +2,6 @@
 #app-main,#notifications-page,#dashboard-grid,.topbar { touch-action: pan-y pinch-zoom; }
 #dashboard-grid .fee-for-you { touch-action: pan-y pinch-zoom; }
 #dashboard-grid.payment-carousel { touch-action: pan-y pinch-zoom; overflow-x: hidden; }
-html.android-swipe-tracking #app-main,
-html.android-swipe-tracking #notifications-page {
-  transform: translate3d(var(--android-swipe-x, 0px), 0, 0);
-  will-change: transform;
-}
-#app-main.android-swipe-ease,
-#notifications-page.android-swipe-ease {
-  transition: transform 220ms cubic-bezier(.2,.75,.25,1) !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  #app-main.android-swipe-ease,
-#notifications-page.android-swipe-ease { transition-duration: 1ms !important; }
-}
+#app-main .likee-screen,#app-main .likee-feed { touch-action: pan-y pinch-zoom; }
+/* Drawer/bottom-nav taps use the same direct change as a deliberate swipe. */
+#app-main.route-from-right,#app-main.route-from-left { animation: none; }

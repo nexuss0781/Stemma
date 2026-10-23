@@ -1,6 +1,12 @@
-# Stemma Android 1.0.7
+# Stemma Android 1.0.8
 
-Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.7`, version code `8`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+Android-only Capacitor project for package `app.stemma.mobile`, version name `1.0.8`, version code `9`. This directory does not change or deploy the website. The Java files in `native-src/` are copied into the Android app's Java source directory by the bundler.
+
+## Persistent sign-in and direct navigation (1.0.8)
+
+The accompanying API update removes time-based expiration from authenticated PostgreSQL session records. Logout still deletes the record. Pre-authentication state and one-time mobile handoffs retain their short deadlines. Device cookies use a rolling 400-day lifetime, subject to WebView/browser retention and the user keeping app storage; this is not a promise that uninstalling, clearing storage, or server-side revocation can never require sign-in. An already expired old session cannot be recovered by saving its cookie.
+
+Android reuses verified same-account session state instead of repeatedly activating caches and scheduling native renewal work. Cache startup is ordered before backend access, stale responses cannot restore an account after logout, and unchanged cached response payloads avoid redundant file writes while freshness metadata still advances. Page changes use direct selection without swipe translation or route-entry animations. Website UI sources are unchanged.
 
 ## Drawer and photo-less avatars (1.0.7)
 
@@ -30,9 +36,9 @@ Diagnostics separately report safe actual fetch/upstream MIME essences, inferred
 
 ## Smooth swipe navigation
 
-Left swipes follow Pay fee / For You → Pay fee / For friend → Deposit → History → Pulse All → User → Group → Channel → App → Overview → Likee → Profile → Notifications. Right swipes reverse the sequence without wrapping. Horizontal finger tracking, eased settling and reduced-motion support are Android-only. Existing navigation buttons remain available.
+Left swipes directly select the next stop in this fixed sequence: Pay fee / For You → Pay fee / For friend → Deposit → History → Pulse All → User → Group → Channel → App → Overview → Likee → Profile → Notifications. Right swipes directly select the previous stop, including from the Notifications list back to Profile; the sequence never wraps. A deliberate horizontal gesture selects once on release, with no page translation, staged movement, or reverse snap. Existing navigation buttons remain available.
 
-Visited steps retain selected filters, Pulse stage, parent view and bounded scroll metadata in an account-isolated, in-memory map. Logging out clears it; the existing native persistence still restores the current screen across restarts. Deliberate swipes do not reapply an old launch deep link. Editable inputs, dialogs, open chats, story rails, other horizontal scroll owners and Likee's feed are excluded; use non-feed page chrome to leave Likee. Ordinary controls retain taps; a horizontal drag captures the pointer and suppresses its matching trailing click. Vertical gestures do not select another route, and passive notification entry does not mark records read.
+Visited steps retain selected filters, Pulse stage, parent view and bounded scroll metadata in an account-isolated, in-memory map. Logging out clears it; the existing native persistence still restores the current screen across restarts. Deliberate swipes do not reapply an old launch deep link. Editable inputs, dialogs, open chats, story rails and genuine horizontal scroll owners remain protected. Likee keeps vertical feed scrolling while horizontal swipes on the feed navigate between adjacent stops unless an actual horizontal child owns the gesture. Ordinary controls retain taps; a horizontal drag captures the pointer and suppresses its matching trailing click. Vertical gestures do not select another route, and passive notification entry does not mark records read.
 
 After bundling, `python3 test-native-swipe-browser.py` runs trusted touch gestures in a synthetic phone-sized Chromium viewport. Its recording is a browser preview, not a physical Android recording or validation of the owner's account.
 
@@ -58,7 +64,7 @@ Run `sh native-proxy-tests/run.sh` for the native proxy regression harness and `
 - Response retention up to 512 MiB with a 32 MiB RAM working set. Durable media retention up to 2 GiB / 2,048 files, seven-day protection for imported copies and a 128 MiB free-space reserve. Cached thumbnails still require current per-item media authorization.
 - The animated splash mark is shifted upward by 12% of viewport height while remaining horizontally centered.
 
-Logging out purges private account caches and drafts. Clearing app storage or uninstalling removes persistent state. Android may delay background renewal; the existing backend's eight-hour rolling session can still expire.
+Logging out purges private account caches and drafts. Clearing app storage or uninstalling removes persistent state. Android may delay background renewal; authenticated server sessions no longer depend on an eight-hour renewal deadline.
 
 ## Build locally
 

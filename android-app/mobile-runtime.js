@@ -11,7 +11,7 @@ import appPackage from './package.json';
 
 installPhotoResponseValidation(window);
 const ORIGIN = 'https://stemma.wasmer.app';
-const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:8});
+const photoDiagnostics = installPhotoDiagnostics({version:appPackage.version,versionCode:9});
 const nativeMedia = registerPlugin('StemmaMedia');
 const media = Object.freeze({
   requestAccess: options=>nativeMedia.requestAccess(options),
@@ -29,6 +29,8 @@ const nativeOpen = XMLHttpRequest.prototype.open;
 let connected = navigator.onLine, account = '', authPending = false;
 const responseCache = new DurableResponseCache();
 let authRevision = 0;
+let sessionActivatedAccount = '';
+let sessionSync = Promise.resolve();
 const CACHE_PATH = 'offline/snapshot-v1.json';
 const isBackend = path => /^\/(?:api\/|auth\/)/.test(path);
 let reconnectTimer, reconnectDelay = 5000;
@@ -62,7 +64,7 @@ function updateConnection(value) {
   if (document.body) render(); else document.addEventListener('DOMContentLoaded', render, { once:true });
 }
 async function clearAccount() {
-  account = ''; authRevision++;
+  account = ''; authRevision++; sessionActivatedAccount = '';
   clearTimeout(draftTimer); draftState = {};
   window.dispatchEvent(new Event('stemma:account-cleared'));
   try { await persistence.setSessionActive(false); } catch {}
@@ -80,10 +82,50 @@ async function saved(path) {
   if (!hit || !current || current !== account) return null;
   return new Response(JSON.stringify(hit.body), { status:200, headers:{'Content-Type':'application/json','X-Stemma-Offline':'true','X-Stemma-Saved-At':String(hit.at)} });
 }
+const cacheReady = (async()=>{
+  account = await responseCache.initialize();
+  // One-time migration preserves the previous APK's offline data during an in-place update.
+  if (!account) try {
+    const {data}=await Filesystem.readFile({path:CACHE_PATH,directory:Directory.Data,encoding:Encoding.UTF8});
+    const stored=JSON.parse(data);
+    if(typeof stored.account==='string' && stored.account && stored.cache && typeof stored.cache==='object') {
+      account=stored.account; await responseCache.activate(account);
+      for(const [path,hit] of Object.entries(stored.cache)) {
+        if(cacheable(path) && hit && typeof hit.body==='object') await responseCache.put(path,hit.body,hit.at || Date.now());
+      }
+      await Filesystem.deleteFile({path:CACHE_PATH,directory:Directory.Data});
+    }
+  } catch {}
+})();
+async function syncSession(body, requestRevision) {
+  const action = async()=>{
+    if(requestRevision!==authRevision) return;
+    if(!body.authenticated) { await clearAccount(); return; }
+    const next=body.googleProfile?.email?.trim().toLowerCase() || body.user?.id || body.profile?.id || '';
+    if(!next) { await clearAccount(); return; }
+    const before=authRevision, switching=Boolean(account && account!==String(next));
+    if(switching) await clearAccount();
+    const expectedRevision=before+(switching?1:0);
+    if(authRevision!==expectedRevision) return;
+    account=String(next);
+    if(responseCache.account!==account) await responseCache.activate(account);
+    if(authRevision!==expectedRevision || account!==String(next)) return;
+    if(sessionActivatedAccount!==account) {
+      try { await persistence.setSessionActive(true); } catch {}
+      if(authRevision!==expectedRevision || account!==String(next)) return;
+      sessionActivatedAccount=account;
+      window.dispatchEvent(new Event('stemma:account-ready'));
+    }
+  };
+  const result=sessionSync.catch(()=>{}).then(action);
+  sessionSync=result;
+  await result;
+}
 window.fetch = async (input, init={}) => {
   const source = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
   const url = new URL(backendUrl(source));
   if (url.origin !== ORIGIN || !isBackend(url.pathname)) return nativeFetch(input,init);
+  await cacheReady;
   const path = url.pathname+url.search;
   const requestRevision = authRevision;
   const method = (init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
@@ -121,13 +163,8 @@ window.fetch = async (input, init={}) => {
     if (method==='GET' && response.ok && cacheable(path) && /json/i.test(response.headers.get('Content-Type')||'')) {
       try {
         const body = await response.clone().json();
-        if (url.pathname==='/auth/session') {
-          const next = body.googleProfile?.email?.trim().toLowerCase() || body.user?.id || body.profile?.id || '';
-          if (!body.authenticated) await clearAccount();
-          else if(next) { if(account && account!==next) await clearAccount(); account=String(next); await responseCache.activate(account); try { await persistence.setSessionActive(true); } catch {} window.dispatchEvent(new Event('stemma:account-ready')); }
-          else await clearAccount();
-        }
-        if(account && (url.pathname==='/auth/session' || requestRevision===authRevision)) { void responseCache.put(path,body).catch(()=>{}); }
+        if (url.pathname==='/auth/session' && requestRevision===authRevision) await syncSession(body,requestRevision);
+        if(account && requestRevision===authRevision) { void responseCache.put(path,body).catch(()=>{}); }
       } catch {}
     }
     return response;
@@ -175,19 +212,7 @@ async function handleLink(url) {
   }
 }
 const ready = (async()=>{
-  account = await responseCache.initialize();
-  // One-time migration preserves the previous APK's offline data during an in-place update.
-  if (!account) try {
-    const {data}=await Filesystem.readFile({path:CACHE_PATH,directory:Directory.Data,encoding:Encoding.UTF8});
-    const stored=JSON.parse(data);
-    if(typeof stored.account==='string' && stored.account && stored.cache && typeof stored.cache==='object') {
-      account=stored.account; await responseCache.activate(account);
-      for(const [path,hit] of Object.entries(stored.cache)) {
-        if(cacheable(path) && hit && typeof hit.body==='object') await responseCache.put(path,hit.body,hit.at || Date.now());
-      }
-      await Filesystem.deleteFile({path:CACHE_PATH,directory:Directory.Data});
-    }
-  } catch {}
+  await cacheReady;
   try { updateConnection((await Network.getStatus()).connected); await Network.addListener('networkStatusChange',status=>{updateConnection(status.connected); if(status.connected) window.dispatchEvent(new Event('stemma:reconnected'));}); } catch {updateConnection(navigator.onLine);}
   await App.addListener('appUrlOpen',event=>void handleLink(event.url));
   const launch=await App.getLaunchUrl(); if(launch?.url) void handleLink(launch.url);

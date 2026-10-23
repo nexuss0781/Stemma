@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
-import connectPgSimple from 'connect-pg-simple';
 import pg from 'pg';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { PostgresSessionStore } from './postgres-session-store.js';
 import { validateProfileImage } from './profile-image.js';
 import { registerFriendBillsApi } from './friend-bills-api.js';
 import { createNotificationStore, registerNotificationsApi } from './notifications-api.js';
@@ -31,9 +31,16 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const { Pool } = pg;
 const SESSION_COOKIE = 'stemma.sid';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+// Browsers commonly cap persistent cookies at 400 days; rolling refresh keeps
+// active users signed in while the server-side authenticated row never expires.
+const AUTHENTICATED_COOKIE_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
 const TRANSACTION_TTL_MS = 5 * 60 * 1000;
 const MAX_TRANSACTIONS_PER_SESSION = 5;
 const MAX_PROVIDER_RESPONSE_BYTES = 128 * 1024;
+const MOBILE_HANDOFF_TTL_MS = 2 * 60 * 1000;
+const MOBILE_HANDOFF_PREFIX = 'stemma.mobile.handoff.';
+const MOBILE_CALLBACK_URI = 'app.stemma.mobile://auth';
+const mobileHandoffClaims = new Map();
 const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 const GOOGLE_ISSUER = 'https://accounts.google.com';
@@ -194,6 +201,26 @@ function sessionOperation(req, operation) {
   return new Promise((resolve, reject) => {
     req.session[operation](error => error ? reject(error) : resolve());
   });
+}
+
+function validPkceValue(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{43,128}$/.test(value);
+}
+
+function mobileHandoffKey(code) {
+  return `${MOBILE_HANDOFF_PREFIX}${crypto.createHash('sha256').update(code).digest('hex')}`;
+}
+
+function mobileCallbackUrl(parameters) {
+  const url = new URL(MOBILE_CALLBACK_URI);
+  for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
+  return url.href;
+}
+
+function constantTimeEqual(left, right) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 export function createGoogleIdentityStore(pool) {
@@ -530,6 +557,10 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       maxAge: SESSION_TTL_MS
     }
   }));
+  app.use((req, _res, next) => {
+    if (req.session?.stemmaUser) req.session.cookie.maxAge = AUTHENTICATED_COOKIE_MAX_AGE_MS;
+    next();
+  });
 
   const discoveryCache = { value: null, expiresAt: 0, pending: null };
   const googleDiscoveryCache = { value: null, expiresAt: 0, pending: null };
@@ -609,6 +640,21 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       res.status(429).json({ error: 'Too many sign-in attempts. Please wait and try again.' });
     }
   });
+
+  async function createMobileHandoff(mobileAuth, user) {
+    if (!sessionStore || !mobileAuth || !user) return '';
+    const handoffCode = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + MOBILE_HANDOFF_TTL_MS;
+    await new Promise((resolve, reject) => sessionStore.set(mobileHandoffKey(handoffCode), {
+      kind: 'mobile-auth-handoff',
+      stemmaUser: user,
+      state: mobileAuth.state,
+      codeChallenge: mobileAuth.codeChallenge,
+      expiresAt,
+      cookie: { originalMaxAge: MOBILE_HANDOFF_TTL_MS, maxAge: MOBILE_HANDOFF_TTL_MS, expires: new Date(expiresAt).toISOString() }
+    }, error => error ? reject(error) : resolve()));
+    return handoffCode;
+  }
 
   app.get('/healthz', (_req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -765,6 +811,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
   app.get('/auth/fayda/start', authLimiter, asyncRoute(async (req, res) => {
     setNoStore(res);
     if (!isFaydaConfigured(config)) return res.redirect(303, '/?auth=unavailable');
+    const hasMobileState = req.query.mobile_state !== undefined;
+    const hasMobileChallenge = req.query.mobile_code_challenge !== undefined;
+    if (hasMobileState !== hasMobileChallenge || (hasMobileState &&
+        (!/^[A-Za-z0-9_-]{43}$/.test(req.query.mobile_state) || !validPkceValue(req.query.mobile_code_challenge)))) {
+      return res.status(400).json({ error: 'Mobile sign-in request is invalid.' });
+    }
 
     let metadata;
     try {
@@ -787,7 +839,11 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       const [oldestState] = ordered.shift();
       delete transactions[oldestState];
     }
-    transactions[state] = { provider: 'fayda', nonce, codeVerifier, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    transactions[state] = {
+      provider: 'fayda', nonce, codeVerifier,
+      ...(hasMobileState ? { mobileAuth: { state: req.query.mobile_state, codeChallenge: req.query.mobile_code_challenge } } : {}),
+      createdAt: now, expiresAt: now + TRANSACTION_TTL_MS
+    };
     req.session.oidcTransactions = transactions;
     await sessionOperation(req, 'save');
 
@@ -814,6 +870,9 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     const transactions = req.session.oidcTransactions || {};
     const transaction = transactions[state];
     if (!transaction || transaction.provider !== 'fayda' || transaction.expiresAt <= Date.now()) return res.redirect(303, '/?auth=failed');
+    const mobileFailure = () => transaction.mobileAuth
+      ? res.redirect(303, mobileCallbackUrl({ error: 'auth_failed', state: transaction.mobileAuth.state }))
+      : res.redirect(303, '/?auth=failed');
 
     // Consume and persist the one-time transaction before inspecting provider errors or exchanging code.
     delete transactions[state];
@@ -821,7 +880,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     await sessionOperation(req, 'save');
 
     if (typeof req.query.error === 'string' || typeof req.query.code !== 'string' || req.query.code.length < 1 || req.query.code.length > 2048) {
-      return res.redirect(303, '/?auth=failed');
+      return mobileFailure();
     }
 
     try {
@@ -886,6 +945,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
 
       // Store only the verified external key and the time of authentication; discard all provider tokens and claims.
       await sessionOperation(req, 'regenerate');
+      req.session.cookie.maxAge = AUTHENTICATED_COOKIE_MAX_AGE_MS;
       req.session.stemmaUser = {
         provider: 'fayda',
         issuer: config.fayda.issuer,
@@ -893,10 +953,15 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
         authenticatedAt: nowSeconds
       };
       await sessionOperation(req, 'save');
+      if (transaction.mobileAuth) {
+        const handoffCode = await createMobileHandoff(transaction.mobileAuth, req.session.stemmaUser);
+        if (!handoffCode) return mobileFailure();
+        return res.redirect(303, mobileCallbackUrl({ code: handoffCode, state: transaction.mobileAuth.state }));
+      }
       return res.redirect(303, '/?auth=success');
     } catch {
       // Never return or log provider error text, tokens, assertions, or identity claims.
-      return res.redirect(303, '/?auth=failed');
+      return mobileFailure();
     }
   }));
 
@@ -905,6 +970,12 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     if (!isGoogleConfigured(config)) return res.redirect(303, '/?auth=unavailable');
 
     const returnTo = validGroupReturnTo(req.query.returnTo) ? req.query.returnTo : '/';
+    const hasMobileState = req.query.mobile_state !== undefined;
+    const hasMobileChallenge = req.query.mobile_code_challenge !== undefined;
+    if (hasMobileState !== hasMobileChallenge || (hasMobileState &&
+        (!/^[A-Za-z0-9_-]{43}$/.test(req.query.mobile_state) || !validPkceValue(req.query.mobile_code_challenge)))) {
+      return res.status(400).json({ error: 'Mobile sign-in request is invalid.' });
+    }
     let metadata;
     try {
       metadata = await getGoogleMetadata();
@@ -926,7 +997,11 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
       const [oldestState] = ordered.shift();
       delete transactions[oldestState];
     }
-    transactions[state] = { provider: 'google', nonce, codeVerifier, returnTo, createdAt: now, expiresAt: now + TRANSACTION_TTL_MS };
+    transactions[state] = {
+      provider: 'google', nonce, codeVerifier, returnTo,
+      ...(hasMobileState ? { mobileAuth: { state: req.query.mobile_state, codeChallenge: req.query.mobile_code_challenge } } : {}),
+      createdAt: now, expiresAt: now + TRANSACTION_TTL_MS
+    };
     req.session.oidcTransactions = transactions;
     await sessionOperation(req, 'save');
 
@@ -952,13 +1027,16 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
     if (!transaction || transaction.provider !== 'google' || transaction.expiresAt <= Date.now()) {
       return res.redirect(303, '/?auth=failed');
     }
+    const mobileFailure = () => transaction.mobileAuth
+      ? res.redirect(303, mobileCallbackUrl({ error: 'auth_failed', state: transaction.mobileAuth.state }))
+      : res.redirect(303, '/?auth=failed');
 
     delete transactions[state];
     req.session.oidcTransactions = transactions;
     await sessionOperation(req, 'save');
 
     if (typeof req.query.error === 'string' || typeof req.query.code !== 'string' || req.query.code.length < 1 || req.query.code.length > 2048) {
-      return res.redirect(303, '/?auth=failed');
+      return mobileFailure();
     }
 
     try {
@@ -1001,6 +1079,7 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
         await googleIdentityStore.upsertGoogleIdentity({ subject: idToken.sub, verifiedEmail: profile.email });
       }
       await sessionOperation(req, 'regenerate');
+      req.session.cookie.maxAge = AUTHENTICATED_COOKIE_MAX_AGE_MS;
       req.session.stemmaUser = {
         provider: 'google',
         issuer: GOOGLE_ISSUER,
@@ -1009,10 +1088,78 @@ export function createApp({ config = buildConfig(), sessionStore, googleIdentity
         profile
       };
       await sessionOperation(req, 'save');
+      if (transaction.mobileAuth) {
+        const handoffCode = await createMobileHandoff(transaction.mobileAuth, req.session.stemmaUser);
+        if (!handoffCode) return mobileFailure();
+        return res.redirect(303, mobileCallbackUrl({ code: handoffCode, state: transaction.mobileAuth.state }));
+      }
       const destination = validGroupReturnTo(transaction.returnTo) ? transaction.returnTo : '/';
       return res.redirect(303, `${destination}?auth=success`);
     } catch {
-      return res.redirect(303, '/?auth=failed');
+      return mobileFailure();
+    }
+  }));
+
+  app.get('/auth/mobile/start', authLimiter, asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const provider = req.query.provider;
+    const challenge = req.query.challenge || req.query.code_challenge;
+    if (!['google', 'fayda'].includes(provider) || !/^[A-Za-z0-9_-]{43}$/.test(req.query.state || '') ||
+        !validPkceValue(challenge)) {
+      return res.status(400).json({ error: 'Mobile sign-in request is invalid.' });
+    }
+    const destination = new URL(`/auth/${provider}/start`, config.appOrigin || `${req.protocol}://${req.get('host')}`);
+    destination.searchParams.set('mobile_state', req.query.state);
+    destination.searchParams.set('mobile_code_challenge', challenge);
+    return res.redirect(303, destination.href);
+  }));
+
+  app.post('/auth/mobile/exchange', express.json({ limit: '2kb', strict: true }), asyncRoute(async (req, res) => {
+    setNoStore(res);
+    const requestOrigin = req.get('origin');
+    const expectedOrigin = config.appOrigin || `${req.protocol}://${req.get('host')}`;
+    if (!requestOrigin || (requestOrigin !== expectedOrigin && requestOrigin !== 'https://localhost')) {
+      return res.status(403).json({ error: 'This request could not be verified.' });
+    }
+    const { code, state, verifier, code_verifier: codeVerifierValue } = req.body || {};
+    const codeVerifier = verifier || codeVerifierValue;
+    if (!sessionStore || !/^[A-Za-z0-9_-]{43}$/.test(code || '') || !/^[A-Za-z0-9_-]{43}$/.test(state || '') ||
+        !validPkceValue(codeVerifier)) {
+      return res.status(400).json({ error: 'Mobile sign-in exchange is invalid or expired.' });
+    }
+    const handoffKey = mobileHandoffKey(code);
+    const now = Date.now();
+    for (const [claimedKey, expiresAt] of mobileHandoffClaims) if (expiresAt <= now) mobileHandoffClaims.delete(claimedKey);
+    if (mobileHandoffClaims.has(handoffKey)) return res.status(400).json({ error: 'Mobile sign-in exchange is invalid or expired.' });
+    let handoff;
+    try {
+      handoff = await new Promise((resolve, reject) => sessionStore.get(handoffKey, (error, value) => error ? reject(error) : resolve(value)));
+    } catch {
+      return res.status(503).json({ error: 'Mobile sign-in service is unavailable.' });
+    }
+    const expectedChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    if (!handoff || handoff.expiresAt <= Date.now() || handoff.state !== state ||
+        !constantTimeEqual(expectedChallenge, handoff.codeChallenge) ||
+        !handoff.stemmaUser || !['google', 'fayda'].includes(handoff.stemmaUser.provider) || typeof handoff.stemmaUser.subject !== 'string') {
+      return res.status(400).json({ error: 'Mobile sign-in exchange is invalid or expired.' });
+    }
+    if (mobileHandoffClaims.has(handoffKey)) return res.status(400).json({ error: 'Mobile sign-in exchange is invalid or expired.' });
+    mobileHandoffClaims.set(handoffKey, handoff.expiresAt);
+    try {
+      if (typeof sessionStore.consumeMobileHandoff === 'function') {
+        handoff = await sessionStore.consumeMobileHandoff(handoffKey, state, expectedChallenge);
+        if (!handoff) return res.status(400).json({ error: 'Mobile sign-in exchange is invalid or expired.' });
+      } else {
+        await new Promise((resolve, reject) => sessionStore.destroy(handoffKey, error => error ? reject(error) : resolve()));
+      }
+      await sessionOperation(req, 'regenerate');
+      req.session.cookie.maxAge = AUTHENTICATED_COOKIE_MAX_AGE_MS;
+      req.session.stemmaUser = handoff.stemmaUser;
+      await sessionOperation(req, 'save');
+      return res.json({ authenticated: true });
+    } catch {
+      mobileHandoffClaims.delete(handoffKey);
+      return res.status(503).json({ error: 'Mobile sign-in service is unavailable.' });
     }
   }));
 
@@ -1188,13 +1335,8 @@ async function startServer() {
     await attachmentStore.migrate();
     attendanceStore = createAttendanceStore(postgresPool);
     await attendanceStore.migrate();
-    const PgStore = connectPgSimple(session);
-    sessionStore = new PgStore({
-      pool: postgresPool,
-      tableName: 'stemma_sessions',
-      createTableIfMissing: true,
-      ttl: Math.floor(SESSION_TTL_MS / 1000)
-    });
+    sessionStore = new PostgresSessionStore(postgresPool);
+    await sessionStore.migrate();
   }
   const app = createApp({ config, sessionStore, googleIdentityStore, studentProfileStore, notificationStore, pulseStore, directChatStore, attachmentStore, groupStore, storyStore, likeeStore, channelStore, attendanceStore });
   const server = app.listen(config.port, '0.0.0.0', () => {

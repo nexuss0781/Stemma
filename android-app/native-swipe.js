@@ -15,13 +15,11 @@
   let pointer = null;
   let activeIndex = -1;
   let locked = false;
-  let visualTimer = 0;
   let dragClick = null;
   const app = () => root.StemmaAndroidAppState;
   const nav = () => root.StemmaAndroidNavigation;
   const notifications = () => root.StemmaAndroidSwipeBridge;
   const account = () => { try { return String(root.StemmaNative?.account || '').trim().slice(0, 320); } catch (_) { return ''; } };
-  const reduceMotion = () => root.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
   const routeState = () => {
     const state = nav()?.capture?.();
     if (!state) return null;
@@ -97,17 +95,16 @@
     if ([...root.document.querySelectorAll('dialog[open],#navigation-drawer.open,[role="menu"]:not([hidden]),.pulse-direct-chat:not([hidden]),.group-detail:not([hidden]),.channel-view:not([hidden]),.pulse-search:not([hidden]),.pulse-saved:not([hidden])')].some(visible)) return null;
     if (target.closest('#navigation-drawer.open,#drawer-backdrop:not([hidden]),[role="dialog"],[aria-modal="true"],dialog[open],.sheet-open,.payment-sheet,.fee-interval-menu,[role="listbox"],[role="menu"],[data-picker-open],.pulse-create-previews:not([inert]),.notification-detail-dialog,.is-modal-open')) return null;
     if (target.closest('input,textarea,select,option,[role="tab"],summary,[data-photo-diagnostics],[contenteditable="true"],[contenteditable=""],[data-gesture-owner],[data-native-swipe-block]')) return null;
-    const surfaceHit = target.closest('#app-main,#notifications-page,.topbar');
+    const state = routeState();
+    const surfaceHit = target.closest('#app-main,#notifications-page,.topbar') ||
+      (state.route === 'likee' && target.closest('.likee-screen') ? root.document.getElementById('app-main') : null);
     if (!surfaceHit || surfaceHit.hidden) return null;
     if (target.closest('.pulse-stories,.story-rail,.stories-rail,.channel-view:not([hidden]),.pulse-direct-chat:not([hidden]),.direct-chat-view:not([hidden]),.group-detail:not([hidden]),.pulse-saved:not([hidden]),#pulse-search:not([hidden]),[data-horizontal-scroll],.horizontal-scroll,.carousel-rail')) return null;
-    const state = routeState();
     const idx = indexFor(state);
     if (idx < 0 || idx >= STEPS.length) return null;
     if(state.route==='pulse'&&(state.pulse?.directId||state.pulse?.groupId||state.pulse?.channelId||state.pulse?.savedOpen||state.pulse?.searchOpen))return null;
     const main = root.document.getElementById(idx===12?'notifications-page':'app-main');
     if (!main || main.hidden) return null;
-    // Likee's video/feed surface owns vertical feed gestures; only non-feed page chrome may navigate.
-    if (state.route === 'likee' && target.closest('#dashboard-grid,.likee-feed,.likee-video-feed,[data-likee-feed]')) return null;
     if (state.route === 'pulse' && target.closest('.groups-view:not([hidden]) .group-detail:not([hidden]),.pulse-direct-chat:not([hidden]),.channel-view:not([hidden]),#pulse-search:not([hidden]),.pulse-saved:not([hidden])')) return null;
     if (state.route === 'cards' && root.document.getElementById('dashboard-grid')?.classList.contains('bill-content-grid')) return null;
     // Preserve any actually scrollable horizontal owner. The Pay fee carousel is the one explicit exception.
@@ -119,20 +116,13 @@
     }
     return { main, state, idx };
   }
-  function setVisual(x, animate = false, surface = null) {
-    const main = surface || root.document.getElementById('app-main');
-    if (!main) return;
-    root.document.documentElement.classList.add('android-swipe-tracking');
-    main.style.setProperty('--android-swipe-x', `${x}px`);
-    if (animate) main.classList.add('android-swipe-ease'); else main.classList.remove('android-swipe-ease');
-  }
   function resetVisual(surface = null) {
     const main = surface || root.document.getElementById('app-main');
-    if (!main) return;
-    main.classList.add('android-swipe-ease');
-    main.style.setProperty('--android-swipe-x', '0px');
-    root.clearTimeout(visualTimer);
-    visualTimer=root.setTimeout(() => { main.classList.remove('android-swipe-ease'); root.document.documentElement.classList.remove('android-swipe-tracking'); }, reduceMotion() ? 0 : 230);
+    if (main) {
+      main.classList.remove('android-swipe-ease');
+      main.style.removeProperty('--android-swipe-x');
+    }
+    root.document.documentElement.classList.remove('android-swipe-tracking');
   }
   function begin(event) {
     if(!event.isPrimary){if(pointer){const surface=pointer.eligible.main;pointer=null;resetVisual(surface);}return;}
@@ -141,7 +131,6 @@
     syncAccount();
     const eligible = eligibleTarget(event.target);
     if (!eligible) return;
-    root.clearTimeout(visualTimer);
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, axis: '', eligible, width: eligible.main.clientWidth || root.innerWidth };
   }
   function move(event) {
@@ -157,8 +146,6 @@
     event.stopImmediatePropagation();
     // Keep the payment carousel's own inner slide changes disabled only for Android route-owned Pay fee gestures.
     if (Math.abs(dx) > Math.abs(dy) * 1.1) event.preventDefault();
-    const edge = (pointer.eligible.idx === 0 && dx > 0) || (pointer.eligible.idx === STEPS.length - 1 && dx < 0);
-    setVisual(edge ? dx * .22 : dx, false, pointer.eligible.main);
   }
   function finish(event) {
     if (!pointer || event.pointerId !== pointer.id) return;
@@ -172,9 +159,9 @@
     const goNext = gesture.dx < -threshold, goPrevious = gesture.dx > threshold;
     const target = gesture.eligible.idx + (goNext ? 1 : goPrevious ? -1 : 0);
     if ((!goNext && !goPrevious) || target < 0 || target >= STEPS.length) { resetVisual(gesture.eligible.main); return; }
-    void transition(gesture.eligible.idx, target, gesture.dx);
+    void transition(gesture.eligible.idx, target);
   }
-  async function transition(from, to, dx) {
+  async function transition(from, to) {
     if (locked) return;
     locked = true;
     const oldSurface = root.document.getElementById(from===12?'notifications-page':'app-main');
@@ -183,7 +170,6 @@
       if (current) { memory.set(current.index, current.state); activeIndex = current.index; }
       const target = stepState(to, current?.state);
       const notificationsOpen = to === 12;
-      if (oldSurface) { oldSurface.classList.add('android-swipe-ease'); root.document.documentElement.classList.add('android-swipe-tracking'); }
       if (current?.index === 12 && !notificationsOpen) await root.StemmaNotifications?.applyAndroidSwipeRoute?.(false);
       if (notificationsOpen) {
         const notice = target.notification || { sortOrder: 'newest', scrollTop: 0 };
@@ -198,15 +184,7 @@
       }
       const dest = notificationsOpen ? root.document.getElementById('notifications-page') : root.document.getElementById('app-main');
       restoreScroll(dest,target.swipeScroll);
-      if (dest) {
-        dest.classList.remove('android-swipe-ease');
-        dest.style.setProperty('--android-swipe-x', `${dx < 0 ? Math.min(64, root.innerWidth * .12) : -Math.min(64, root.innerWidth * .12)}px`);
-        void dest.offsetWidth;
-        dest.classList.add('android-swipe-ease'); root.document.documentElement.classList.add('android-swipe-tracking');
-        root.requestAnimationFrame(() => { if (dest.isConnected) dest.style.setProperty('--android-swipe-x', '0px'); });
-        root.clearTimeout(visualTimer);
-        visualTimer=root.setTimeout(() => { dest.classList.remove('android-swipe-ease'); root.document.documentElement.classList.remove('android-swipe-tracking'); }, reduceMotion() ? 0 : 230);
-      }
+      resetVisual(dest);
       activeIndex = to;
     } catch (error) {
       console.warn('Android swipe navigation skipped', error);
@@ -237,7 +215,7 @@
     get steps() { return STEPS.map((step, index) => ({ index, route: step.route, tab: step.tab ?? null, slide: step.slide ?? null })); },
     get activeIndex() { return captureCurrent()?.index ?? activeIndex; },
     capture: captureCurrent,
-    async goTo(index) { if (!Number.isInteger(index) || index < 0 || index >= STEPS.length) return false; const current = captureCurrent(); if (current?.index === index) return true; if (current) memory.set(current.index, current.state); await transition(current?.index ?? index, index, index > (current?.index ?? index) ? -80 : 80); return true; }
+    async goTo(index) { if (!Number.isInteger(index) || index < 0 || index >= STEPS.length) return false; const current = captureCurrent(); if (current?.index === index) return true; if (current) memory.set(current.index, current.state); await transition(current?.index ?? index, index); return true; }
   });
   root.StemmaAndroidSwipe = api;
   root.StemmaAndroidSwipeBridge = api;

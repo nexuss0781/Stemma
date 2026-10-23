@@ -126,7 +126,7 @@ def assert_safe_snapshot(snapshot: dict):
         "attempt", "elapsedMs", "result", "magicType", "normalizedMime", "nativeMime", "nativeDeclaredByteLength", "headerValueCounts",
     }
     assert set(snapshot) == expected_keys, snapshot
-    assert snapshot["appVersion"] == "1.0.7" and snapshot["versionCode"] == 8, snapshot
+    assert snapshot["appVersion"] == "1.0.8" and snapshot["versionCode"] == 9, snapshot
     assert snapshot["endpoint"] == "/api/student-profile/photo", snapshot
     assert PRIVATE_EMAIL not in json.dumps(snapshot)
     assert PRIVATE_STUDENT_ID not in json.dumps(snapshot)

@@ -336,8 +336,8 @@ def main():
             assert state(page) == before, "predominantly vertical drag changed app navigation state"
             result["cancellationSmallDragVertical"] = True
 
-            # A brief mid-drag sample records any visual tracking transform before
-            # touchend. Absence is reported, not guessed from an undocumented API.
+            # Page content remains stationary throughout the gesture; routing
+            # happens directly after the deliberate horizontal release.
             x, y = center_of(grid)
             cdp = context.new_cdp_session(page)
             cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y, "id": 9, "radiusX": 1, "radiusY": 1, "force": 1}]})
@@ -350,7 +350,7 @@ def main():
             result["midGestureTrackingTransform"] = {"observed": any(
                 item["transform"] not in ("none", "matrix(1, 0, 0, 1, 0, 0)") or item["inline"]
                 for item in tracking), "samples": tracking}
-            assert result["midGestureTrackingTransform"]["observed"],"finger tracking did not transform the actual app-main surface"
+            assert not result["midGestureTrackingTransform"]["observed"], "page transform introduced swipe drag/staged movement"
             cdp.send("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
             cdp.detach()
             page.wait_for_timeout(250)
@@ -433,6 +433,8 @@ def main():
             # selection across an away-and-back swipe rather than only checking route labels.
             overview_nav = page.locator('.nav-item[data-route="overview"]')
             overview_nav.click()
+            overview_button_animation = page.locator('#app-main').evaluate("el => getComputedStyle(el).animationName")
+            assert overview_button_animation == "none", {"buttonRoute": "overview", "animationName": overview_button_animation}
             page.locator('.page-tab[data-tab="2"]').click()
             assert state(page)["tabs"]["overview"] == 2
             assert page.locator('.page-tab[data-tab="2"]').get_attribute("aria-selected") == "true"
@@ -446,6 +448,8 @@ def main():
 
             profile_nav = page.locator('.nav-item[data-route="profile"]')
             profile_nav.click()
+            profile_button_animation = page.locator('#app-main').evaluate("el => getComputedStyle(el).animationName")
+            assert profile_button_animation == "none", {"buttonRoute": "profile", "animationName": profile_button_animation}
             # Profile's internal Security tab is not exposed in this UI. Seed its
             # valid bridge state, then test actual swipe preservation separately.
             page.evaluate("()=>{const s=window.StemmaAndroidAppState.capture();s.tabs.profile=1;window.StemmaAndroidAppState.restore(s)}")
@@ -462,7 +466,7 @@ def main():
 
             guard_results = {"inputEditor": "not found", "ownedHorizontalRail": "not found",
                              "modal": "not found", "chat": "not found", "likeeFeedVertical": False,
-                             "likeeFeedHorizontal": False}
+                             "likeeFeedHorizontalBidirectional": False}
             # Deposit form exposes a real app-owned editable input. Horizontal
             # touch beginning on the editor must not route away from Payment.
             page.locator('.nav-item[data-route="cards"]').click()
@@ -501,9 +505,16 @@ def main():
                         assert state(page) == prior, "owned horizontal rail gesture hijacked app navigation"
                         guard_results["ownedHorizontalRail"] = "passed"
             # Return to Profile then Notifications with real app navigation for
-            # modal/chat containment checks; read-only notification details only.
+            # list-target return and modal/chat containment checks; fixture is read-only.
             page.locator('.nav-item[data-route="profile"]').click()
             page.wait_for_function("window.StemmaAndroidAppState.capture().route==='profile'")
+            page.locator('#profile-notifications-button').click()
+            page.wait_for_function("location.hash==='#notifications' && !document.getElementById('notifications-page').hidden")
+            page.locator('.notification-open').first.wait_for(state="visible")
+            notification_item = page.locator('.notification-open').first
+            drag_between(page, notification_item, 190, 0)
+            assert_step(page, "profile")
+            guard_results["notificationListRightToProfile"] = "passed"
             page.locator('#profile-notifications-button').click()
             page.wait_for_function("location.hash==='#notifications' && !document.getElementById('notifications-page').hidden")
             page.locator('.notification-open').first.wait_for(state="visible")
@@ -516,8 +527,8 @@ def main():
             guard_results["modal"] = "passed"
             page.locator('#notification-detail-close').click()
 
-            # Verify Likee's vertically-owned feed accepts both vertical and
-            # horizontal movement without changing the application route.
+            # Likee retains vertical feed movement; horizontal feed gestures
+            # select the adjacent route in either direction.
             page.locator('.nav-item[data-route="likee"]').click()
             page.wait_for_function("window.StemmaAndroidAppState.capture().route==='likee'")
             feed = page.locator('.likee-feed')
@@ -525,10 +536,14 @@ def main():
             before = state(page)
             drag_between(page, feed, 0, -220)
             assert state(page) == before, "Likee vertical feed swipe hijacked app navigation"
+            feed_touch_action = feed.evaluate("el=>getComputedStyle(el).touchAction")
+            assert "pan-y" in feed_touch_action, {"LikeeVerticalTouchAction": feed_touch_action}
             guard_results["likeeFeedVertical"] = True
             drag_between(page, feed, -190, 0)
-            assert state(page) == before, "Likee horizontal feed swipe hijacked app navigation"
-            guard_results["likeeFeedHorizontal"] = True
+            assert_step(page, "profile")
+            drag_between(page, page.locator("#app-main"), 190, 0)
+            assert_step(page, "likee")
+            guard_results["likeeFeedHorizontalBidirectional"] = True
 
             chat = page.locator('.direct-chat-panel:visible, [data-direct-chat]:visible, .pulse-chat-view:visible').first
             if chat.count():
@@ -555,11 +570,10 @@ def main():
                 page.evaluate("document.querySelector('#controlled-fullscreen-owner').remove()")
                 controlled_owners.append(owner)
             result["controlledFullscreenOwnerGuards"]=controlled_owners
-            page.emulate_media(reduced_motion='reduce')
-            motion_ms=page.evaluate("()=>{const e=document.querySelector('#app-main');e.classList.add('android-swipe-ease');const ms=parseFloat(getComputedStyle(e).transitionDuration)*1000;e.classList.remove('android-swipe-ease');return ms}")
-            assert motion_ms<=1.01,motion_ms
-            page.emulate_media(reduced_motion='no-preference')
-            result["reducedMotionDurationMs"]=motion_ms
+            motion=page.evaluate("()=>({transition:getComputedStyle(document.querySelector('#app-main')).transitionDuration,transform:getComputedStyle(document.querySelector('#app-main')).transform,swipeCss:!!document.querySelector('style')?.textContent?.includes('android-swipe-ease')})")
+            assert motion["transform"] in ("none", "matrix(1, 0, 0, 1, 0, 0)"), motion
+            assert not motion["swipeCss"], motion
+            result["swipeVisualMotion"] = motion
             result["guardCases"] = guard_results
             result["noSwipeWritesGalleryReadsOrQueueReplay"] = assert_no_swipe_side_effects(page, "completed gesture suite")
             assert not external_requests, f"external resource/network request attempted: {external_requests}"

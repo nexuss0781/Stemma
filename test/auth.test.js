@@ -151,6 +151,8 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     const begin = await fetch(`${appOrigin}/auth/fayda/start`, { redirect: 'manual' });
     assert.equal(begin.status, 303);
     const initialCookie = cookieFrom(begin);
+    const preAuthCookieExpiry = Date.parse(begin.headers.get('set-cookie').match(/Expires=([^;]+)/i)[1]);
+    assert.ok(preAuthCookieExpiry - Date.now() <= 8 * 60 * 60 * 1000 && preAuthCookieExpiry - Date.now() > 7.9 * 60 * 60 * 1000, 'pre-auth OIDC cookie remains short-lived');
     authRequest = new URL(begin.headers.get('location'));
     assert.equal(authRequest.searchParams.get('response_type'), 'code');
     assert.equal(authRequest.searchParams.get('scope'), 'openid');
@@ -179,6 +181,8 @@ test('Fayda eSignet authorization code flow is state-bound, verified, and one-ti
     assert.equal(userInfoRequests, 1);
     const authenticatedCookie = cookieFrom(callback);
     assert.notEqual(authenticatedCookie, initialCookie, 'session ID must rotate after sign-in');
+    const authenticatedCookieExpiry = Date.parse(callback.headers.get('set-cookie').match(/Expires=([^;]+)/i)[1]);
+    assert.ok(authenticatedCookieExpiry - Date.now() <= 400 * 24 * 60 * 60 * 1000 && authenticatedCookieExpiry - Date.now() > 399 * 24 * 60 * 60 * 1000, 'authenticated cookie gets practical persistent retention');
 
     const sessionResponse = await fetch(`${appOrigin}/auth/session`, { headers: { cookie: authenticatedCookie } });
     assert.deepEqual(await sessionResponse.json(), { authenticated: true, authProvider: 'fayda', faydaConfigured: true, providerConfigured: true, googleConfigured: false, googleProfile: null });
